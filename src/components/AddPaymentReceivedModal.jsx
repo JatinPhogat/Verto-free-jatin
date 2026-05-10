@@ -241,7 +241,7 @@ const AddPaymentReceivedModal = ({
 
         if (advanceError) throw advanceError;
 
-        alert( `✅ Advance Payment Saved Successfully\n\nReference ID: ${payInReference}` );
+        
       } else {
         // ✅ NORMAL PAYMENT
 
