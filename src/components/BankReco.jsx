@@ -205,9 +205,31 @@ const BankReco = () => {
       grouped[key].asPerBankTotalBal += Number(entry.amount);
 
       grouped[key].manualEntries.push({
+        // ✅ DATE
+        date: entry.date,
+
+        // ✅ ENTITY
         entity: entry.entity || "Pvt Ltd",
-        bankCode: entry.bank_master?.bank_name || "N/A",
-        amount: entry.amount,
+
+        // ✅ FLOW TYPE
+        transactionLabel:
+          entry.entry_type === "invoice"
+            ? "Invoice Payment"
+            : entry.entry_type === "petty_cash"
+            ? "Petty Cash"
+            : entry.entry_type === "payment_received"
+            ? "Payment Received"
+            : entry.entry_type === "payment_made"
+            ? "Payment Made"
+            : "Other",
+
+        // ✅ AMOUNT + / -
+        amount:
+          entry.type === "debit"
+            ? -Math.abs(entry.amount)
+            : Math.abs(entry.amount),
+
+        // ✅ REMARKS
         remarks: entry.remarks,
       });
     });
@@ -314,8 +336,10 @@ const BankReco = () => {
       setSelectedRow(bankData[0]); // ✅ AUTO SELECT FIRST ROW
       console.log("AUTO SELECT RUNNING", bankData[0]);
       setRemainingBalance(
-        (bankData[0]?.asPerBankTotalBal || 0) -
-          (bankData[0]?.asPerSwTotalBal || 0)
+        Math.abs(
+          (bankData[0]?.asPerBankTotalBal || 0) -
+            (bankData[0]?.asPerSwTotalBal || 0)
+        )
       );
     }
   }, [bankData]);
@@ -394,11 +418,20 @@ const BankReco = () => {
       {
         bank_id: newEntry.bank_id,
         entity: newEntry.entity || "Pvt Ltd",
+
         amount: enteredAmount,
+
         date: newEntry.dateOfBankBal,
+
         remarks: newEntry.remarks || "",
-        type: enteredAmount >= 0 ? "credit" : "debit", // ✅ FIX
-        reference_no: "BNK-" + Date.now(), // ✅ ADD THIS
+
+        // ✅ SAVE FLOW TYPE
+        entry_type: newEntry.entry_type || "other",
+
+        // ✅ CREDIT / DEBIT
+        type: newEntry.entry_type === "payment_received" ? "credit" : "debit",
+
+        reference_no: "BNK-" + Date.now(),
       },
     ]);
 
@@ -899,8 +932,8 @@ const BankReco = () => {
                         <table className="w-full text-xs">
                           <thead className="bg-gray-50">
                             <tr className="text-gray-500">
-                              <th className="p-2 text-left">Entity</th>
-                              <th className="p-2 text-left">Bank</th>
+                              <th className="p-2 text-left">Date</th>
+                              <th className="p-2 text-left">Flow Type</th>
                               <th className="p-2 text-right">Amount</th>
                             </tr>
                           </thead>
@@ -908,18 +941,43 @@ const BankReco = () => {
                             {selectedRow.manualEntries.map((entry, idx) => (
                               <tr key={idx}>
                                 <td className="p-2 text-gray-700 text-xs">
-                                  {entry.entity.replace("Verto ", "")}
+                                  {new Date(entry.date).toLocaleDateString(
+                                    "en-GB"
+                                  )}
                                 </td>
                                 <td className="p-2">
                                   <Badge
                                     variant="secondary"
-                                    className="text-xs"
+                                    className={`text-xs font-semibold ${
+                                      entry.amount >= 0
+                                        ? "bg-emerald-100 text-emerald-700"
+                                        : "bg-rose-100 text-rose-700"
+                                    }`}
                                   >
-                                    {entry.bankCode}
+                                    {entry.transactionLabel}
                                   </Badge>
                                 </td>
-                                <td className="p-2 text-right font-mono">
-                                  {formatCurrencyFull(entry.amount)}
+                                <td
+                                  className={`p-2 text-right font-mono font-bold ${
+                                    entry.amount >= 0
+                                      ? "text-emerald-600"
+                                      : "text-rose-600"
+                                  }`}
+                                >
+                                  <div className="flex items-center justify-end gap-1">
+                                    {entry.amount >= 0 ? (
+                                      <ArrowDownLeft className="w-3 h-3" />
+                                    ) : (
+                                      <ArrowUpRight className="w-3 h-3" />
+                                    )}
+
+                                    <span>
+                                      {entry.amount >= 0 ? "+" : "-"}
+                                      {formatCurrencyFull(
+                                        Math.abs(entry.amount)
+                                      )}
+                                    </span>
+                                  </div>
                                 </td>
                               </tr>
                             ))}
@@ -1087,11 +1145,11 @@ const BankReco = () => {
                         <span className="font-mono font-medium text-purple-700">
                           {formatCurrency(
                             fundFlowData.length > 0
-                              ? formatCurrency(
-                                  fundFlowData[fundFlowData.length - 1]
-                                    .asPerSwProjBal
-                                )
-                              : "₹ 0"
+                            ? formatCurrency(
+                                fundFlowData[fundFlowData.length - 1]
+                                  .asPerSwProjBal
+                              )
+                            : "₹ 0"
                           )}
                         </span>
                       </div>

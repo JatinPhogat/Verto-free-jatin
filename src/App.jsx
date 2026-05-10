@@ -30,6 +30,7 @@ import AddCNBadDebtModal from "./components/AddCNBadDebtModal";
 import AddBounceBackModal from "./components/AddBounceBackModal";
 import AddStatutoryPayoutModal from "./components/AddStatutoryPayoutModal";
 import AddInternalTeamModal from "./components/AddInternalTeamModal";
+import AddPaymentMadeModal from "./components/AddPaymentMadeModal";
 import InternalTeamDetails from "./components/InternalTeamDetails";
 import AddExpenseDetailsModal from "./components/AddExpenseDetailsModal";
 import AddExpenseDetailsManModal from "./components/AddExpenseDetailsManModal";
@@ -42,6 +43,8 @@ const App = () => {
   const [showUserManagement, setShowUserManagement] = useState(false);
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [showInvoiceModal, setShowInvoiceModal] = useState(false);
+  const [showPaymentMadeModal, setShowPaymentMadeModal] = useState(false);
+  const [paymentMadeInvoice, setPaymentMadeInvoice] = useState(null);
   const [showCNBadDebtModal, setShowCNBadDebtModal] = useState(false);
   const [showBounceBackModal, setShowBounceBackModal] = useState(false);
   const [showStatutoryPayoutModal, setShowStatutoryPayoutModal] =
@@ -156,7 +159,7 @@ if (!user) return <Login />;
       cyan: "hover:text-cyan-600 hover:bg-cyan-50 text-gray-600",
       orange: "hover:text-orange-600 hover:bg-orange-50 text-gray-600",
       indigo: "hover:text-indigo-600 hover:bg-indigo-50 text-gray-600",
-      red: "hover:text-red-600 hover:bg-red-50 text-gray-600",
+      red: "hover:text-red-add hover:bg-red-50 text-gray-600",
       pink: "hover:text-pink-600 hover:bg-pink-50 text-gray-600",
     };
     return colors[color] || colors.blue;
@@ -303,6 +306,9 @@ if (!user) return <Login />;
                       setShowPaymentModal(true);
                     } else if (action.label === "Add Invoice Details") {
                       setShowInvoiceModal(true);
+                    } else if (action.label === "Add Payment Made") {
+                      setShowPaymentMadeModal(true);
+                      setPaymentMadeInvoice(null);
                     } else if (action.label === "Add CN / Bad Debt") {
                       setShowCNBadDebtModal(true);
                     } else if (action.label === "Add Bounce Back") {
@@ -502,7 +508,15 @@ if (!user) return <Login />;
         onClose={() => setShowPaymentModal(false)}
         invoice={selectedInvoice}
         onPaymentSaved={() => setRefreshFlag(!refreshFlag)} // 🔥 PASS DATA
-        clients={clients}
+        client
+        s={clients}
+      />
+
+      <AddPaymentMadeModal
+        isOpen={showPaymentMadeModal}
+        onClose={() => setShowPaymentMadeModal(false)}
+        invoice={paymentMadeInvoice}
+        onSaved={() => setRefreshFlag(!refreshFlag)}
       />
 
       {/* Add Invoice Modal */}

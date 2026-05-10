@@ -1449,9 +1449,26 @@ const Dashboard = ({
                                     View
                                   </button>
                                   <button
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      setPaymentMadeInvoice(row);
+                                    onClick={() => {
+                                      console.log("🔥 PAYMENT MADE ROW:", row);
+
+                                      setPaymentMadeInvoice({
+                                        ...row,
+
+                                        // 🔥 IMPORTANT
+                                        dbId: row.dbId || row.id,
+
+                                        invoice_number:
+                                          row.invoice_number || row.id,
+
+                                        bank_id: row.bank_id || "",
+
+                                        entity:
+                                          row.entity ||
+                                          row.entity_name ||
+                                          "Pvt Ltd",
+                                      });
+
                                       setShowPaymentMadeModal(true);
                                     }}
                                     className="w-full px-3 py-2 bg-gray-50 hover:bg-gray-100 text-gray-700 rounded-lg transition-colors text-sm font-medium"

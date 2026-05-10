@@ -28,10 +28,23 @@ const LedgerPage = () => {
 
       setOpening(inv.receivable_amount);
 
-      const [payments, bounces, cns] = await Promise.all([
-        supabase.from("payments_received").select("*").eq("invoice_id", invoice.dbId),
+      const [payments, paymentsMade, bounces, cns] = await Promise.all([
+        supabase
+          .from("payments_received")
+          .select("*")
+          .eq("invoice_id", invoice.dbId),
+
+        supabase
+          .from("payments_made")
+          .select("*")
+          .eq("invoice_id", invoice.dbId),
+
         supabase.from("bounce_back").select("*").eq("invoice_id", invoice.dbId),
-        supabase.from("credit_note_bad_debt").select("*").eq("invoice_id", invoice.dbId),
+
+        supabase
+          .from("credit_note_bad_debt")
+          .select("*")
+          .eq("invoice_id", invoice.dbId),
       ]);
 
       let rows = [];
@@ -40,6 +53,15 @@ const LedgerPage = () => {
         rows.push({
           type: "Payment",
           amount: -Number(p.amount_received),
+          date: p.payment_date,
+        })
+      );
+      paymentsMade.data?.forEach((p) =>
+        rows.push({
+          type: "Payment Made",
+
+          amount: -Number(p.amount),
+
           date: p.payment_date,
         })
       );
@@ -82,7 +104,6 @@ const LedgerPage = () => {
 
   return (
     <div className="p-6 max-w-4xl mx-auto">
-
       {/* 🔥 HEADER */}
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center gap-3">
@@ -94,12 +115,8 @@ const LedgerPage = () => {
           </button>
 
           <div>
-            <h1 className="text-lg font-bold text-gray-900">
-              Ledger View
-            </h1>
-            <p className="text-xs text-gray-500">
-              Invoice: {invoice.id}
-            </p>
+            <h1 className="text-lg font-bold text-gray-900">Ledger View</h1>
+            <p className="text-xs text-gray-500">Invoice: {invoice.id}</p>
           </div>
         </div>
       </div>
@@ -108,9 +125,7 @@ const LedgerPage = () => {
       <div className="grid grid-cols-2 gap-4 mb-6">
         <Card className="bg-blue-50 border-blue-100">
           <Card.Content className="p-4">
-            <p className="text-xs text-gray-600 uppercase">
-              Opening Balance
-            </p>
+            <p className="text-xs text-gray-600 uppercase">Opening Balance</p>
             <p className="text-lg font-bold text-blue-600">
               {formatCurrency(opening)}
             </p>
@@ -119,9 +134,7 @@ const LedgerPage = () => {
 
         <Card className="bg-purple-50 border-purple-100">
           <Card.Content className="p-4">
-            <p className="text-xs text-gray-600 uppercase">
-              Final Outstanding
-            </p>
+            <p className="text-xs text-gray-600 uppercase">Final Outstanding</p>
             <p className="text-lg font-bold text-purple-600">
               {formatCurrency(outstanding)}
             </p>
@@ -131,7 +144,6 @@ const LedgerPage = () => {
 
       {/* 🔥 LEDGER LIST */}
       <div className="space-y-3">
-
         {ledger.length === 0 && (
           <div className="text-center text-gray-400 py-10">
             No transactions found
@@ -141,14 +153,14 @@ const LedgerPage = () => {
         {ledger.map((row, i) => (
           <Card key={i} className="border-gray-200">
             <Card.Content className="p-4 flex items-center justify-between">
-
               <div>
-                <p className={`font-semibold ${
-                  row.type === "Bounce"
-                    ? "text-red-600"
-                    : "text-emerald-600"
-                }`}>
-                  {row.type === "Bounce" ? "+" : "-"} {formatCurrency(Math.abs(row.amount))}
+                <p
+                  className={`font-semibold ${
+                    row.type === "Bounce" ? "text-red-600" : "text-emerald-600"
+                  }`}
+                >
+                  {row.type === "Bounce" ? "+" : "-"}{" "}
+                  {formatCurrency(Math.abs(row.amount))}
                 </p>
 
                 <p className="text-xs text-gray-500 flex items-center mt-1">
@@ -156,9 +168,7 @@ const LedgerPage = () => {
                   {row.date}
                 </p>
 
-                <p className="text-xs text-gray-400">
-                  {row.type}
-                </p>
+                <p className="text-xs text-gray-400">{row.type}</p>
               </div>
 
               <div className="text-right">
@@ -169,18 +179,17 @@ const LedgerPage = () => {
               </div>
 
               {/* ICON */}
-              <div className={`p-2 rounded-lg ${
-                row.type === "Bounce"
-                  ? "bg-red-100"
-                  : "bg-emerald-100"
-              }`}>
+              <div
+                className={`p-2 rounded-lg ${
+                  row.type === "Bounce" ? "bg-red-100" : "bg-emerald-100"
+                }`}
+              >
                 {row.type === "Bounce" ? (
                   <AlertCircle className="w-4 h-4 text-red-600" />
                 ) : (
                   <TrendingUp className="w-4 h-4 text-emerald-600" />
                 )}
               </div>
-
             </Card.Content>
           </Card>
         ))}
