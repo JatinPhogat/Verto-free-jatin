@@ -1,308 +1,662 @@
 import React, { useState, useEffect } from "react";
 import supabase from "../lib/supabaseClient";
-import { X, ArrowRight, CreditCard, Calendar, FileText } from "lucide-react";
-import Card from "./ui/Card";
+import {
+  X,
+  ArrowRight,
+  CreditCard,
+  Calendar,
+  FileText,
+  Search,
+  CheckCircle,
+  XCircle,
+  Building2,
+  Tag,
+  Layers,
+  AlertTriangle,
+  Info,
+  ChevronDown,
+} from "lucide-react";
 
+/* ─────────────────────────────────────────────
+   Tiny helpers
+───────────────────────────────────────────── */
+const fmt = (v) =>
+  `₹ ${Number(v || 0).toLocaleString("en-IN", { minimumFractionDigits: 0 })}`;
+
+const InputWrapper = ({ icon: Icon, children }) => (
+  <div className="relative">
+    {Icon && (
+      <Icon
+        size={14}
+        className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"
+      />
+    )}
+    <div className={Icon ? "pl-9" : ""}>{children}</div>
+  </div>
+);
+
+const Label = ({ children, required }) => (
+  <label className="block text-[10px] font-bold uppercase tracking-widest text-slate-500 mb-1.5">
+    {children}
+    {required && <span className="text-rose-500 ml-0.5">*</span>}
+  </label>
+);
+
+const inputCls =
+  "w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-400/20 transition-all duration-200";
+
+const selectCls =
+  "w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm text-slate-800 focus:outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-400/20 transition-all duration-200 appearance-none cursor-pointer";
+
+/* ─────────────────────────────────────────────
+   Main Component
+───────────────────────────────────────────── */
 const AddPaymentMadeModal = ({ isOpen, onClose, invoice, onSaved }) => {
-  const [amount, setAmount] = useState("");
-  const [date, setDate] = useState("");
-  const [remarks, setRemarks] = useState("");
-  // ✅ NEW STATES
-  const [banks, setBanks] = useState([]);
+  /* form state */
+  const [amount, setAmount]           = useState("");
+  const [date, setDate]               = useState("");
+  const [remarks, setRemarks]         = useState("");
+  const [banks, setBanks]             = useState([]);
   const [paymentType, setPaymentType] = useState("Invoice");
-  const [bankId, setBankId] = useState("");
+  const [bankId, setBankId]           = useState("");
   const [invoiceNumber, setInvoiceNumber] = useState("");
+  const [loading, setLoading]         = useState(false);
 
-  // ✅ FETCH BANKS
+  /* billable toggle */
+  const [isBillable, setIsBillable] = useState(false);
+
+  /* manual invoice search */
+  const [invoiceSearch, setInvoiceSearch]     = useState("");
+  const [invoiceResults, setInvoiceResults]   = useState([]);
+  const [selectedInvoice, setSelectedInvoice] = useState(null);
+  const [searching, setSearching]             = useState(false);
+
+  /* ── fetch banks ── */
   useEffect(() => {
-    const fetchBanks = async () => {
-      const { data } = await supabase
-        .from("bank_master")
-        .select("id, bank_name");
-
-      console.log("BANKS:", data);
-
-      setBanks(data || []);
-    };
-
-    fetchBanks();
+    supabase
+      .from("bank_master")
+      .select("id, bank_name")
+      .then(({ data }) => setBanks(data || []));
   }, []);
 
+  /* ── reset on open ── */
   useEffect(() => {
-    if (isOpen) {
-      setAmount("");
-      setDate("");
-      setRemarks("");
+    if (!isOpen) return;
+    setAmount("");
+    setDate("");
+    setRemarks("");
+    setLoading(false);
+    setIsBillable(false);
+    setInvoiceSearch("");
+    setInvoiceResults([]);
 
-      // ✅ AUTO FETCH INVOICE NUMBER
-      if (invoice) {
-        setInvoiceNumber(invoice.invoice_number || invoice.id || "");
-      } else {
-        setInvoiceNumber("");
-      }
+    if (invoice) {
+      setInvoiceNumber(invoice.invoice_number || invoice.id || "");
+      setSelectedInvoice(invoice);
+    } else {
+      setInvoiceNumber("");
+      setSelectedInvoice(null);
     }
-  }, [isOpen]);
+  }, [isOpen, invoice]);
+
+  /* ── invoice search ── */
+  useEffect(() => {
+    if (paymentType !== "Invoice" || !invoiceSearch || invoice) return;
+    const t = setTimeout(async () => {
+      setSearching(true);
+      const { data } = await supabase
+        .from("invoices")
+        .select(
+          "id, invoice_number, receivable_amount, client_id, clients_master(client_name)"
+        )
+        .ilike("invoice_number", `%${invoiceSearch}%`)
+        .limit(8);
+      setInvoiceResults(data || []);
+      setSearching(false);
+    }, 300);
+    return () => clearTimeout(t);
+  }, [invoiceSearch, paymentType, invoice]);
+
   if (!isOpen) return null;
 
-  console.log("🔥 MODAL INVOICE:", invoice);
+  /* ── resolved values ── */
+  const resolvedInvoiceId     = selectedInvoice?.dbId || selectedInvoice?.id || invoice?.dbId || null;
+  const resolvedInvoiceNumber = invoiceNumber || selectedInvoice?.invoice_number || "";
+  const resolvedEntity        = selectedInvoice?.entity || invoice?.entity || "Pvt Ltd";
+  const resolvedBankId        = bankId || invoice?.bank_id || null;
 
+  /* ── save handler ── */
   const handleSave = async () => {
-    if (!amount || !date) {
-      alert("❌ Amount and Date required");
-      return;
-    }
+    if (!amount || !date) return alert("Amount and Date are required");
+    if (paymentType === "Invoice" && !resolvedInvoiceId)
+      return alert("Please select an invoice");
+    if (!bankId) return alert("Please select a bank");
 
+    setLoading(true);
     try {
-      // 🔥 1. SAVE PAYMENT MADE
+      const numAmount = Number(amount);
+
+      /* 1. payments_made */
       const { error: payError } = await supabase.from("payments_made").insert([
         {
-          invoice_id: paymentType === "Invoice" ? invoice?.dbId || null : null,
-
-          invoice_number: paymentType === "Invoice" ? invoiceNumber : null,
-
-          payment_type: paymentType,
-
-          petty_cash: paymentType === "Petty Cash",
-
-          other_payment: paymentType === "Other",
-
-          bank_id: bankId,
-          amount: Number(amount),
-          payment_date: date,
+          invoice_id:     paymentType === "Invoice" ? resolvedInvoiceId : null,
+          invoice_number: paymentType === "Invoice" ? resolvedInvoiceNumber : null,
+          payment_type:   paymentType,
+          petty_cash:     paymentType === "Petty Cash",
+          other_payment:  paymentType === "Other",
+          bank_id:        resolvedBankId,
+          amount:         numAmount,
+          payment_date:   date,
           remarks,
+          is_billable:    isBillable,
+          client_name:    selectedInvoice?.client_name || invoice?.client_name || null,
+          expense_head:   invoice?.pay_head || null,
+          transfer_amount: isBillable ? numAmount : 0,
         },
       ]);
-
       if (payError) throw payError;
 
-      // 🔥 2. BANK ENTRY (VERY IMPORTANT 🔥)
+      /* 2. bank_entries (debit) */
       const { error: bankError } = await supabase.from("bank_entries").insert([
         {
-          bank_id: bankId || invoice?.bank_id || null, // fallback HDFC
-          entity: invoice.entity || "Pvt Ltd",
-          amount: -Number(amount), // 🔥 NEGATIVE
-          date: date,
-          type: "debit",
-          remarks: "Payment Made",
-          reference_no: "BNK-" + Date.now(),
-          invoice_number: paymentType === "Invoice" ? invoiceNumber : null,
-          invoice_id: paymentType === "Invoice" ? invoice?.dbId || null : null,
-          // 🔥 LINK
+          bank_id:        resolvedBankId,
+          entity:         resolvedEntity,
+          amount:         -numAmount,
+          date,
+          type:           "debit",
+          remarks:        remarks || "Payment Made",
+          entry_type:     "payment_made",
+          reference_no:   "BNK-" + Date.now(),
+          invoice_number: paymentType === "Invoice" ? resolvedInvoiceNumber : null,
+          invoice_id:     paymentType === "Invoice" ? resolvedInvoiceId : null,
         },
       ]);
-
       if (bankError) throw bankError;
 
-      // 🔥 3. SOFTWARE ENTRY
-      const { error: softwareError } = await supabase
-        .from("software_entries")
-        .insert([
-          {
-            bank_id: bankId || invoice?.bank_id || null,
+      /* 3. software_entries */
+      const { error: swError } = await supabase.from("software_entries").insert([
+        {
+          bank_id:        resolvedBankId,
+          entity:         resolvedEntity,
+          amount:         -numAmount,
+          date,
+          remarks:        remarks || "Payment Made",
+          invoice_id:     paymentType === "Invoice" ? resolvedInvoiceId : null,
+          invoice_number: paymentType === "Invoice" ? resolvedInvoiceNumber : null,
+        },
+      ]);
+      if (swError) throw swError;
 
-            entity: invoice?.entity || "Pvt Ltd",
-            amount: -Number(amount),
-            date: date,
-            remarks: "Payment Made",
-            invoice_id: paymentType === "Invoice" ? invoice.dbId : null,
-            invoice_number: paymentType === "Invoice" ? invoiceNumber : null,
-          },
-        ]);
+      /* 4. If BILLABLE → increase receivable_amount on the invoice */
+      if (isBillable && resolvedInvoiceId) {
+        /* fetch current receivable_amount */
+        const { data: invData, error: fetchErr } = await supabase
+          .from("invoices")
+          .select("receivable_amount")
+          .eq("id", resolvedInvoiceId)
+          .single();
+        if (fetchErr) throw fetchErr;
 
-      if (softwareError) throw softwareError;
+        const newReceivable = Number(invData.receivable_amount || 0) + numAmount;
 
-      alert("✅ Payment Made saved");
+        const { error: updErr } = await supabase
+          .from("invoices")
+          .update({ receivable_amount: newReceivable })
+          .eq("id", resolvedInvoiceId);
+        if (updErr) throw updErr;
+      }
 
-      if (onSaved) onSaved();
+      alert(
+        isBillable
+          ? "✅ Billable expense saved — outstanding updated!"
+          : "✅ Payment Made recorded successfully"
+      );
+      onSaved?.();
       onClose();
     } catch (err) {
       console.error(err);
-      alert("❌ " + err.message);
+      alert("❌ Error: " + err.message);
+    } finally {
+      setLoading(false);
     }
   };
 
+  /* ────────────────── RENDER ────────────────── */
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
-        {/* 🔹 Header */}
-        <div className="bg-gradient-to-r from-purple-600 to-indigo-600 p-5 text-white">
-          <div className="flex justify-between items-center">
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 backdrop-blur-[2px]">
+      <div
+        className="bg-white w-full sm:max-w-lg rounded-t-3xl sm:rounded-3xl shadow-2xl overflow-hidden flex flex-col"
+        style={{ maxHeight: "96vh" }}
+      >
+        {/* ── HEADER ── */}
+        <div
+          className="relative p-6 pb-5 flex-shrink-0"
+          style={{
+            background:
+              "linear-gradient(135deg, #1e1b4b 0%, #312e81 50%, #4c1d95 100%)",
+          }}
+        >
+          {/* decorative blobs */}
+          <div className="absolute top-0 right-0 w-32 h-32 bg-white/5 rounded-full -translate-y-8 translate-x-8" />
+          <div className="absolute bottom-0 left-12 w-16 h-16 bg-white/5 rounded-full translate-y-6" />
+
+          <div className="relative flex items-start justify-between">
             <div>
-              <h2 className="text-lg font-bold flex items-center gap-2">
-                <CreditCard size={18} /> Payment Made
-              </h2>
-              <p className="text-xs text-purple-100 mt-1">
-                Record outgoing payment
+              <div className="flex items-center gap-2 mb-1">
+                <div className="w-8 h-8 rounded-xl bg-white/15 flex items-center justify-center">
+                  <CreditCard size={16} className="text-white" />
+                </div>
+                <h2 className="text-lg font-bold text-white tracking-tight">
+                  Payment Made
+                </h2>
+              </div>
+              <p className="text-indigo-300 text-xs ml-10">
+                Record an outgoing payment from bank
               </p>
             </div>
-            <button onClick={onClose}>
-              <X className="hover:text-gray-200" />
+            <button
+              onClick={onClose}
+              className="w-8 h-8 rounded-xl bg-white/10 hover:bg-white/20 flex items-center justify-center transition-colors"
+            >
+              <X size={15} className="text-white/80" />
             </button>
           </div>
-        </div>
-        {/* 🔹 Invoice Info Card */}
-        {invoice && (
-          <div className="p-4">
-            <Card className="bg-purple-50 border-purple-100">
-              <Card.Content className="p-3">
-                <p className="text-xs text-gray-600 uppercase">Invoice</p>
 
-                <p className="font-semibold text-gray-900">
-                  {invoice?.invoice_number}
+          {/* Invoice badge (when passed from parent) */}
+          {invoice && (
+            <div className="relative mt-4 flex items-center gap-3 bg-white/10 border border-white/20 rounded-2xl p-3">
+              <div className="w-8 h-8 rounded-lg bg-white/15 flex items-center justify-center flex-shrink-0">
+                <FileText size={14} className="text-indigo-200" />
+              </div>
+              <div>
+                <p className="text-white font-semibold text-sm leading-none">
+                  {invoice.invoice_number || invoice.id}
                 </p>
-              </Card.Content>
-            </Card>
-          </div>
-        )}
-        {/* 🔹 Form */}
-        <div className="px-4 pb-4 space-y-4">
-          {/* Payment Type */}
-          <div>
-            <label className="text-xs font-semibold uppercase text-gray-500 mb-2 block">
-              Payment Type
-            </label>
-
-            <select
-              value={paymentType}
-              onChange={(e) => setPaymentType(e.target.value)}
-              className="
-      w-full
-      border
-      border-gray-300
-      rounded-xl
-      px-4
-      py-2.5
-      focus:outline-none
-      focus:border-purple-500
-      focus:ring-2
-      focus:ring-purple-500/20
-      "
-            >
-              <option value="Invoice">Invoice</option>
-              <option value="Petty Cash">Petty Cash</option>
-              <option value="Other">Other</option>
-            </select>
-          </div>
-
-          {/* Select Bank */}
-          <div>
-            <label className="text-xs font-semibold uppercase text-gray-500 mb-2 block">
-              Select Bank
-            </label>
-
-            <select
-              value={bankId}
-              onChange={(e) => setBankId(e.target.value)}
-              className="
-      w-full
-      border
-      border-gray-300
-      rounded-xl
-      px-4
-      py-2.5
-      focus:outline-none
-      focus:border-purple-500
-      focus:ring-2
-      focus:ring-purple-500/20
-      "
-            >
-              <option value="">Select Bank</option>
-
-              {banks.map((b) => (
-                <option key={b.id} value={b.id}>
-                  {b.bank_name}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {/* Invoice Number */}
-          {paymentType === "Invoice" && (
-            <div>
-              <label className="text-xs font-semibold uppercase text-gray-500 mb-2 block">
-                Invoice Number
-              </label>
-
-              <input
-                type="text"
-                value={invoiceNumber}
-                readOnly
-                className="
-        w-full
-        border
-        border-gray-300
-        rounded-xl
-        px-4
-        py-2.5
-        bg-gray-100
-        "
-              />
+                {invoice.client_name && (
+                  <p className="text-indigo-300 text-xs mt-0.5">
+                    {invoice.client_name}
+                  </p>
+                )}
+              </div>
+              {invoice.receivable_amount != null && (
+                <div className="ml-auto text-right">
+                  <p className="text-[10px] text-indigo-400">Outstanding</p>
+                  <p className="text-white font-bold text-sm">
+                    {fmt(invoice.receivable_amount)}
+                  </p>
+                </div>
+              )}
             </div>
           )}
-          {/* Amount */}
+        </div>
+
+        {/* ── BODY ── */}
+        <div className="overflow-y-auto flex-1 px-5 py-5 space-y-4">
+
+          {/* ── Payment Type ── */}
           <div>
-            <label className="text-xs text-gray-600 uppercase mb-1 block">
-              Amount
-            </label>
+            <Label>Payment Type</Label>
             <div className="relative">
-              <CreditCard className="absolute left-3 top-3 w-4 h-4 text-gray-400" />
-              <input
-                type="number"
-                placeholder="Enter amount"
-                value={amount}
-                onChange={(e) => setAmount(e.target.value)}
-                className="w-full border border-gray-300 rounded-xl pl-10 pr-3 py-2.5 focus:outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20"
+              <select
+                value={paymentType}
+                onChange={(e) => {
+                  setPaymentType(e.target.value);
+                  setSelectedInvoice(null);
+                  setInvoiceSearch("");
+                  setInvoiceResults([]);
+                  if (e.target.value !== "Invoice") setIsBillable(false);
+                }}
+                className={selectCls}
+              >
+                <option value="Invoice">Invoice Payment</option>
+                <option value="Petty Cash">Petty Cash</option>
+                <option value="Other">Other</option>
+              </select>
+              <ChevronDown
+                size={14}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"
               />
             </div>
           </div>
 
-          {/* Date */}
+          {/* ── Invoice Search (no invoice prop) ── */}
+          {paymentType === "Invoice" && !invoice && (
+            <div>
+              <Label required>Search Invoice</Label>
+              {selectedInvoice ? (
+                <div className="bg-violet-50 border border-violet-200 rounded-2xl p-3 flex items-center gap-3">
+                  <div className="w-8 h-8 rounded-lg bg-violet-100 flex items-center justify-center flex-shrink-0">
+                    <FileText size={14} className="text-violet-600" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="font-semibold text-slate-800 text-sm truncate">
+                      {selectedInvoice.invoice_number}
+                    </p>
+                    <p className="text-xs text-slate-500 truncate">
+                      {selectedInvoice.clients_master?.client_name || "—"}
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => {
+                      setSelectedInvoice(null);
+                      setInvoiceNumber("");
+                      setInvoiceSearch("");
+                    }}
+                    className="text-xs font-semibold text-rose-500 hover:text-rose-700 px-2 py-1 rounded-lg hover:bg-rose-50 transition-colors"
+                  >
+                    Change
+                  </button>
+                </div>
+              ) : (
+                <div className="relative">
+                  <Search
+                    size={14}
+                    className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"
+                  />
+                  <input
+                    type="text"
+                    placeholder="Type invoice number to search…"
+                    value={invoiceSearch}
+                    onChange={(e) => setInvoiceSearch(e.target.value)}
+                    className={`${inputCls} pl-9`}
+                  />
+                  {searching && (
+                    <p className="text-xs text-slate-400 mt-1.5 px-1 animate-pulse">
+                      Searching…
+                    </p>
+                  )}
+                  {invoiceResults.length > 0 && (
+                    <div className="absolute z-20 top-full left-0 right-0 bg-white border border-slate-200 rounded-2xl shadow-xl mt-1.5 overflow-hidden">
+                      {invoiceResults.map((inv) => (
+                        <button
+                          key={inv.id}
+                          onClick={() => {
+                            setSelectedInvoice(inv);
+                            setInvoiceNumber(inv.invoice_number);
+                            setInvoiceSearch(inv.invoice_number);
+                            setInvoiceResults([]);
+                          }}
+                          className="w-full text-left px-4 py-3 hover:bg-violet-50 transition-colors text-sm border-b border-slate-100 last:border-0 flex items-center justify-between"
+                        >
+                          <div>
+                            <p className="font-semibold text-slate-800">
+                              {inv.invoice_number}
+                            </p>
+                            <p className="text-xs text-slate-500 mt-0.5">
+                              {inv.clients_master?.client_name || "—"}
+                            </p>
+                          </div>
+                          <span className="text-xs font-semibold text-violet-600 bg-violet-50 px-2 py-0.5 rounded-full">
+                            {fmt(inv.receivable_amount || 0)}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ── Invoice number readonly (when prop passed) ── */}
+          {paymentType === "Invoice" && invoice && (
+            <div>
+              <Label>Invoice Number</Label>
+              <div className="relative">
+                <FileText
+                  size={14}
+                  className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
+                />
+                <input
+                  type="text"
+                  value={resolvedInvoiceNumber}
+                  readOnly
+                  className={`${inputCls} pl-9 bg-slate-100 text-slate-500 cursor-not-allowed`}
+                />
+              </div>
+            </div>
+          )}
+
+          {/* ─────────────────────────────────────────────
+              BILLABLE TOGGLE (only for Invoice type)
+          ───────────────────────────────────────────── */}
+          {paymentType === "Invoice" && (
+            <div>
+              <Label>Billing Type</Label>
+              <div className="grid grid-cols-2 gap-2">
+                {/* Non-Billable */}
+                <button
+                  type="button"
+                  onClick={() => setIsBillable(false)}
+                  className={`relative flex flex-col items-center gap-1.5 p-3 rounded-2xl border-2 transition-all duration-200 ${
+                    !isBillable
+                      ? "border-slate-700 bg-slate-800 shadow-lg shadow-slate-800/20"
+                      : "border-slate-200 bg-slate-50 hover:border-slate-300"
+                  }`}
+                >
+                  <XCircle
+                    size={20}
+                    className={!isBillable ? "text-slate-300" : "text-slate-400"}
+                  />
+                  <span
+                    className={`text-xs font-bold ${
+                      !isBillable ? "text-white" : "text-slate-500"
+                    }`}
+                  >
+                    Non-Billable
+                  </span>
+                  <span
+                    className={`text-[10px] text-center leading-tight ${
+                      !isBillable ? "text-slate-400" : "text-slate-400"
+                    }`}
+                  >
+                    Internal expense, no client impact
+                  </span>
+                  {!isBillable && (
+                    <div className="absolute top-2 right-2 w-2 h-2 rounded-full bg-emerald-400" />
+                  )}
+                </button>
+
+                {/* Billable */}
+                <button
+                  type="button"
+                  onClick={() => setIsBillable(true)}
+                  className={`relative flex flex-col items-center gap-1.5 p-3 rounded-2xl border-2 transition-all duration-200 ${
+                    isBillable
+                      ? "border-violet-500 bg-violet-600 shadow-lg shadow-violet-600/30"
+                      : "border-slate-200 bg-slate-50 hover:border-violet-200"
+                  }`}
+                >
+                  <CheckCircle
+                    size={20}
+                    className={isBillable ? "text-violet-200" : "text-slate-400"}
+                  />
+                  <span
+                    className={`text-xs font-bold ${
+                      isBillable ? "text-white" : "text-slate-500"
+                    }`}
+                  >
+                    Billable
+                  </span>
+                  <span
+                    className={`text-[10px] text-center leading-tight ${
+                      isBillable ? "text-violet-300" : "text-slate-400"
+                    }`}
+                  >
+                    Client owes more — updates outstanding
+                  </span>
+                  {isBillable && (
+                    <div className="absolute top-2 right-2 w-2 h-2 rounded-full bg-yellow-400" />
+                  )}
+                </button>
+              </div>
+
+              {/* Billable impact note */}
+              {isBillable && (
+                <div className="mt-2 flex items-start gap-2 bg-violet-50 border border-violet-100 rounded-xl p-3">
+                  <AlertTriangle size={14} className="text-violet-500 flex-shrink-0 mt-0.5" />
+                  <p className="text-xs text-violet-700 leading-relaxed">
+                    <strong>Billable expense:</strong> The amount you enter will be{" "}
+                    <strong>added to the invoice outstanding</strong>. The client will owe
+                    more. Both your bank and the receivable will reflect this.
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ── Bank ── */}
           <div>
-            <label className="text-xs text-gray-600 uppercase mb-1 block">
-              Payment Date
-            </label>
+            <Label required>Select Bank</Label>
             <div className="relative">
-              <Calendar className="absolute left-3 top-3 w-4 h-4 text-gray-400" />
-              <input
-                type="date"
-                value={date}
-                onChange={(e) => setDate(e.target.value)}
-                className="w-full border border-gray-300 rounded-xl pl-10 pr-3 py-2.5 focus:outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20"
+              <Building2
+                size={14}
+                className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"
+              />
+              <select
+                value={bankId}
+                onChange={(e) => setBankId(e.target.value)}
+                className={`${selectCls} pl-9`}
+              >
+                <option value="">Choose bank account…</option>
+                {banks.map((b) => (
+                  <option key={b.id} value={b.id}>
+                    {b.bank_name}
+                  </option>
+                ))}
+              </select>
+              <ChevronDown
+                size={14}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"
               />
             </div>
           </div>
 
-          {/* Remarks */}
+          {/* ── Amount + Date (side by side) ── */}
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <Label required>Amount (₹)</Label>
+              <div className="relative">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm font-bold">
+                  ₹
+                </span>
+                <input
+                  type="number"
+                  placeholder="0"
+                  value={amount}
+                  onChange={(e) => setAmount(e.target.value)}
+                  className={`${inputCls} pl-7`}
+                />
+              </div>
+            </div>
+            <div>
+              <Label required>Payment Date</Label>
+              <div className="relative">
+                <Calendar
+                  size={14}
+                  className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"
+                />
+                <input
+                  type="date"
+                  value={date}
+                  onChange={(e) => setDate(e.target.value)}
+                  className={`${inputCls} pl-9`}
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Amount preview (only if filled) */}
+          {amount && Number(amount) > 0 && (
+            <div
+              className={`rounded-2xl p-3 flex items-center justify-between ${
+                isBillable
+                  ? "bg-violet-50 border border-violet-100"
+                  : "bg-emerald-50 border border-emerald-100"
+              }`}
+            >
+              <div className="flex items-center gap-2">
+                <Layers
+                  size={14}
+                  className={isBillable ? "text-violet-500" : "text-emerald-500"}
+                />
+                <span
+                  className={`text-xs font-semibold ${
+                    isBillable ? "text-violet-700" : "text-emerald-700"
+                  }`}
+                >
+                  {isBillable ? "Client will owe +" : "Bank debit —"}
+                </span>
+              </div>
+              <span
+                className={`text-base font-bold ${
+                  isBillable ? "text-violet-700" : "text-emerald-700"
+                }`}
+              >
+                {fmt(amount)}
+              </span>
+            </div>
+          )}
+
+          {/* ── Remarks ── */}
           <div>
-            <label className="text-xs text-gray-600 uppercase mb-1 block">
-              Remarks
-            </label>
+            <Label>Remarks</Label>
             <div className="relative">
-              <FileText className="absolute left-3 top-3 w-4 h-4 text-gray-400" />
+              <FileText
+                size={14}
+                className="absolute left-3 top-3 text-slate-400 pointer-events-none"
+              />
               <textarea
-                placeholder="Optional notes"
+                placeholder="Optional notes…"
                 value={remarks}
                 onChange={(e) => setRemarks(e.target.value)}
-                rows={3}
-                className="w-full border border-gray-300 rounded-xl pl-10 pr-3 py-2.5 focus:outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20"
+                rows={2}
+                className={`${inputCls} pl-9 resize-none`}
               />
             </div>
           </div>
+
+          {/* ── Info note (non-billable) ── */}
+          {!isBillable && (
+            <div className="flex items-start gap-2 bg-amber-50 border border-amber-100 rounded-xl p-3">
+              <Info size={14} className="text-amber-500 flex-shrink-0 mt-0.5" />
+              <p className="text-xs text-amber-700 leading-relaxed">
+                This is a <strong>non-billable</strong> outgoing payment. It debits your bank
+                but does <strong>not</strong> affect the invoice outstanding amount. To charge
+                a client, switch to <strong>Billable</strong>.
+              </p>
+            </div>
+          )}
         </div>
-        {/* 🔹 Footer */}
-        <div className="flex justify-end gap-3 p-4 border-t bg-gray-50">
+
+        {/* ── FOOTER ── */}
+        <div className="flex-shrink-0 px-5 pb-6 pt-3 border-t border-slate-100 flex items-center gap-3">
           <button
             onClick={onClose}
-            className="px-4 py-2 rounded-lg border text-gray-600 hover:bg-gray-100"
+            className="flex-1 py-3 rounded-2xl border-2 border-slate-200 text-slate-600 text-sm font-semibold hover:bg-slate-50 transition-colors"
           >
             Cancel
           </button>
-
           <button
             onClick={handleSave}
-            className="px-5 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg flex items-center gap-2 shadow-lg shadow-purple-500/30"
+            disabled={loading}
+            className={`flex-1 py-3 rounded-2xl text-sm font-bold flex items-center justify-center gap-2 transition-all duration-200 disabled:opacity-60 ${
+              isBillable
+                ? "bg-violet-600 hover:bg-violet-700 text-white shadow-lg shadow-violet-500/30"
+                : "bg-slate-800 hover:bg-slate-900 text-white shadow-lg shadow-slate-800/20"
+            }`}
           >
-            Save <ArrowRight size={16} />
+            {loading ? (
+              <>
+                <div className="w-4 h-4 rounded-full border-2 border-white/30 border-t-white animate-spin" />
+                Saving…
+              </>
+            ) : (
+              <>
+                {isBillable ? "Save & Update Outstanding" : "Save Payment"}
+                <ArrowRight size={15} />
+              </>
+            )}
           </button>
         </div>
       </div>

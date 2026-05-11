@@ -131,7 +131,8 @@ const Dashboard = ({
 
   // ✅ NEW — Payment Made History drawer state
   const [showPaymentMadeHistory, setShowPaymentMadeHistory] = useState(false);
-  const [paymentMadeHistoryInvoice, setPaymentMadeHistoryInvoice] = useState(null);
+  const [paymentMadeHistoryInvoice, setPaymentMadeHistoryInvoice] =
+    useState(null);
 
   const fetchBanks = async () => {
     const { data, error } = await supabase.from("bank_master").select("*");
@@ -174,68 +175,101 @@ const Dashboard = ({
         return;
       }
 
-      const formatted = data.map((row) => ({
-        // ✅ PRIMARY
-        dbId: row.id,
-        id: row.invoice_number,
+      const formatted = data.map((row) => {
+        // ✅ Outstanding computed from SQL VIEW
+        const outstanding = Number(row.outstanding ?? 0);
 
-        // ✅ REQUIRED FOR EDIT
-        invoice_number: row.invoice_number,
-        client_name: row.client_name,
-        dept_code: row.dept_code,
-        entity_name: row.entity_name,
-        ledger_name: row.ledger_name,
+        // ✅ Receivable = invoice + billable expenses
+        const receivableAmount = Number(
+          row.receivable_amount ?? row.invoice_value ?? 0
+        );
 
-        // ✅ IMPORTANT FIELDS (ONLY ONCE)
-        pay: Number(row.pay ?? 0),
-        pay_head: row.pay_head ?? "",
-        invoice_date: row.invoice_date ?? "",
-        expected_collection_date: row.expected_collection_date ?? "",
-        impact_month: row.impact_month ?? "",
+        return {
+          // ── PRIMARY IDs ──
+          dbId: row.id,
+          id: row.invoice_number,
+          invoice_number: row.invoice_number,
 
-        // ✅ VALUES
-        verto_fee: Number(row.verto_fee ?? 0),
-        gst: Number(row.gst ?? 0),
-        tds: Number(row.tds ?? 0),
-        invoice_value: Number(row.invoice_value ?? 0),
-        receivable_amount: Number(row.receivable_amount ?? 0),
+          // ── CLIENT / ENTITY ──
+          client_name: row.client_name,
+          dept_code: row.dept_code,
+          entity_name: row.entity_name,
+          ledger_name: row.ledger_name,
 
-        // ✅ UI
-        invDate: row.invoice_date ?? "",
-        invDateObj: row.invoice_date ? new Date(row.invoice_date) : new Date(),
-        dept: row.dept_name,
-        client: row.client_name,
-        entity: row.entity_name,
-        invValue: Number(row.invoice_value ?? 0),
-        vertoFee: Number(row.verto_fee ?? 0),
+          // ── DATES ──
+          invoice_date: row.invoice_date ?? "",
+          expected_collection_date: row.expected_collection_date ?? "",
+          impact_month: row.impact_month ?? "",
 
-        // ✅ EXTRA
-        totalReceived: Number(row.amount_received ?? 0),
-        bounce: Number(row.total_bounce ?? 0),
-        cnBadDebt: Number(row.total_cn ?? 0),
-        notRecvd: Number(row.outstanding ?? 0),
-        delayDays: Number(row.delay_days ?? 0),
+          invDate: row.invoice_date ?? "",
+          invDateObj: row.invoice_date
+            ? new Date(row.invoice_date)
+            : new Date(),
 
-        // ✅ OS
-        employee_count: row.employee_count ?? 0,
-        gross_value: row.gross_value ?? 0,
-        net_in_hand: row.net_in_hand ?? 0,
-        co_pf: row.co_pf ?? 0,
-        co_esi: row.co_esi ?? 0,
-        lwf_tax: row.lwf_tax ?? 0,
-        pt_tax: row.pt_tax ?? 0,
-        other_ded: row.other_ded ?? 0,
-        ctc: row.ctc ?? 0,
+          impactMonth: row.impact_month ?? "",
 
-        status:
-          row.outstanding === 0
-            ? "paid"
-            : row.delay_days > 30
-            ? "overdue"
-            : row.delay_days > 0
-            ? "pending"
-            : "fresh",
-      }));
+          // ── FINANCIAL ──
+          pay: Number(row.pay ?? 0),
+          pay_head: row.pay_head ?? "",
+
+          verto_fee: Number(row.verto_fee ?? 0),
+          gst: Number(row.gst ?? 0),
+          tds: Number(row.tds ?? 0),
+
+          invoice_value: Number(row.invoice_value ?? 0),
+
+          receivable_amount: receivableAmount,
+
+          // ── PAYMENT BREAKDOWN ──
+          totalReceived: Number(row.total_paid ?? row.amount_received ?? 0),
+
+          totalBillableExpenses: Number(row.total_billable_expenses ?? 0),
+
+          bounce: Number(row.total_bounce ?? 0),
+
+          cnBadDebt: Number(row.total_cn ?? 0),
+
+          netReceived: Number(row.net_received ?? 0),
+
+          // ── UI FIELDS ──
+          dept: row.dept_name,
+          client: row.client_name,
+          entity: row.entity_name,
+
+          invValue: Number(row.invoice_value ?? 0),
+
+          vertoFee: Number(row.verto_fee ?? 0),
+
+          // ✅ KEY FIX
+          notRecvd: outstanding,
+
+          delayDays: Number(row.delay_days ?? 0),
+
+          // ── OS FIELDS ──
+          employee_count: row.employee_count ?? 0,
+          gross_value: row.gross_value ?? 0,
+          net_in_hand: row.net_in_hand ?? 0,
+
+          co_pf: row.co_pf ?? 0,
+          co_esi: row.co_esi ?? 0,
+
+          lwf_tax: row.lwf_tax ?? 0,
+          pt_tax: row.pt_tax ?? 0,
+
+          other_ded: row.other_ded ?? 0,
+          ctc: row.ctc ?? 0,
+
+          // ── STATUS ──
+          status:
+            outstanding <= 0
+              ? "paid"
+              : Number(row.delay_days ?? 0) > 30
+              ? "overdue"
+              : Number(row.delay_days ?? 0) > 0
+              ? "pending"
+              : "fresh",
+        };
+      });
       console.log("🔥 FORMATTED DATA:", formatted);
 
       setDbData(formatted);

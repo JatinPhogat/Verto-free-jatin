@@ -384,7 +384,7 @@ const BankReco = () => {
   const [remainingBalance, setRemainingBalance] = useState(0);
   const [showEntryModal, setShowEntryModal] = useState(false);
 
-  // ✅ NEW — Bank Transfer states
+  // Bank Transfer states
   const [showTransferModal, setShowTransferModal] = useState(false);
   const [showTransferHistory, setShowTransferHistory] = useState(false);
   const [transfers, setTransfers] = useState([]);
@@ -409,12 +409,48 @@ const BankReco = () => {
     if (!error) setBanks(data);
   };
 
+  // ✅ FIXED — fetchEntries now includes payments_made and expenses
   const fetchEntries = async () => {
     const { data, error } = await supabase
       .from("bank_entries")
       .select("*, bank_master(bank_name)")
       .order("date", { ascending: false });
-    if (!error) setEntries(data);
+
+    const { data: paymentsMade } = await supabase
+      .from("payments_made")
+      .select("*");
+
+    const { data: expenses } = await supabase
+      .from("expenses")
+      .select("*");
+
+    const paymentRows =
+      paymentsMade?.map((p) => ({
+        ...p,
+        entry_type: "payment_made",
+        type: "debit",
+        amount: -Math.abs(Number(p.amount)),
+        date: p.payment_date,
+        bank_master: null,
+      })) || [];
+
+    const expenseRows =
+      expenses?.map((e) => ({
+        ...e,
+        entry_type: "expense",
+        type: "debit",
+        amount: -Math.abs(Number(e.amount)),
+        date: e.payment_date,
+        bank_master: null,
+      })) || [];
+
+    if (!error) {
+      setEntries([
+        ...(data || []),
+        ...paymentRows,
+        ...expenseRows,
+      ]);
+    }
   };
 
   const fetchSoftwareEntries = async () => {
@@ -425,7 +461,7 @@ const BankReco = () => {
     if (!error) setSoftwareEntries(data);
   };
 
-  // ✅ NEW — Fetch transfers
+  // Fetch transfers
   const fetchTransfers = async () => {
     const { data, error } = await supabase
       .from("bank_transfer_view")
@@ -500,6 +536,8 @@ const BankReco = () => {
             ? "Payment Received"
             : entry.entry_type === "payment_made"
             ? "Payment Made"
+            : entry.entry_type === "expense"
+            ? "Expense"
             : "Other",
         amount:
           entry.type === "debit"
@@ -535,7 +573,7 @@ const BankReco = () => {
     fetchEntries();
     fetchSoftwareEntries();
     fetchFundFlowProjection();
-    fetchTransfers(); // ✅ NEW
+    fetchTransfers();
   }, []);
 
   useEffect(() => {
@@ -578,7 +616,7 @@ const BankReco = () => {
     return () => supabase.removeChannel(channel);
   }, []);
 
-  // ✅ NEW — realtime for transfers
+  // Realtime for transfers
   useEffect(() => {
     const channel = supabase
       .channel("bank-transfers-live")
@@ -586,6 +624,24 @@ const BankReco = () => {
         "postgres_changes",
         { event: "*", schema: "public", table: "bank_transfers" },
         () => fetchTransfers()
+      )
+      .subscribe();
+    return () => supabase.removeChannel(channel);
+  }, []);
+
+  // ✅ NEW — Realtime listeners for payments_made and expenses
+  useEffect(() => {
+    const channel = supabase
+      .channel("payments-expenses-live")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "payments_made" },
+        () => fetchEntries()
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "expenses" },
+        () => fetchEntries()
       )
       .subscribe();
     return () => supabase.removeChannel(channel);
@@ -1280,7 +1336,7 @@ const BankReco = () => {
                       </div>
                     </Card>
 
-                    {/* ✅ UPDATED Quick Actions with Bank Transfer */}
+                    {/* Quick Actions with Bank Transfer */}
                     <Card className="p-4 bg-blue-50 border-blue-200">
                       <h4 className="text-sm font-semibold text-blue-900 mb-3">
                         Quick Actions
@@ -1325,14 +1381,13 @@ const BankReco = () => {
                           Add Bank Entry
                         </Button>
 
-                        {/* ✅ NEW — Bank to Bank Transfer section */}
+                        {/* Bank to Bank Transfer section */}
                         <div className="pt-2 border-t border-blue-200 mt-2">
                           <p className="text-xs font-semibold text-blue-800 uppercase tracking-wider mb-2 flex items-center gap-1">
                             <ArrowLeftRight className="w-3 h-3" />
                             Bank to Bank Transfer
                           </p>
 
-                          {/* Transfer button */}
                           <Button
                             className="w-full justify-start bg-indigo-600 hover:bg-indigo-700 text-white border-0 mb-2"
                             size="sm"
@@ -1345,7 +1400,6 @@ const BankReco = () => {
                             New Transfer
                           </Button>
 
-                          {/* History button */}
                           <Button
                             className="w-full justify-start"
                             variant="outline"

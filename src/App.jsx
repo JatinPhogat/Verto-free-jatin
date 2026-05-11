@@ -69,9 +69,9 @@ const App = () => {
     "Wayne Ent",
   ];
 
-useEffect(() => {
-  window.setActiveTab = setActiveTab;   // ✅ THIS FIXES YOUR ERROR
-}, []);
+  useEffect(() => {
+    window.setActiveTab = setActiveTab; // ✅ THIS FIXES YOUR ERROR
+  }, []);
 
   // Mock entities list
   const entities = ["Verto India Pvt Ltd", "Verto Global LLC", "Verto UK Ltd"];
@@ -92,8 +92,8 @@ useEffect(() => {
   ];
   const { user, role, loading } = useAuth();
 
-if (loading) return <div>Loading...</div>;
-if (!user) return <Login />;
+  if (loading) return <div>Loading...</div>;
+  if (!user) return <Login />;
 
   // Navigation Items Configuration
   const navItems = [
@@ -216,69 +216,68 @@ if (!user) return <Login />;
           </AnimatePresence>
 
           {navItems.map((item, idx) => {
+            // 🔴 MANAGER restriction
+            if (role === "manager" && item.id === "bank-reco") return null;
 
-  // 🔴 MANAGER restriction
-  if (role === "manager" && item.id === "bank-reco") return null;
+            // 🔴 EMPLOYEE restriction (hide all main modules)
+            if (role === "employee") return null;
 
-  // 🔴 EMPLOYEE restriction (hide all main modules)
-  if (role === "employee") return null;
-
-  return (
-            <motion.button
-              key={item.id}
-              onClick={() => setActiveTab(item.id)}
-              whileHover={{ scale: 1.02 }}
-              whileTap={{ scale: 0.98 }}
-              className={`w-full flex items-center space-x-3 px-3 py-3 rounded-xl transition-all duration-200 group relative mb-1 ${
-                activeTab === item.id
-                  ? "bg-blue-50 text-blue-600 shadow-sm"
-                  : "text-gray-600 hover:bg-gray-100 hover:text-gray-900"
-              }`}
-            >
-              <div
-                className={`min-w-[24px] ${
+            return (
+              <motion.button
+                key={item.id}
+                onClick={() => setActiveTab(item.id)}
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.98 }}
+                className={`w-full flex items-center space-x-3 px-3 py-3 rounded-xl transition-all duration-200 group relative mb-1 ${
                   activeTab === item.id
-                    ? "text-blue-600"
-                    : "text-gray-400 group-hover:text-gray-600"
+                    ? "bg-blue-50 text-blue-600 shadow-sm"
+                    : "text-gray-600 hover:bg-gray-100 hover:text-gray-900"
                 }`}
               >
-                <item.icon className="w-5 h-5" />
-              </div>
+                <div
+                  className={`min-w-[24px] ${
+                    activeTab === item.id
+                      ? "text-blue-600"
+                      : "text-gray-400 group-hover:text-gray-600"
+                  }`}
+                >
+                  <item.icon className="w-5 h-5" />
+                </div>
 
-              <AnimatePresence>
-                {isSidebarOpen && (
-                  <motion.div
-                    initial={{ opacity: 0, width: 0 }}
-                    animate={{ opacity: 1, width: "auto" }}
-                    exit={{ opacity: 0, width: 0 }}
-                    className="overflow-hidden text-left"
-                  >
-                    <span className="font-medium text-sm whitespace-nowrap block">
-                      {item.label}
-                    </span>
-                    <span
-                      className={`text-[10px] block leading-tight ${
-                        activeTab === item.id
-                          ? "text-blue-500"
-                          : "text-gray-500"
-                      }`}
+                <AnimatePresence>
+                  {isSidebarOpen && (
+                    <motion.div
+                      initial={{ opacity: 0, width: 0 }}
+                      animate={{ opacity: 1, width: "auto" }}
+                      exit={{ opacity: 0, width: 0 }}
+                      className="overflow-hidden text-left"
                     >
-                      {item.desc}
-                    </span>
-                  </motion.div>
-                )}
-              </AnimatePresence>
+                      <span className="font-medium text-sm whitespace-nowrap block">
+                        {item.label}
+                      </span>
+                      <span
+                        className={`text-[10px] block leading-tight ${
+                          activeTab === item.id
+                            ? "text-blue-500"
+                            : "text-gray-500"
+                        }`}
+                      >
+                        {item.desc}
+                      </span>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
 
-              {activeTab === item.id && (
-                <motion.div
-                  layoutId="activeIndicator"
-                  className="absolute left-0 w-1 h-8 bg-blue-600 rounded-r-full"
-                  transition={{ type: "spring", stiffness: 300, damping: 30 }}
-                />
-              )}
-            </motion.button>
-       );
-})}
+                {activeTab === item.id && (
+                  <motion.div
+                    layoutId="activeIndicator"
+                    className="absolute left-0 w-1 h-8 bg-blue-600 rounded-r-full"
+                    transition={{ type: "spring", stiffness: 300, damping: 30 }}
+                  />
+                )}
+              </motion.button>
+            );
+          })}
 
           {/* Quick Actions Section */}
           <div className="mt-8">
@@ -372,90 +371,92 @@ if (!user) return <Login />;
           <div className="absolute top-1/2 -left-20 w-72 h-72 bg-blue-500/5 rounded-full blur-3xl"></div>
         </div>
 
-{/* Header */}
-<header className="h-16 bg-white/80 backdrop-blur-xl border-b border-gray-200 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 px-8 z-10 sticky top-0 shadow-sm">
-  <div>
-    <motion.h1
-      key={activeTab}
-      initial={{ opacity: 0, y: -10 }}
-      animate={{ opacity: 1, y: 0 }}
-      className="text-xl font-semibold text-gray-900"
-    >
-      {navItems.find((n) => n.id === activeTab)?.label}
-    </motion.h1>
-    <p className="text-xs text-gray-500">
-      {navItems.find((n) => n.id === activeTab)?.desc}
-    </p>
-  </div>
+        {/* Header */}
+        <header className="h-16 bg-white/80 backdrop-blur-xl border-b border-gray-200 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 px-8 z-10 sticky top-0 shadow-sm">
+          <div>
+            <motion.h1
+              key={activeTab}
+              initial={{ opacity: 0, y: -10 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="text-xl font-semibold text-gray-900"
+            >
+              {navItems.find((n) => n.id === activeTab)?.label}
+            </motion.h1>
+            <p className="text-xs text-gray-500">
+              {navItems.find((n) => n.id === activeTab)?.desc}
+            </p>
+          </div>
 
-  <div className="flex items-center space-x-4">
-    <div className="flex items-center space-x-3 relative">
-      <div className="text-right hidden sm:block">
-        <p className="text-sm font-medium text-gray-900">Admin User</p>
-        <p className="text-xs text-gray-500">Finance Manager</p>
-      </div>
-      <button
-        onClick={() => setShowProfileMenu(!showProfileMenu)}
-        className="w-10 h-10 rounded-full bg-gradient-to-tr from-emerald-500 to-blue-500 border-2 border-white shadow-lg hover:shadow-xl transition-shadow cursor-pointer"
-      ></button>
-
-      {/* Profile Dropdown Menu */}
-      <AnimatePresence>
-        {showProfileMenu && (
-          <motion.div
-            initial={{ opacity: 0, y: -10, scale: 0.95 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: -10, scale: 0.95 }}
-            transition={{ duration: 0.2 }}
-            className="absolute top-full right-0 mt-2 w-56 bg-white border border-gray-200 rounded-xl shadow-xl py-2 z-50"
-          >
-            <div className="px-4 py-3 border-b border-gray-100">
-              <p className="text-sm font-medium text-gray-900">Admin User</p>
-              <p className="text-xs text-gray-500">admin@verto.com</p>
-            </div>
-
-            <button className="w-full flex items-center space-x-3 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors">
-              <Settings className="w-4 h-4" />
-              <span>Account Settings</span>
-            </button>
-
-            {/* ✅ ADMIN ONLY */}
-            {role === "admin" && (
+          <div className="flex items-center space-x-4">
+            <div className="flex items-center space-x-3 relative">
+              <div className="text-right hidden sm:block">
+                <p className="text-sm font-medium text-gray-900">Admin User</p>
+                <p className="text-xs text-gray-500">Finance Manager</p>
+              </div>
               <button
-                onClick={() => {
-                  setShowUserManagement(true);
-                  setShowProfileMenu(false);
-                }}
-                className="w-full flex items-center space-x-3 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
-              >
-                <Users className="w-4 h-4" />
-                <span>Manage Team</span>
-              </button>
-            )}
+                onClick={() => setShowProfileMenu(!showProfileMenu)}
+                className="w-10 h-10 rounded-full bg-gradient-to-tr from-emerald-500 to-blue-500 border-2 border-white shadow-lg hover:shadow-xl transition-shadow cursor-pointer"
+              ></button>
 
-            <button className="w-full flex items-center space-x-3 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors">
-              <Activity className="w-4 h-4" />
-              <span>Activity Log</span>
-            </button>
+              {/* Profile Dropdown Menu */}
+              <AnimatePresence>
+                {showProfileMenu && (
+                  <motion.div
+                    initial={{ opacity: 0, y: -10, scale: 0.95 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, y: -10, scale: 0.95 }}
+                    transition={{ duration: 0.2 }}
+                    className="absolute top-full right-0 mt-2 w-56 bg-white border border-gray-200 rounded-xl shadow-xl py-2 z-50"
+                  >
+                    <div className="px-4 py-3 border-b border-gray-100">
+                      <p className="text-sm font-medium text-gray-900">
+                        Admin User
+                      </p>
+                      <p className="text-xs text-gray-500">admin@verto.com</p>
+                    </div>
 
-            <div className="border-t border-gray-100 mt-1 pt-1">
-              <button
-                onClick={async () => {
-                  await supabase.auth.signOut();
-                  window.location.reload();
-                }}
-                className="w-full flex items-center space-x-3 px-4 py-2.5 text-sm text-rose-600 hover:bg-rose-50 transition-colors"
-              >
-                <LogOut className="w-4 h-4" />
-                <span>Logout</span>
-              </button>
+                    <button className="w-full flex items-center space-x-3 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors">
+                      <Settings className="w-4 h-4" />
+                      <span>Account Settings</span>
+                    </button>
+
+                    {/* ✅ ADMIN ONLY */}
+                    {role === "admin" && (
+                      <button
+                        onClick={() => {
+                          setShowUserManagement(true);
+                          setShowProfileMenu(false);
+                        }}
+                        className="w-full flex items-center space-x-3 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+                      >
+                        <Users className="w-4 h-4" />
+                        <span>Manage Team</span>
+                      </button>
+                    )}
+
+                    <button className="w-full flex items-center space-x-3 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors">
+                      <Activity className="w-4 h-4" />
+                      <span>Activity Log</span>
+                    </button>
+
+                    <div className="border-t border-gray-100 mt-1 pt-1">
+                      <button
+                        onClick={async () => {
+                          await supabase.auth.signOut();
+                          window.location.reload();
+                        }}
+                        className="w-full flex items-center space-x-3 px-4 py-2.5 text-sm text-rose-600 hover:bg-rose-50 transition-colors"
+                      >
+                        <LogOut className="w-4 h-4" />
+                        <span>Logout</span>
+                      </button>
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
             </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </div>
-  </div>
-</header>
+          </div>
+        </header>
 
         {/* Dynamic Content */}
         <div className="flex-1 overflow-y-auto p-4 sm:p-4 sm:p-6 lg:p-8 relative z-0">
@@ -468,35 +469,34 @@ if (!user) return <Login />;
               transition={{ duration: 0.3, ease: "easeOut" }}
               className="max-w-7xl mx-auto"
             >
-             {role !== "employee" ? (
-  <>
-    {activeTab === "dashboard" && (
-      <Dashboard
-        refreshFlag={refreshFlag}
-        setShowInvoiceModal={setShowInvoiceModal}
-        setShowPaymentModal={setShowPaymentModal}
-        setShowCNBadDebtModal={setShowCNBadDebtModal}
-        setShowBounceBackModal={setShowBounceBackModal}
-        setSelectedInvoice={setSelectedInvoice}
-      />
-    )}
+              {role !== "employee" ? (
+                <>
+                  {activeTab === "dashboard" && (
+                    <Dashboard
+                      refreshFlag={refreshFlag}
+                      setShowInvoiceModal={setShowInvoiceModal}
+                      setShowPaymentModal={setShowPaymentModal}
+                      setShowCNBadDebtModal={setShowCNBadDebtModal}
+                      setShowBounceBackModal={setShowBounceBackModal}
+                      setSelectedInvoice={setSelectedInvoice}
+                    />
+                  )}
 
-    {activeTab === "pl-center" && <ProfitCenterPL />}
-    {activeTab === "ledger" && <LedgerPage />}
-    {activeTab === "pl-client" && <ClientPL />}
-    {activeTab === "internal-cost" && <InternalCost />}
-    {activeTab === "internal-team" && <InternalTeamDetails />}
+                  {activeTab === "pl-center" && <ProfitCenterPL />}
+                  {activeTab === "ledger" && <LedgerPage />}
+                  {activeTab === "pl-client" && <ClientPL />}
+                  {activeTab === "internal-cost" && <InternalCost />}
+                  {activeTab === "internal-team" && <InternalTeamDetails />}
 
-    {/* 🔴 Manager restriction inside content */}
-    {!(role === "manager" && activeTab === "bank-reco") && (
-      activeTab === "bank-reco" && <BankReco />
-    )}
-  </>
-) : (
-  <div className="text-center text-gray-500 py-10">
-    Use Quick Actions from sidebar
-  </div>
-)}
+                  {/* 🔴 Manager restriction inside content */}
+                  {!(role === "manager" && activeTab === "bank-reco") &&
+                    activeTab === "bank-reco" && <BankReco />}
+                </>
+              ) : (
+                <div className="text-center text-gray-500 py-10">
+                  Use Quick Actions from sidebar
+                </div>
+              )}
             </motion.div>
           </AnimatePresence>
         </div>
@@ -561,9 +561,11 @@ if (!user) return <Login />;
 
       {/* Add Expense Details Modal */}
       <AddExpenseDetailsModal
-        isOpen={showExpenseDetailsModal}
-        onClose={() => setShowExpenseDetailsModal(false)}
-      />
+  isOpen={showExpenseDetailsModal}
+  onClose={() => setShowExpenseDetailsModal(false)}
+  onSaved={() => setRefreshFlag(!refreshFlag)}
+  invoice={selectedInvoice}
+/>
 
       {/* Add Expense Details/Man Modal */}
       <AddExpenseDetailsManModal
@@ -571,21 +573,19 @@ if (!user) return <Login />;
         onClose={() => setShowExpenseDetailsManModal(false)}
       />
       {showUserManagement && (
-  <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
-    <div className="bg-white p-6 rounded-lg w-[500px] relative">
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+          <div className="bg-white p-6 rounded-lg w-[500px] relative">
+            <button
+              onClick={() => setShowUserManagement(false)}
+              className="absolute top-2 right-2 text-red-500"
+            >
+              ✖
+            </button>
 
-      <button
-        onClick={() => setShowUserManagement(false)}
-        className="absolute top-2 right-2 text-red-500"
-      >
-        ✖
-      </button>
-
-      <UserManagement />
-
-    </div>
-  </div>
-)}
+            <UserManagement />
+          </div>
+        </div>
+      )}
     </div>
   );
 };
