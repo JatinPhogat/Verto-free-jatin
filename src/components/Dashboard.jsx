@@ -10,6 +10,7 @@ import AddInvoiceModal from "./AddInvoiceModal";
 import AddCNBadDebtModal from "./AddCNBadDebtModal";
 import BounceHistoryDrawer from "./BounceHistoryDrawer";
 import CNHistoryDrawer from "./CNHistoryDrawer";
+import PaymentMadeHistoryDrawer from "./Paymentmadehistorydrawer";
 import {
   Search,
   Calendar,
@@ -127,9 +128,13 @@ const Dashboard = ({
   const [showCNBadDebtModal, setShowCNBadDebtModal] = useState(false);
   const [showBounceHistory, setShowBounceHistory] = useState(false);
   const [showCNHistory, setShowCNHistory] = useState(false);
+
+  // ✅ NEW — Payment Made History drawer state
+  const [showPaymentMadeHistory, setShowPaymentMadeHistory] = useState(false);
+  const [paymentMadeHistoryInvoice, setPaymentMadeHistoryInvoice] = useState(null);
+
   const fetchBanks = async () => {
     const { data, error } = await supabase.from("bank_master").select("*");
-
     if (!error) setBanks(data);
   };
 
@@ -292,6 +297,7 @@ const Dashboard = ({
       }
     };
   }, [refreshFlag]); // 🔥 THIS TRIGGERS REFRESH
+
   // Filter states
   const [selectedDepartments, setSelectedDepartments] = useState([]);
   const [selectedClients, setSelectedClients] = useState([]);
@@ -445,6 +451,7 @@ const Dashboard = ({
     if (val === null || val === undefined || isNaN(val)) return "0";
     return Number(val).toLocaleString("en-IN");
   };
+
   const formatDateDisplay = () => {
     if (dateFrom && dateTo) {
       return `${new Date(dateFrom).toLocaleDateString("en-GB", {
@@ -531,13 +538,6 @@ const Dashboard = ({
     (maxInvoiceValue ? 1 : 0) +
     (dateFrom ? 1 : 0) +
     (dateTo ? 1 : 0);
-
-  // 🔥 ADD PAYMENT FUNCTION
-  // ✅ GLOBAL BUTTON HANDLERS (FIX: buttons will work)
-  const handleView = (type, row) => {
-    console.log("VIEW:", type, row);
-    alert(`Viewing ${type} for ${row.id}`);
-  };
 
   const handleEdit = async (type, row) => {
     console.log("🔥 CLICKED ROW:", row);
@@ -701,8 +701,10 @@ const Dashboard = ({
           </Card.Content>
         </Card>
       </div>
+
       <AgingReport />
-      {/* ✅ STEP 5 — RENDER DRAWER HERE */}
+
+      {/* ✅ ALL DRAWERS & MODALS */}
       <PaymentHistoryDrawer
         invoice={historyInvoice}
         isOpen={showPaymentHistory}
@@ -726,19 +728,16 @@ const Dashboard = ({
         invoices={dbData.map((d) => d.id)}
         invoicesData={dbData} // ✅ IMPORTANT
       />
-
       <BounceHistoryDrawer
         invoice={historyInvoice}
         isOpen={showBounceHistory}
         onClose={() => setShowBounceHistory(false)}
       />
-
       <CNHistoryDrawer
         invoice={historyInvoice}
         isOpen={showCNHistory}
         onClose={() => setShowCNHistory(false)}
       />
-
       <AddInvoiceModal
         isOpen={showInvoiceModal}
         onClose={() => {
@@ -748,6 +747,16 @@ const Dashboard = ({
         selectedInvoice={selectedInvoiceData}
         entities={entities} // 🔥 ADD THIS
         clients={clients} // 🔥 ALSO ADD THIS
+      />
+
+      {/* ✅ NEW — Payment Made History Drawer */}
+      <PaymentMadeHistoryDrawer
+        invoice={paymentMadeHistoryInvoice}
+        isOpen={showPaymentMadeHistory}
+        onClose={() => {
+          setShowPaymentMadeHistory(false);
+          setPaymentMadeHistoryInvoice(null);
+        }}
       />
 
       {/* Filter Bar */}
@@ -1313,8 +1322,8 @@ const Dashboard = ({
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
-                            window.ledgerInvoice = row; // store invoice
-                            window.setActiveTab("ledger"); // open ledger page
+                            window.ledgerInvoice = row;
+                            window.setActiveTab("ledger");
                           }}
                           className="p-1.5 hover:bg-blue-50 rounded-lg transition"
                           title="View Ledger"
@@ -1360,7 +1369,7 @@ const Dashboard = ({
                             </div>
 
                             <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
-                              {/* Add Invoice Details */}
+                              {/* Invoice Details */}
                               <div className="bg-white p-4 rounded-xl border border-gray-200">
                                 <p className="text-xs text-gray-600 uppercase mb-3 font-semibold">
                                   Invoice Details
@@ -1404,7 +1413,7 @@ const Dashboard = ({
                                 </div>
                               </div>
 
-                              {/* Add Payment Received */}
+                              {/* Payment Received */}
                               <div className="bg-white p-4 rounded-xl border border-gray-200">
                                 <p className="text-xs text-gray-600 uppercase mb-3 font-semibold">
                                   Payment Received
@@ -1433,42 +1442,37 @@ const Dashboard = ({
                                 </div>
                               </div>
 
-                              {/* Add Payment Made */}
+                              {/* Payment Made */}
                               <div className="bg-white p-4 rounded-xl border border-gray-200">
                                 <p className="text-xs text-gray-600 uppercase mb-3 font-semibold">
                                   Payment Made
                                 </p>
                                 <div className="space-y-2">
+                                  {/* ✅ FIXED — opens PaymentMadeHistoryDrawer */}
                                   <button
                                     onClick={(e) => {
                                       e.stopPropagation();
-                                      handleView("Payment Made", row);
+                                      setPaymentMadeHistoryInvoice(row);
+                                      setShowPaymentMadeHistory(true);
                                     }}
                                     className="w-full px-3 py-2 bg-blue-50 hover:bg-blue-100 text-blue-600 rounded-lg transition-colors text-sm font-medium"
                                   >
                                     View
                                   </button>
                                   <button
-                                    onClick={() => {
-                                      console.log("🔥 PAYMENT MADE ROW:", row);
-
+                                    onClick={(e) => {
+                                      e.stopPropagation();
                                       setPaymentMadeInvoice({
                                         ...row,
-
-                                        // 🔥 IMPORTANT
                                         dbId: row.dbId || row.id,
-
                                         invoice_number:
                                           row.invoice_number || row.id,
-
                                         bank_id: row.bank_id || "",
-
                                         entity:
                                           row.entity ||
                                           row.entity_name ||
                                           "Pvt Ltd",
                                       });
-
                                       setShowPaymentMadeModal(true);
                                     }}
                                     className="w-full px-3 py-2 bg-gray-50 hover:bg-gray-100 text-gray-700 rounded-lg transition-colors text-sm font-medium"
@@ -1478,7 +1482,7 @@ const Dashboard = ({
                                 </div>
                               </div>
 
-                              {/* Add Bounce Back */}
+                              {/* Bounce Back */}
                               <div className="bg-white p-4 rounded-xl border border-gray-200">
                                 <p className="text-xs text-gray-600 uppercase mb-3 font-semibold">
                                   Bounce Back
@@ -1506,7 +1510,7 @@ const Dashboard = ({
                                 </div>
                               </div>
 
-                              {/* Add CN / Bad Debt */}
+                              {/* CN / Bad Debt */}
                               <div className="bg-white p-4 rounded-xl border border-gray-200">
                                 <p className="text-xs text-gray-600 uppercase mb-3 font-semibold">
                                   CN / Bad Debt
