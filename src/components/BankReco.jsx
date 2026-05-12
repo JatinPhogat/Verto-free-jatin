@@ -119,7 +119,7 @@ const BankTransferModal = ({
       } else {
         const referenceNo = "TRF-" + Date.now();
 
-        const { error } = await supabase
+        const { data: transferData, error } = await supabase
           .from("bank_transfers")
           .insert([
             {
@@ -130,9 +130,47 @@ const BankTransferModal = ({
               remarks: form.remarks,
               reference_no: referenceNo,
             },
-          ]);
+          ])
+          .select()
+          .single();
 
         if (error) throw error;
+
+        // ✅ SENDER DEBIT
+        const { error: senderError } = await supabase
+          .from("bank_entries")
+          .insert([
+            {
+              bank_id: form.sender_bank_id,
+              date: form.transfer_date,
+              amount: parseFloat(form.amount),
+              type: "debit",
+              entity: "Bank Transfer",
+              remarks: `Transfer to another bank`,
+              entry_type: "bank_transfer",
+              reference_no: referenceNo,
+            },
+          ]);
+
+        if (senderError) throw senderError;
+
+        // ✅ RECEIVER CREDIT
+        const { error: receiverError } = await supabase
+          .from("bank_entries")
+          .insert([
+            {
+              bank_id: form.receiver_bank_id,
+              date: form.transfer_date,
+              amount: parseFloat(form.amount),
+              type: "credit",
+              entity: "Bank Transfer",
+              remarks: `Transfer received`,
+              entry_type: "bank_transfer",
+              reference_no: referenceNo,
+            },
+          ]);
+
+        if (receiverError) throw receiverError;
       }
       onSaved?.();
       onClose();
@@ -479,45 +517,27 @@ const BankReco = () => {
       .select("*, bank_master(bank_name)")
       .order("date", { ascending: false });
 
-    const { data: paymentsMade } = await supabase
-      .from("payments_made")
-      .select("*");
-    const { data: expenses } = await supabase.from("expenses").select("*");
-
-    const paymentRows =
-      paymentsMade?.map((p) => ({
-        ...p,
-        entry_type: "payment_made",
-        type: "debit",
-        amount: Math.abs(Number(p.amount)),
-        date: p.payment_date,
-        bank_master: null,
-      })) || [];
-
-    const expenseRows =
-      expenses?.map((e) => ({
-        ...e,
-        entry_type: "expense",
-        type: "debit",
-        amount: Math.abs(Number(e.amount)),
-        date: e.payment_date,
-        bank_master: null,
-      })) || [];
-
     if (!error) {
-      const cleanedBankEntries = (data || []).filter(
-        (entry, index, self) =>
-          index ===
-          self.findIndex(
-            (e) =>
-              e.reference_no === entry.reference_no &&
-              e.bank_id === entry.bank_id &&
-              e.type === entry.type &&
-              e.amount === entry.amount
-          )
-      );
+      const uniqueEntries = [];
 
-      setEntries([...cleanedBankEntries, ...paymentRows, ...expenseRows]);
+      const seen = new Set();
+
+      (data || []).forEach((entry) => {
+        const uniqueKey = `
+            ${entry.reference_no || ""}
+            -${entry.bank_id || ""}
+            -${entry.amount || ""}
+            -${entry.date || ""}
+            -${entry.entry_type || ""}
+          `;
+
+        if (!seen.has(uniqueKey)) {
+          seen.add(uniqueKey);
+          uniqueEntries.push(entry);
+        }
+      });
+
+      setEntries(uniqueEntries);
     }
   };
 
@@ -526,15 +546,7 @@ const BankReco = () => {
       .from("software_entries")
       .select("*")
       .order("date", { ascending: false });
-
-    if (!error) {
-      // ✅ REMOVE TRANSFER EFFECT
-      const cleanedSoftware = (data || []).filter(
-        (e) => e.entry_type !== "bank_transfer"
-      );
-
-      setSoftwareEntries(cleanedSoftware);
-    }
+    if (!error) setSoftwareEntries(data);
   };
   const fetchOutstandingInvoices = async () => {
     const { data, error } = await supabase
@@ -614,10 +626,46 @@ const BankReco = () => {
       }))
     );
   };
+  const calculateSoftwareBalance = async (bankId) => {
+    // PAYMENT RECEIVED
+    const { data: received } = await supabase
+      .from("payments_received")
+      .select("*")
+      .eq("bank_id", bankId);
+
+    // PAYMENT MADE
+    const { data: made } = await supabase
+      .from("payments_made")
+      .select("*")
+      .eq("bank_id", bankId);
+
+    // EXPENSES
+    const { data: expenses } = await supabase
+      .from("expenses")
+      .select("*")
+      .eq("bank_id", bankId);
+
+    let credit = 0;
+    let debit = 0;
+
+    received?.forEach((r) => {
+      credit += Number(r.amount_received || 0);
+    });
+
+    made?.forEach((m) => {
+      debit += Number(m.transfer_amount || m.amount || 0);
+    });
+
+    expenses?.forEach((e) => {
+      debit += Number(e.amount || 0);
+    });
+
+    return credit - debit;
+  };
 
   // ─── BUILD BANK RECO DATA ─────────────────────────────────────────────────
 
-  const buildBankRecoData = () => {
+  const buildBankRecoData = async () => {
     const grouped = {};
 
     entries.forEach((entry) => {
@@ -648,36 +696,35 @@ const BankReco = () => {
       } else {
         grouped[key].asPerBankTotalBal += Math.abs(amt);
       }
-      // ✅ PREVENT DUPLICATE TRANSFER
-      const alreadyExists = grouped[key].manualEntries.find(
-        (e) =>
-          e.reference_no === entry.reference_no &&
-          e.amount ===
-            (entry.type === "debit"
-              ? -Math.abs(entry.amount)
-              : Math.abs(entry.amount))
-      );
-
-      if (alreadyExists) return;
-      
+      const flowType =
+        entry.flow_type ||
+        entry.category ||
+        entry.payment_type ||
+        entry.expense_type ||
+        "";
 
       grouped[key].manualEntries.push({
         date: entry.date,
-        reference_no: entry.reference_no,
 
         entity: entry.entity || "Verto India Pvt Ltd",
 
         transactionLabel:
-          entry.entry_type === "invoice"
-            ? "Invoice Payment"
-            : entry.entry_type === "petty_cash"
+          flowType === "petty_cash"
             ? "Petty Cash"
+            : flowType === "salary"
+            ? "Salary Payout"
+            : flowType === "expense"
+            ? "Expense"
+            : flowType === "travel"
+            ? "Travel Expense"
+            : flowType === "food"
+            ? "Food Expense"
+            : flowType === "penalty"
+            ? "Interest / Penalty"
             : entry.entry_type === "payment_received"
             ? "Payment Received"
             : entry.entry_type === "payment_made"
             ? "Payment Made"
-            : entry.entry_type === "expense"
-            ? "Expense"
             : entry.entry_type === "employee_payout"
             ? "Employee Payout"
             : entry.entry_type === "statutory_payment"
@@ -685,28 +732,10 @@ const BankReco = () => {
             : entry.entry_type === "interest_penalty"
             ? "Interest / Penalty"
             : entry.entry_type === "bank_transfer"
-            ? entry.remarks ||
-              (entry.type === "debit"
-                ? "Transfer to another bank"
-                : "Transfer received")
-            : entry.entry_type === "bank_balance_adjustment"
-            ? "Bank Balance Adjustment"
+            ? "Bank Transfer"
             : entry.entry_type === "manual_adjustment"
             ? "Manual Entry"
-            : entry.entry_type === "bank_credit"
-            ? "Bank Credit"
-            : entry.entry_type === "bank_debit"
-            ? "Bank Debit"
-            : entry.entry_type === "salary"
-            ? "Salary Payout"
-            : entry.entry_type === "gst_payment"
-            ? "GST Payment"
-            : entry.entry_type === "tds_payment"
-            ? "TDS Payment"
-            : entry.entry_type === "bounce_charge"
-            ? "Bounce Charge"
             : "Other",
-
         amount:
           entry.type === "debit"
             ? -Math.abs(entry.amount)
@@ -723,115 +752,51 @@ const BankReco = () => {
     const runningBankBalances = {};
     const runningSoftwareBalances = {};
 
-    const finalData = sortedRows.map((row) => {
-      const bankId = row.bank_id;
+    const finalData = await Promise.all(
+      sortedRows.map(async (row) => {
+        const bankId = row.bank_id;
 
-      // ✅ Previous closing balance
-      const previousBankBalance = runningBankBalances[bankId] || 0;
-      const previousSoftwareBalance = runningSoftwareBalances[bankId] || 0;
+        // ✅ Previous closing balance
+        const previousBankBalance = runningBankBalances[bankId] || 0;
+        const previousSoftwareBalance = runningSoftwareBalances[bankId] || 0;
 
-      // =====================================================
-      // SOFTWARE EXPECTED BALANCE
-      // =====================================================
+        // =====================================================
+        // SOFTWARE EXPECTED BALANCE
+        // =====================================================
 
-      const today = new Date().toISOString().split("T")[0];
+        // =====================================================
+        // SOFTWARE EXPECTED BALANCE
+        // =====================================================
 
-      // ✅ ACTUAL CREDIT ENTRIES
+        const currentSoftwareMovement = await calculateSoftwareBalance(bankId);
 
-      // ✅ CURRENT MONTH ONLY
-      const currentMonthEntries = entries.filter((e) => {
-        if (!e.bank_id) return false;
+        // ✅ Current month bank movement
+        const currentBankMovement = row.asPerBankTotalBal;
 
-        const entryMonth = new Date(e.date).toISOString().slice(0, 7);
+        // ✅ Running closing balance
+        row.asPerBankTotalBal = previousBankBalance + currentBankMovement;
 
-        return (
-          String(e.bank_id) === String(bankId) &&
-          entryMonth === row.month &&
-          e.entry_type !== "bank_transfer"
-        );
-      });
+        row.asPerSwTotalBal = previousSoftwareBalance + currentSoftwareMovement;
 
-      // ✅ CREDITS
-      const actualCredits = currentMonthEntries
-        .filter((e) => String(e.type).toLowerCase() === "credit")
-        .reduce((sum, e) => {
-          return sum + Math.abs(Number(e.amount || 0));
-        }, 0);
+        // ✅ Running closing balance
+        row.asPerBankTotalBal = previousBankBalance + currentBankMovement;
 
-      // ✅ DEBITS
-      const actualDebits = currentMonthEntries
-        .filter((e) => String(e.type).toLowerCase() === "debit")
-        .reduce((sum, e) => {
-          return sum + Math.abs(Number(e.amount || 0));
-        }, 0);
+        row.asPerSwTotalBal = previousSoftwareBalance + currentSoftwareMovement;
 
-      // ✅ DUE RECEIVABLES TILL TODAY
+        // ✅ Save running balance for next month
+        runningBankBalances[bankId] = row.asPerBankTotalBal;
 
-      const dueReceivables = outstandingInvoices
-        .filter((i) => {
-          return (
-            String(i.bank_id) === String(bankId) &&
-            i.expected_collection_date &&
-            i.expected_collection_date <= today &&
-            Number(i.outstanding || 0) > 0
-          );
-        })
-        .reduce((sum, i) => {
-          return sum + Number(i.outstanding || 0);
-        }, 0);
+        runningSoftwareBalances[bankId] = row.asPerSwTotalBal;
 
-      // ✅ GST + TDS DUE TILL TODAY
+        row.difference = row.asPerBankTotalBal - row.asPerSwTotalBal;
 
-      const dueTaxes = outstandingInvoices
-        .filter((i) => {
-          return (
-            String(i.bank_id) === String(bankId) &&
-            i.expected_collection_date &&
-            i.expected_collection_date <= today
-          );
-        })
-        .reduce((sum, i) => {
-          return sum + Number(i.gst || 0) + Number(i.tds || 0);
-        }, 0);
+        row.remainingBalance = Math.abs(row.difference);
 
-      // ✅ FINAL SOFTWARE BALANCE
+        row.status = row.difference < 50000 ? "reconciled" : "pending";
 
-      const unpaidPenalties = interestPenalties
-        .filter((p) => {
-          return String(p.bank_id) === String(bankId) && p.status === "unpaid";
-        })
-        .reduce((sum, p) => {
-          return sum + Number(p.amount || 0);
-        }, 0);
-
-      const currentSoftwareMovement =
-        actualCredits +
-        dueReceivables -
-        actualDebits -
-        dueTaxes -
-        unpaidPenalties;
-
-      // ✅ Current month bank movement
-      const currentBankMovement = row.asPerBankTotalBal;
-
-      // ✅ Running closing balance
-      row.asPerBankTotalBal = previousBankBalance + currentBankMovement;
-
-      row.asPerSwTotalBal = previousSoftwareBalance + currentSoftwareMovement;
-
-      // ✅ Save running balance for next month
-      runningBankBalances[bankId] = row.asPerBankTotalBal;
-
-      runningSoftwareBalances[bankId] = row.asPerSwTotalBal;
-
-      row.difference = row.asPerBankTotalBal - row.asPerSwTotalBal;
-
-      row.remainingBalance = Math.abs(row.difference);
-
-      row.status = row.difference < 50000 ? "reconciled" : "pending";
-
-      return row;
-    });
+        return row;
+      })
+    );
 
     setBankData(finalData.reverse());
   };
@@ -849,7 +814,9 @@ const BankReco = () => {
   }, []);
 
   useEffect(() => {
-    buildBankRecoData();
+    (async () => {
+      await buildBankRecoData();
+    })();
   }, [entries, softwareEntries, outstandingInvoices]);
 
   useEffect(() => {

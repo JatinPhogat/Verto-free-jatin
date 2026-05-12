@@ -156,23 +156,6 @@ const AddPaymentMadeModal = ({ isOpen, onClose, invoice, onSaved }) => {
       ]);
       if (payError) throw payError;
 
-      /* 2. bank_entries (debit) */
-      const { error: bankError } = await supabase.from("bank_entries").insert([
-        {
-          bank_id:        resolvedBankId,
-          entity:         resolvedEntity,
-          amount:         -numAmount,
-          date,
-          type:           "debit",
-          remarks:        remarks || "Payment Made",
-          entry_type:     "payment_made",
-          reference_no:   "BNK-" + Date.now(),
-          invoice_number: paymentType === "Invoice" ? resolvedInvoiceNumber : null,
-          invoice_id:     paymentType === "Invoice" ? resolvedInvoiceId : null,
-        },
-      ]);
-      if (bankError) throw bankError;
-
       /* 3. software_entries */
       const { error: swError } = await supabase.from("software_entries").insert([
         {

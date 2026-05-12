@@ -171,7 +171,6 @@ const AddExpenseDetailsManModal = ({ isOpen, onClose, onSaved }) => {
     paymentHeader: "",
     paymentAmount: "",
     incomeTax: "",
-    netPayment: "",
     paymentDescription: "",
     monthOfPay: "",
     dateOfPay: "",
@@ -270,15 +269,6 @@ const AddExpenseDetailsManModal = ({ isOpen, onClose, onSaved }) => {
     }));
   }, [intForm.empCode, employees]);
 
-  // ── Auto-calc net payment (Internal) ──
-  useEffect(() => {
-    const amt = parseFloat(intForm.paymentAmount) || 0;
-    const tax = parseFloat(intForm.incomeTax) || 0;
-    setIntForm((prev) => ({
-      ...prev,
-      netPayment: Math.max(amt - tax, 0).toString(),
-    }));
-  }, [intForm.paymentAmount, intForm.incomeTax]);
 
   // ── Reset on close ──
   useEffect(() => {
@@ -295,7 +285,6 @@ const AddExpenseDetailsManModal = ({ isOpen, onClose, onSaved }) => {
         paymentHeader: "",
         paymentAmount: "",
         incomeTax: "",
-        netPayment: "",
         paymentDescription: "",
         monthOfPay: "",
         dateOfPay: "",
@@ -377,6 +366,9 @@ const AddExpenseDetailsManModal = ({ isOpen, onClose, onSaved }) => {
     setErrors(e);
     return Object.keys(e).length === 0;
   };
+  const netPayment =
+  (parseFloat(intForm.paymentAmount) || 0) -
+  (parseFloat(intForm.incomeTax) || 0);
 
   // ── Save Internal ──
   const saveInternal = async () => {
@@ -396,7 +388,7 @@ const AddExpenseDetailsManModal = ({ isOpen, onClose, onSaved }) => {
         payment_description: intForm.paymentDescription,
         payment_amount: parseFloat(intForm.paymentAmount) || 0,
         income_tax_deducted: parseFloat(intForm.incomeTax) || 0,
-        net_payment: parseFloat(intForm.netPayment) || 0,
+        net_payment: Math.max(netPayment, 0),
         month_of_pay: intForm.monthOfPay ? intForm.monthOfPay + "-01" : null,
         date_of_pay: intForm.dateOfPay,
         bank_id: intForm.bankId || null,
@@ -686,7 +678,7 @@ const AddExpenseDetailsManModal = ({ isOpen, onClose, onSaved }) => {
   );
 
   // ─── INTERNAL EMPLOYEE FORM ────────────────────────────────────────────────
-  const InternalForm = () => (
+  const internalFormJSX = (
     <div className="p-6 space-y-5 overflow-y-auto max-h-[calc(90vh-140px)]">
       {/* ── Employee Info ── */}
       <div className="bg-blue-50 rounded-xl p-4 border border-blue-100">
@@ -868,7 +860,7 @@ const AddExpenseDetailsManModal = ({ isOpen, onClose, onSaved }) => {
               </span>
               <input
                 type="number"
-                value={intForm.netPayment}
+                value={Math.max(netPayment, 0)}
                 readOnly
                 className="w-full border border-emerald-200 rounded-lg pl-7 pr-3 py-2.5 text-sm bg-emerald-50 text-emerald-700 font-semibold cursor-not-allowed"
               />
@@ -1470,6 +1462,7 @@ const AddExpenseDetailsManModal = ({ isOpen, onClose, onSaved }) => {
   };
   const hc = headerConfig[selectedOption] || headerConfig["null"];
 
+
   return ReactDOM.createPortal(
     <div className="fixed inset-0 z-[99999]">
       <motion.div
@@ -1542,7 +1535,7 @@ const AddExpenseDetailsManModal = ({ isOpen, onClose, onSaved }) => {
                   animate={{ opacity: 1, x: 0 }}
                   exit={{ opacity: 0, x: -20 }}
                 >
-                  <InternalForm />
+                  {internalFormJSX}
                 </motion.div>
               )}
               {selectedOption === "os" && (

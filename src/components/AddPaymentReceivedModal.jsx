@@ -16,36 +16,25 @@ const AddPaymentReceivedModal = ({
     invoiceNumber: "",
     amountReceived: "",
     dateReceived: "",
-    bankDetails: "",
     entity: "",
     department: "",
     client: "",
     ledgerName: "",
     paymentDescription: "",
     payoutMonth: "",
-    bankDetailsPayout: "",
     remarks: "",
   });
 
-  // ✅ NEW: ref modal state
   const [savedRef, setSavedRef] = useState("");
   const [showRefModal, setShowRefModal] = useState(false);
   const [copied, setCopied] = useState(false);
-
-  React.useEffect(() => {
-    if (invoice && isOpen) {
-      setFormData((prev) => ({
-        ...prev,
-        invoiceNumber: invoice.id,
-      }));
-    }
-  }, [invoice, isOpen]);
-
   const [errors, setErrors] = useState({});
   const [invoiceDetails, setInvoiceDetails] = useState(null);
   const [showErrors, setShowErrors] = useState(false);
   const [banks, setBanks] = useState([]);
+  const [saving, setSaving] = useState(false);
 
+  // ── Fetch banks ──────────────────────────────────────────────
   useEffect(() => {
     const fetchBanks = async () => {
       const { data } = await supabase
@@ -56,9 +45,22 @@ const AddPaymentReceivedModal = ({
     fetchBanks();
   }, []);
 
-  React.useEffect(() => {
+  // ── Pre-fill invoice number from prop ────────────────────────
+  // FIX: use invoice.invoice_number not invoice.id
+  useEffect(() => {
+    if (invoice && isOpen) {
+      setFormData((prev) => ({
+        ...prev,
+        invoiceNumber: invoice.invoice_number || "",
+      }));
+    }
+  }, [invoice, isOpen]);
+
+  // ── Fetch invoice details when invoice number changes ────────
+  useEffect(() => {
     const fetchInvoiceDetails = async () => {
-      if (!formData.invoiceNumber) {
+      const num = formData.invoiceNumber?.trim();
+      if (!num) {
         setInvoiceDetails(null);
         return;
       }
@@ -66,11 +68,12 @@ const AddPaymentReceivedModal = ({
       const { data, error } = await supabase
         .from("outstanding_invoice_view")
         .select("*")
-        .eq("invoice_number", formData.invoiceNumber)
+        .eq("invoice_number", num)
         .maybeSingle();
 
       if (error) {
-        console.error("❌ Fetch error:", error);
+        console.error("Fetch invoice error:", error);
+        setInvoiceDetails(null);
         return;
       }
 
@@ -91,174 +94,171 @@ const AddPaymentReceivedModal = ({
     fetchInvoiceDetails();
   }, [formData.invoiceNumber]);
 
+  // ── Field change handler ─────────────────────────────────────
   const handleChange = (field, value) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
-    if (errors[field]) {
-      setErrors((prev) => ({ ...prev, [field]: "" }));
-    }
+    if (errors[field]) setErrors((prev) => ({ ...prev, [field]: "" }));
   };
 
-  // Generate PayIn reference number
+  // ── Generate advance payment ref ─────────────────────────────
   const generatePayInReference = (clientName, date) => {
-    const clientCode = clientName.substring(0, 2).toUpperCase();
+    const clientCode = (clientName || "XX").substring(0, 2).toUpperCase();
     const dateObj = new Date(date);
-    const day = String(dateObj.getDate()).padStart(2, "0");
+    const day   = String(dateObj.getDate()).padStart(2, "0");
     const month = String(dateObj.getMonth() + 1).padStart(2, "0");
-    const year = String(dateObj.getFullYear()).slice(-2);
+    const year  = String(dateObj.getFullYear()).slice(-2);
     const dateStr = `${day}${month}${year}`;
 
     const storageKey = `payInSeq_${clientCode}_${dateStr}`;
     const currentSeq = parseInt(localStorage.getItem(storageKey) || "0", 10);
     const nextSeq = currentSeq + 1;
-    const seqStr = String(nextSeq).padStart(2, "0");
     localStorage.setItem(storageKey, String(nextSeq));
 
-    return `PI-${clientCode}-${dateStr}-${seqStr}`;
+    return `PI-${clientCode}-${dateStr}-${String(nextSeq).padStart(2, "0")}`;
   };
 
+  // ── Validation ───────────────────────────────────────────────
   const validateForm = () => {
     const newErrors = {};
-    if (!formData.bankId) {
-      newErrors.bankId = "Bank is required";
-    }
+
+    if (!formData.bankId) newErrors.bankId = "Bank is required";
+    if (!formData.amountReceived) newErrors.amountReceived = "Amount is required";
+    if (!formData.dateReceived)   newErrors.dateReceived   = "Date is required";
+
     if (formData.invoiceAvailable === "Yes") {
       if (!formData.invoiceNumber.trim())
         newErrors.invoiceNumber = "Invoice number is required";
-      if (!formData.amountReceived)
-        newErrors.amountReceived = "Amount is required";
-      if (!formData.dateReceived) newErrors.dateReceived = "Date is required";
-      if (!formData.bankDetails.trim())
-        newErrors.bankDetails = "Bank details are required";
+      if (formData.invoiceNumber.trim() && !invoiceDetails)
+        newErrors.invoiceNumber = "Invoice not found — check the number";
     } else {
-      if (!formData.entity) newErrors.entity = "Entity is required";
-      if (!formData.department) newErrors.department = "Department is required";
-      if (!formData.client.trim()) newErrors.client = "Client is required";
-      if (!formData.ledgerName.trim())
-        newErrors.ledgerName = "Ledger name is required";
+      if (!formData.entity)              newErrors.entity              = "Entity is required";
+      if (!formData.department)          newErrors.department          = "Department is required";
+      if (!formData.client.trim())       newErrors.client              = "Client is required";
+      if (!formData.ledgerName.trim())   newErrors.ledgerName          = "Ledger name is required";
       if (!formData.paymentDescription.trim())
         newErrors.paymentDescription = "Payment description is required";
-      if (!formData.amountReceived)
-        newErrors.amountReceived = "Amount is required";
-      if (!formData.payoutMonth.trim())
-        newErrors.payoutMonth = "Payout month is required";
-      if (!formData.dateReceived) newErrors.dateReceived = "Date is required";
-      if (!formData.bankId) {
-        newErrors.bankId = "Bank is required";
-      }
+      if (!formData.payoutMonth.trim())  newErrors.payoutMonth         = "Payout month is required";
     }
+
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
 
+  // ── Submit ───────────────────────────────────────────────────
   const handleSubmit = async (e) => {
     e.preventDefault();
     setShowErrors(true);
-
     if (!validateForm()) return;
 
-    let payInReference = "";
-    if (formData.invoiceAvailable === "No") {
-      payInReference = generatePayInReference(
-        formData.client,
-        formData.dateReceived
-      );
-    }
-
+    setSaving(true);
     try {
-      // ✅ CHECK REMAINING ONLY FOR INVOICE PAYMENTS
-      if (formData.invoiceAvailable === "Yes") {
-        const remaining = Number(invoiceDetails?.outstanding || 0);
-        const enteredAmount = Number(formData.amountReceived);
+      let confirmedRef = "";
 
-        if (enteredAmount > remaining) {
-          alert(`❌ Payment cannot exceed remaining amount (₹ ${remaining})`);
+      if (formData.invoiceAvailable === "Yes") {
+        // ── Invoice payment ──────────────────────────────────
+        const remaining = Number(invoiceDetails?.outstanding || 0);
+        const entered   = Number(formData.amountReceived);
+
+        if (entered <= 0) {
+          alert("Amount must be greater than 0");
+          setSaving(false);
           return;
         }
-      }
+        if (entered > remaining) {
+          alert(`Payment cannot exceed remaining amount (₹ ${remaining.toLocaleString("en-IN")})`);
+          setSaving(false);
+          return;
+        }
 
-      const generatedRef =
-        formData.invoiceAvailable === "No"
-          ? payInReference
-          : `UI-${new Date()
-              .toLocaleDateString("en-GB")
-              .replace(/\//g, "")}-${Math.floor(Math.random() * 100)
-              .toString()
-              .padStart(2, "0")}`;
+        // Insert payment_received
+        // The DB trigger (sync_payment_received_bank) will auto-create the bank_entry
+        const { error: paymentError } = await supabase
+          .from("payments_received")
+          .insert([{
+            invoice_id:      invoiceDetails.id,
+            amount_received: entered,
+            payment_date:    formData.dateReceived,
+            // payment_ref is auto-generated by DB trigger trg_set_payment_ref
+          }]);
 
-      let confirmedRef = generatedRef;
+        if (paymentError) throw paymentError;
 
-      if (formData.invoiceAvailable === "No") {
-        // ✅ SAVE ADVANCE PAYMENT — fetch back the saved ref from DB
+        // Update invoice bank_id if not already set
+        if (formData.bankId && invoiceDetails?.id) {
+          await supabase
+            .from("invoices")
+            .update({ bank_id: formData.bankId })
+            .eq("id", invoiceDetails.id)
+            .is("bank_id", null);
+        }
+
+        // Fetch the auto-generated ref back
+        const { data: latestPayment } = await supabase
+          .from("payments_received")
+          .select("payment_ref")
+          .eq("invoice_id", invoiceDetails.id)
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .single();
+
+        confirmedRef = latestPayment?.payment_ref || "Saved";
+
+      } else {
+        // ── Advance payment (no invoice) ─────────────────────
+        const payInReference = generatePayInReference(
+          formData.client,
+          formData.dateReceived
+        );
+
         const { data: advanceData, error: advanceError } = await supabase
           .from("advance_payments")
-          .insert([
-            {
-              payment_ref: payInReference,
-              client_name: formData.client,
-              ledger_name: formData.ledgerName,
-              entity_name: formData.entity,
-              department_name: formData.department,
-              amount: Number(formData.amountReceived),
-              payment_date: formData.dateReceived,
-              bank_id: formData.bankId,
-              remarks: formData.remarks || "Advance Payment",
-            },
-          ])
-          .select("payment_ref")  // ✅ fetch what DB actually stored
+          .insert([{
+            payment_ref:      payInReference,
+            client_name:      formData.client,
+            ledger_name:      formData.ledgerName,
+            entity_name:      formData.entity,
+            department_name:  formData.department,
+            amount:           Number(formData.amountReceived),
+            payment_date:     formData.dateReceived,
+            bank_id:          formData.bankId,
+            remarks:          formData.remarks || "Advance Payment",
+          }])
+          .select("payment_ref")
           .single();
 
         if (advanceError) throw advanceError;
 
-        // ✅ Use DB-confirmed ref (not locally generated)
         confirmedRef = advanceData?.payment_ref || payInReference;
 
-      } else {
-        // ✅ NORMAL INVOICE PAYMENT
-        const { error: paymentError } = await supabase
-          .from("payments_received")
-          .insert([
-            {
-              invoice_id: invoiceDetails?.id || invoiceDetails?.dbId,
-              amount_received: Number(formData.amountReceived),
-              payment_date: formData.dateReceived,
-              payment_ref: generatedRef,
-            },
-          ]);
-
-        if (paymentError) throw paymentError;
+        // Also create a bank_entry credit for the advance payment
+        await supabase
+          .from("bank_entries")
+          .insert([{
+            bank_id:    formData.bankId,
+            date:       formData.dateReceived,
+            amount:     Number(formData.amountReceived),
+            type:       "credit",
+            flow_type:  "advance_payment",
+            entity:     formData.entity || "Verto India Pvt Ltd",
+            remarks:    `Advance Payment - ${formData.client}`,
+            entry_type: "advance_payment",
+            reference_no: confirmedRef,
+          }]);
       }
 
-      // ✅ BANK ENTRY (runs for both Yes and No)
-      const { error: bankError } = await supabase.from("bank_entries").insert([
-        {
-          bank_id: formData.bankId,
-          entity: formData.entity || "Pvt Ltd",
-          amount: Number(formData.amountReceived),
-          date: formData.dateReceived,
-          type: "credit",
-          remarks: formData.bankDetails || "Payment Received",
-          reference_no: "BNK-" + Date.now(),
-          invoice_id: invoiceDetails?.id || null,
-        },
-      ]);
-
-      if (bankError) throw bankError;
-
-      // ✅ TRIGGER DASHBOARD REFRESH
       if (onPaymentSaved) onPaymentSaved();
-
-      // ✅ SHOW REF MODAL instead of alert
       setSavedRef(confirmedRef);
       setShowRefModal(true);
 
-      // NOTE: resetForm() and onClose() are now called from the ref modal's close button
-
     } catch (err) {
-      console.error("FULL ERROR:", err);
-      alert("❌ " + err.message);
+      console.error("Payment save error:", err);
+      alert("Error: " + err.message);
+    } finally {
+      setSaving(false);
     }
   };
 
+  // ── Reset / close ────────────────────────────────────────────
   const resetForm = () => {
     setFormData({
       bankId: "",
@@ -266,7 +266,6 @@ const AddPaymentReceivedModal = ({
       invoiceNumber: "",
       amountReceived: "",
       dateReceived: "",
-      bankDetails: "",
       entity: "",
       department: "",
       client: "",
@@ -277,14 +276,11 @@ const AddPaymentReceivedModal = ({
     });
     setErrors({});
     setShowErrors(false);
+    setInvoiceDetails(null);
   };
 
-  const handleClose = () => {
-    resetForm();
-    onClose();
-  };
+  const handleClose = () => { resetForm(); onClose(); };
 
-  // ✅ Called when user closes the ref modal
   const handleRefModalClose = () => {
     setShowRefModal(false);
     setSavedRef("");
@@ -310,6 +306,7 @@ const AddPaymentReceivedModal = ({
     );
   };
 
+  // ── Render ───────────────────────────────────────────────────
   return (
     <AnimatePresence>
       {isOpen && (
@@ -336,59 +333,51 @@ const AddPaymentReceivedModal = ({
                     Record incoming payment details
                   </p>
                 </div>
-                <button
-                  onClick={handleClose}
-                  className="text-emerald-100 hover:text-white transition-colors"
-                >
+                <button onClick={handleClose} className="text-emerald-100 hover:text-white transition-colors">
                   <X className="w-6 h-6" />
                 </button>
               </div>
             </div>
 
-            {/* Form Content */}
+            {/* Form */}
             <div className="p-6 overflow-y-auto max-h-[calc(90vh-140px)]">
               <form onSubmit={handleSubmit} className="space-y-6">
-                {/* Invoice Available Section */}
+
+                {/* Invoice Available toggle */}
                 <div className="bg-blue-50 border-2 border-blue-200 rounded-xl p-4">
                   <div className="flex items-center justify-between mb-4">
                     <label className="text-sm font-semibold text-gray-900 uppercase tracking-wider">
                       Invoice Number Available
                     </label>
                     <div className="flex space-x-3">
-                      <button
-                        type="button"
-                        onClick={() => handleChange("invoiceAvailable", "Yes")}
-                        className={`px-6 py-2 rounded-lg font-medium transition-all ${
-                          formData.invoiceAvailable === "Yes"
-                            ? "bg-emerald-600 text-white shadow-md"
-                            : "bg-white text-gray-600 border border-gray-300"
-                        }`}
-                      >
-                        Yes
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleChange("invoiceAvailable", "No")}
-                        className={`px-6 py-2 rounded-lg font-medium transition-all ${
-                          formData.invoiceAvailable === "No"
-                            ? "bg-rose-600 text-white shadow-md"
-                            : "bg-white text-gray-600 border border-gray-300"
-                        }`}
-                      >
-                        No
-                      </button>
+                      {["Yes", "No"].map((val) => (
+                        <button
+                          key={val}
+                          type="button"
+                          onClick={() => handleChange("invoiceAvailable", val)}
+                          className={`px-6 py-2 rounded-lg font-medium transition-all ${
+                            formData.invoiceAvailable === val
+                              ? val === "Yes"
+                                ? "bg-emerald-600 text-white shadow-md"
+                                : "bg-rose-600 text-white shadow-md"
+                              : "bg-white text-gray-600 border border-gray-300"
+                          }`}
+                        >
+                          {val}
+                        </button>
+                      ))}
                     </div>
                   </div>
 
-                  {/* If Yes - Invoice Details */}
+                  {/* ── YES: Invoice payment ── */}
                   {formData.invoiceAvailable === "Yes" && (
                     <motion.div
                       initial={{ opacity: 0, height: 0 }}
                       animate={{ opacity: 1, height: "auto" }}
-                      exit={{ opacity: 0, height: 0 }}
                       className="space-y-4 pt-4 border-t border-blue-200"
                     >
                       <div className="grid grid-cols-2 gap-4">
+                        {/* Invoice number */}
                         <div>
                           <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-2">
                             Invoice Number <span className="text-rose-600">*</span>
@@ -396,66 +385,61 @@ const AddPaymentReceivedModal = ({
                           <input
                             type="text"
                             value={formData.invoiceNumber}
-                            onChange={(e) =>
-                              handleChange("invoiceNumber", e.target.value)
-                            }
+                            onChange={(e) => handleChange("invoiceNumber", e.target.value)}
                             className={`w-full bg-white border text-gray-900 px-4 py-2.5 rounded-lg focus:outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 ${
-                              showErrors && errors.invoiceNumber
-                                ? "border-rose-500"
-                                : "border-gray-300"
+                              showErrors && errors.invoiceNumber ? "border-rose-500" : "border-gray-300"
                             }`}
-                            placeholder="INV-2023001"
+                            placeholder="INV-001"
                           />
                           {invoiceDetails && (
-                            <div className="mt-2 p-2 bg-green-50 border border-green-200 rounded text-xs">
+                            <div className="mt-2 p-2 bg-green-50 border border-green-200 rounded text-xs space-y-0.5">
                               <p><b>Client:</b> {invoiceDetails.client_name}</p>
                               <p><b>Ledger:</b> {invoiceDetails.ledger_name}</p>
-                              <p><b>Entity:</b> {invoiceDetails.entity_name}</p>
+                              <p><b>Outstanding:</b> ₹{Number(invoiceDetails.outstanding || 0).toLocaleString("en-IN")}</p>
                             </div>
                           )}
                           <ErrorMessage error={errors.invoiceNumber} />
                         </div>
+
+                        {/* Bank */}
                         <div>
-                          <label className="block text-xs font-semibold mb-2">
+                          <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-2">
                             Select Bank <span className="text-rose-600">*</span>
                           </label>
                           <select
-                            value={formData.bankId || ""}
-                            onChange={(e) =>
-                              handleChange("bankId", String(e.target.value))
-                            }
-                            className="w-full border px-3 py-2 rounded"
+                            value={formData.bankId}
+                            onChange={(e) => handleChange("bankId", e.target.value)}
+                            className={`w-full border text-gray-900 px-3 py-2.5 rounded-lg focus:outline-none focus:border-emerald-500 ${
+                              showErrors && errors.bankId ? "border-rose-500" : "border-gray-300"
+                            }`}
                           >
                             <option value="">Select Bank</option>
                             {banks.map((b) => (
-                              <option key={b.id} value={b.id}>
-                                {b.bank_name}
-                              </option>
+                              <option key={b.id} value={b.id}>{b.bank_name}</option>
                             ))}
                           </select>
                           <ErrorMessage error={errors.bankId} />
                         </div>
+
+                        {/* Amount */}
                         <div>
                           <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-2">
                             Amount Received <span className="text-rose-600">*</span>
                           </label>
                           <input
                             type="number"
+                            min="1"
                             value={formData.amountReceived}
-                            onChange={(e) =>
-                              handleChange("amountReceived", e.target.value)
-                            }
-                            className={`w-full bg-white border text-gray-900 px-4 py-2.5 rounded-lg focus:outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 ${
-                              showErrors && errors.amountReceived
-                                ? "border-rose-500"
-                                : "border-gray-300"
+                            onChange={(e) => handleChange("amountReceived", e.target.value)}
+                            className={`w-full bg-white border text-gray-900 px-4 py-2.5 rounded-lg focus:outline-none focus:border-emerald-500 ${
+                              showErrors && errors.amountReceived ? "border-rose-500" : "border-gray-300"
                             }`}
                             placeholder="₹ 0"
                           />
                           <ErrorMessage error={errors.amountReceived} />
                         </div>
-                      </div>
-                      <div className="grid grid-cols-2 gap-4">
+
+                        {/* Date */}
                         <div>
                           <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-2">
                             Date Received <span className="text-rose-600">*</span>
@@ -463,46 +447,22 @@ const AddPaymentReceivedModal = ({
                           <input
                             type="date"
                             value={formData.dateReceived}
-                            onChange={(e) =>
-                              handleChange("dateReceived", e.target.value)
-                            }
-                            className={`w-full bg-white border text-gray-900 px-4 py-2.5 rounded-lg focus:outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 ${
-                              showErrors && errors.dateReceived
-                                ? "border-rose-500"
-                                : "border-gray-300"
+                            onChange={(e) => handleChange("dateReceived", e.target.value)}
+                            className={`w-full bg-white border text-gray-900 px-4 py-2.5 rounded-lg focus:outline-none focus:border-emerald-500 ${
+                              showErrors && errors.dateReceived ? "border-rose-500" : "border-gray-300"
                             }`}
                           />
                           <ErrorMessage error={errors.dateReceived} />
-                        </div>
-                        <div>
-                          <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-2">
-                            Bank Details <span className="text-rose-600">*</span>
-                          </label>
-                          <input
-                            type="text"
-                            value={formData.bankDetails}
-                            onChange={(e) =>
-                              handleChange("bankDetails", e.target.value)
-                            }
-                            className={`w-full bg-white border text-gray-900 px-4 py-2.5 rounded-lg focus:outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 ${
-                              showErrors && errors.bankDetails
-                                ? "border-rose-500"
-                                : "border-gray-300"
-                            }`}
-                            placeholder="Bank account details"
-                          />
-                          <ErrorMessage error={errors.bankDetails} />
                         </div>
                       </div>
                     </motion.div>
                   )}
 
-                  {/* If No - Alternative Details */}
+                  {/* ── NO: Advance payment ── */}
                   {formData.invoiceAvailable === "No" && (
                     <motion.div
                       initial={{ opacity: 0, height: 0 }}
                       animate={{ opacity: 1, height: "auto" }}
-                      exit={{ opacity: 0, height: 0 }}
                       className="space-y-4 pt-4 border-t border-blue-200"
                     >
                       <div className="grid grid-cols-2 gap-4">
@@ -512,19 +472,15 @@ const AddPaymentReceivedModal = ({
                           </label>
                           <select
                             value={formData.entity}
-                            onChange={(e) =>
-                              handleChange("entity", e.target.value)
-                            }
-                            className={`w-full bg-white border text-gray-900 px-4 py-2.5 rounded-lg focus:outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 ${
-                              showErrors && errors.entity
-                                ? "border-rose-500"
-                                : "border-gray-300"
+                            onChange={(e) => handleChange("entity", e.target.value)}
+                            className={`w-full bg-white border text-gray-900 px-4 py-2.5 rounded-lg focus:outline-none focus:border-emerald-500 ${
+                              showErrors && errors.entity ? "border-rose-500" : "border-gray-300"
                             }`}
                           >
                             <option value="">Select Entity</option>
-                            <option value="Verto India Pvt Ltd">Verto India Pvt Ltd</option>
-                            <option value="Verto Global LLC">Verto Global LLC</option>
-                            <option value="Verto UK Ltd">Verto UK Ltd</option>
+                            <option>Verto India Pvt Ltd</option>
+                            <option>Verto Global LLC</option>
+                            <option>Verto UK Ltd</option>
                           </select>
                           <ErrorMessage error={errors.entity} />
                         </div>
@@ -534,26 +490,20 @@ const AddPaymentReceivedModal = ({
                           </label>
                           <select
                             value={formData.department}
-                            onChange={(e) =>
-                              handleChange("department", e.target.value)
-                            }
-                            className={`w-full bg-white border text-gray-900 px-4 py-2.5 rounded-lg focus:outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 ${
-                              showErrors && errors.department
-                                ? "border-rose-500"
-                                : "border-gray-300"
+                            onChange={(e) => handleChange("department", e.target.value)}
+                            className={`w-full bg-white border text-gray-900 px-4 py-2.5 rounded-lg focus:outline-none focus:border-emerald-500 ${
+                              showErrors && errors.department ? "border-rose-500" : "border-gray-300"
                             }`}
                           >
                             <option value="">Select Department</option>
-                            <option value="Operations">Operations</option>
-                            <option value="Sales">Sales</option>
-                            <option value="Finance">Finance</option>
-                            <option value="HR">HR</option>
-                            <option value="IT">IT</option>
+                            <option>Operations</option>
+                            <option>Sales</option>
+                            <option>Finance</option>
+                            <option>HR</option>
+                            <option>IT</option>
                           </select>
                           <ErrorMessage error={errors.department} />
                         </div>
-                      </div>
-                      <div className="grid grid-cols-2 gap-4">
                         <div>
                           <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-2">
                             Client <span className="text-rose-600">*</span>
@@ -562,20 +512,14 @@ const AddPaymentReceivedModal = ({
                             type="text"
                             list="clients-list"
                             value={formData.client}
-                            onChange={(e) =>
-                              handleChange("client", e.target.value)
-                            }
-                            className={`w-full bg-white border text-gray-900 px-4 py-2.5 rounded-lg focus:outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 ${
-                              showErrors && errors.client
-                                ? "border-rose-500"
-                                : "border-gray-300"
+                            onChange={(e) => handleChange("client", e.target.value)}
+                            className={`w-full bg-white border text-gray-900 px-4 py-2.5 rounded-lg focus:outline-none focus:border-emerald-500 ${
+                              showErrors && errors.client ? "border-rose-500" : "border-gray-300"
                             }`}
                             placeholder="Type or select client"
                           />
                           <datalist id="clients-list">
-                            {clients.map((client, idx) => (
-                              <option key={idx} value={client} />
-                            ))}
+                            {clients.map((c, i) => <option key={i} value={c} />)}
                           </datalist>
                           <ErrorMessage error={errors.client} />
                         </div>
@@ -586,38 +530,32 @@ const AddPaymentReceivedModal = ({
                           <input
                             type="text"
                             value={formData.ledgerName}
-                            onChange={(e) =>
-                              handleChange("ledgerName", e.target.value)
-                            }
-                            className={`w-full bg-white border text-gray-900 px-4 py-2.5 rounded-lg focus:outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 ${
-                              showErrors && errors.ledgerName
-                                ? "border-rose-500"
-                                : "border-gray-300"
+                            onChange={(e) => handleChange("ledgerName", e.target.value)}
+                            className={`w-full bg-white border text-gray-900 px-4 py-2.5 rounded-lg focus:outline-none focus:border-emerald-500 ${
+                              showErrors && errors.ledgerName ? "border-rose-500" : "border-gray-300"
                             }`}
                             placeholder="Ledger name"
                           />
                           <ErrorMessage error={errors.ledgerName} />
                         </div>
                       </div>
+
                       <div>
                         <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-2">
                           Payment Description <span className="text-rose-600">*</span>
                         </label>
                         <textarea
                           value={formData.paymentDescription}
-                          onChange={(e) =>
-                            handleChange("paymentDescription", e.target.value)
-                          }
+                          onChange={(e) => handleChange("paymentDescription", e.target.value)}
                           rows={3}
-                          className={`w-full bg-white border text-gray-900 px-4 py-2.5 rounded-lg focus:outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 ${
-                            showErrors && errors.paymentDescription
-                              ? "border-rose-500"
-                              : "border-gray-300"
+                          className={`w-full bg-white border text-gray-900 px-4 py-2.5 rounded-lg focus:outline-none focus:border-emerald-500 ${
+                            showErrors && errors.paymentDescription ? "border-rose-500" : "border-gray-300"
                           }`}
                           placeholder="Enter payment description"
                         />
                         <ErrorMessage error={errors.paymentDescription} />
                       </div>
+
                       <div className="grid grid-cols-2 gap-4">
                         <div>
                           <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-2">
@@ -625,14 +563,11 @@ const AddPaymentReceivedModal = ({
                           </label>
                           <input
                             type="number"
+                            min="1"
                             value={formData.amountReceived}
-                            onChange={(e) =>
-                              handleChange("amountReceived", e.target.value)
-                            }
-                            className={`w-full bg-white border text-gray-900 px-4 py-2.5 rounded-lg focus:outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 ${
-                              showErrors && errors.amountReceived
-                                ? "border-rose-500"
-                                : "border-gray-300"
+                            onChange={(e) => handleChange("amountReceived", e.target.value)}
+                            className={`w-full bg-white border text-gray-900 px-4 py-2.5 rounded-lg focus:outline-none focus:border-emerald-500 ${
+                              showErrors && errors.amountReceived ? "border-rose-500" : "border-gray-300"
                             }`}
                             placeholder="₹ 0"
                           />
@@ -645,20 +580,14 @@ const AddPaymentReceivedModal = ({
                           <input
                             type="text"
                             value={formData.payoutMonth}
-                            onChange={(e) =>
-                              handleChange("payoutMonth", e.target.value)
-                            }
-                            className={`w-full bg-white border text-gray-900 px-4 py-2.5 rounded-lg focus:outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 ${
-                              showErrors && errors.payoutMonth
-                                ? "border-rose-500"
-                                : "border-gray-300"
+                            onChange={(e) => handleChange("payoutMonth", e.target.value)}
+                            className={`w-full bg-white border text-gray-900 px-4 py-2.5 rounded-lg focus:outline-none focus:border-emerald-500 ${
+                              showErrors && errors.payoutMonth ? "border-rose-500" : "border-gray-300"
                             }`}
-                            placeholder="e.g., Jan 2023"
+                            placeholder="e.g., Jan 2026"
                           />
                           <ErrorMessage error={errors.payoutMonth} />
                         </div>
-                      </div>
-                      <div className="grid grid-cols-2 gap-4">
                         <div>
                           <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-2">
                             Date Received <span className="text-rose-600">*</span>
@@ -666,13 +595,9 @@ const AddPaymentReceivedModal = ({
                           <input
                             type="date"
                             value={formData.dateReceived}
-                            onChange={(e) =>
-                              handleChange("dateReceived", e.target.value)
-                            }
-                            className={`w-full bg-white border text-gray-900 px-4 py-2.5 rounded-lg focus:outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 ${
-                              showErrors && errors.dateReceived
-                                ? "border-rose-500"
-                                : "border-gray-300"
+                            onChange={(e) => handleChange("dateReceived", e.target.value)}
+                            className={`w-full bg-white border text-gray-900 px-4 py-2.5 rounded-lg focus:outline-none focus:border-emerald-500 ${
+                              showErrors && errors.dateReceived ? "border-rose-500" : "border-gray-300"
                             }`}
                           />
                           <ErrorMessage error={errors.dateReceived} />
@@ -682,21 +607,15 @@ const AddPaymentReceivedModal = ({
                             Select Bank <span className="text-rose-600">*</span>
                           </label>
                           <select
-                            value={formData.bankId || ""}
-                            onChange={(e) =>
-                              handleChange("bankId", String(e.target.value))
-                            }
-                            className={`w-full bg-white border text-gray-900 px-4 py-2.5 rounded-lg focus:outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 ${
-                              showErrors && errors.bankId
-                                ? "border-rose-500"
-                                : "border-gray-300"
+                            value={formData.bankId}
+                            onChange={(e) => handleChange("bankId", e.target.value)}
+                            className={`w-full bg-white border text-gray-900 px-4 py-2.5 rounded-lg focus:outline-none focus:border-emerald-500 ${
+                              showErrors && errors.bankId ? "border-rose-500" : "border-gray-300"
                             }`}
                           >
                             <option value="">Select Bank</option>
                             {banks.map((b) => (
-                              <option key={b.id} value={b.id}>
-                                {b.bank_name}
-                              </option>
+                              <option key={b.id} value={b.id}>{b.bank_name}</option>
                             ))}
                           </select>
                           <ErrorMessage error={errors.bankId} />
@@ -706,27 +625,27 @@ const AddPaymentReceivedModal = ({
                   )}
                 </div>
 
-                {/* Remarks Section */}
+                {/* Remarks */}
                 <div className="bg-gray-50 border border-gray-200 rounded-xl p-4">
                   <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-2">
                     Remarks
                   </label>
                   <p className="text-xs text-gray-500 mb-3">
                     {formData.invoiceAvailable === "Yes"
-                      ? "To link with Amount Paid when Invoice is Generated"
-                      : "Auto-generated format: PI-[ClientCode]-[DDMMYY]-[SequenceNo]"}
+                      ? "Any notes about this payment"
+                      : "Auto-generated reference: PI-[ClientCode]-[DDMMYY]-[Seq]"}
                   </p>
                   <textarea
                     value={formData.remarks}
                     onChange={(e) => handleChange("remarks", e.target.value)}
                     rows={2}
-                    className="w-full bg-white border border-gray-300 text-gray-900 px-4 py-2.5 rounded-lg focus:outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 text-sm"
+                    className="w-full bg-white border border-gray-300 text-gray-900 px-4 py-2.5 rounded-lg focus:outline-none focus:border-emerald-500 text-sm"
                     placeholder="Additional remarks..."
                   />
                 </div>
 
-                {/* Footer Actions */}
-                <div className="flex items-center justify-between pt-4">
+                {/* Actions */}
+                <div className="flex items-center justify-between pt-2">
                   <button
                     type="button"
                     onClick={handleClose}
@@ -736,10 +655,11 @@ const AddPaymentReceivedModal = ({
                   </button>
                   <button
                     type="submit"
-                    className="px-8 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg transition-colors font-medium shadow-lg shadow-emerald-500/30 flex items-center space-x-2"
+                    disabled={saving}
+                    className="px-8 py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 text-white rounded-lg transition-colors font-medium shadow-lg shadow-emerald-500/30 flex items-center space-x-2"
                   >
-                    <span>Save</span>
-                    <ArrowRight className="w-4 h-4" />
+                    <span>{saving ? "Saving..." : "Save"}</span>
+                    {!saving && <ArrowRight className="w-4 h-4" />}
                   </button>
                 </div>
               </form>
@@ -748,7 +668,7 @@ const AddPaymentReceivedModal = ({
         </motion.div>
       )}
 
-      {/* ✅ PAYMENT REF MODAL — shows after successful save */}
+      {/* Payment ref confirmation modal */}
       {showRefModal && (
         <motion.div
           initial={{ opacity: 0 }}
@@ -762,27 +682,20 @@ const AddPaymentReceivedModal = ({
             exit={{ scale: 0.85, y: 30 }}
             className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-8 text-center"
           >
-            {/* Icon */}
             <div className="w-16 h-16 bg-emerald-100 rounded-full flex items-center justify-center mx-auto mb-5">
               <CheckCircle className="w-9 h-9 text-emerald-600" />
             </div>
-
-            <h3 className="text-xl font-bold text-gray-900 mb-1">
-              Payment Saved!
-            </h3>
+            <h3 className="text-xl font-bold text-gray-900 mb-1">Payment Saved!</h3>
             <p className="text-sm text-gray-500 mb-6">
               {savedRef.startsWith("PI-")
                 ? "Use this reference when creating the invoice later."
                 : "Payment has been recorded successfully."}
             </p>
 
-            {/* Reference Box */}
             {savedRef && (
               <div className="bg-emerald-50 border-2 border-dashed border-emerald-400 rounded-xl px-5 py-4 mb-5">
                 <p className="text-xs text-emerald-600 uppercase tracking-widest font-semibold mb-2">
-                  {savedRef.startsWith("PI-")
-                    ? "Advance Payment Reference"
-                    : "Payment Reference"}
+                  {savedRef.startsWith("PI-") ? "Advance Payment Reference" : "Payment Reference"}
                 </p>
                 <p className="text-2xl font-mono font-bold text-emerald-700 tracking-wider break-all">
                   {savedRef}
@@ -796,7 +709,6 @@ const AddPaymentReceivedModal = ({
               </p>
             )}
 
-            {/* Copy Button */}
             <button
               onClick={handleCopy}
               className={`w-full mb-3 px-4 py-2.5 rounded-lg font-medium transition-all flex items-center justify-center gap-2 ${
@@ -805,20 +717,9 @@ const AddPaymentReceivedModal = ({
                   : "bg-emerald-600 hover:bg-emerald-700 text-white"
               }`}
             >
-              {copied ? (
-                <>
-                  <CheckCircle className="w-4 h-4" />
-                  Copied!
-                </>
-              ) : (
-                <>
-                  <Copy className="w-4 h-4" />
-                  Copy Reference
-                </>
-              )}
+              {copied ? <><CheckCircle className="w-4 h-4" />Copied!</> : <><Copy className="w-4 h-4" />Copy Reference</>}
             </button>
 
-            {/* Close Button */}
             <button
               onClick={handleRefModalClose}
               className="w-full px-4 py-2.5 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors font-medium"

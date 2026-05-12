@@ -60,6 +60,7 @@ const App = () => {
   const [selectedInvoice, setSelectedInvoice] = useState(null);
   const [refreshFlag, setRefreshFlag] = useState(false);
   const [showStatutoryModal, setShowStatutoryModal] = useState(false);
+  const [selectedExpense, setSelectedExpense] = useState(null);
   const [banks, setBanks] = useState([]);
   // Mock clients list (will be replaced with API data later)
   const clients = [
@@ -674,6 +675,7 @@ Share this password with the user so they can log in and update it.`
         isOpen={showExpenseDetailsModal}
         onClose={() => setShowExpenseDetailsModal(false)}
         onSaved={() => setRefreshFlag(!refreshFlag)}
+        editData={selectedExpense}
         invoice={selectedInvoice}
       />
 
