@@ -478,6 +478,7 @@ const BankReco = () => {
   const [banks, setBanks] = useState([]);
   const [entries, setEntries] = useState([]);
   const [softwareEntries, setSoftwareEntries] = useState([]);
+  const [outstandingInvoices, setOutstandingInvoices] = useState([]);
   const [selectedBank, setSelectedBank] = useState(null);
   const [remainingBalance, setRemainingBalance] = useState(0);
   const [showEntryModal, setShowEntryModal] = useState(false);
@@ -549,6 +550,15 @@ const BankReco = () => {
       .order("date", { ascending: false });
     if (!error) setSoftwareEntries(data);
   };
+  const fetchOutstandingInvoices = async () => {
+    const { data, error } = await supabase
+      .from("outstanding_invoice_view")
+      .select("*");
+
+    if (!error) {
+      setOutstandingInvoices(data || []);
+    }
+  };
 
   const fetchTransfers = async () => {
     const { data, error } = await supabase
@@ -587,7 +597,21 @@ const BankReco = () => {
       console.error("Fund Flow Error:", error);
       return;
     }
-    setFundFlowData(data || []);
+    setFundFlowData(
+      (data || []).map((row) => ({
+        ...row,
+
+        projected_income: Number(row.projected_income || 0),
+
+        projected_expense: Number(row.projected_expense || 0),
+
+        net_flow: Number(row.net_flow || 0),
+
+        projected_closing_balance: Number(row.projected_closing_balance || 0),
+
+        opening_balance: Number(row.opening_balance || 0),
+      }))
+    );
   };
 
   // ─── BUILD BANK RECO DATA ─────────────────────────────────────────────────
@@ -663,27 +687,79 @@ const BankReco = () => {
       const previousBankBalance = runningBankBalances[bankId] || 0;
       const previousSoftwareBalance = runningSoftwareBalances[bankId] || 0;
 
-      // ✅ Current month software movement
-      const currentSoftwareMovement = entries
-        .filter((s) => {
-          if (!s.bank_id) return false;
+      // =====================================================
+      // SOFTWARE EXPECTED BALANCE
+      // =====================================================
 
-          const swMonth = new Date(s.date).toISOString().slice(0, 7);
+      const today = new Date().toISOString().split("T")[0];
+
+      // ✅ ACTUAL CREDIT ENTRIES
+
+      const actualCredits = entries
+        .filter((e) => {
+          if (!e.bank_id) return false;
 
           return (
-            swMonth === row.month &&
-            s.bank_id === bankId &&
-            s.entry_type !== "manual_bank_entry" &&
-            s.entry_type !== "opening_balance"
+            String(e.bank_id) === String(bankId) &&
+            String(e.type).toLowerCase() === "credit" &&
+            e.date <= today &&
+            e.entry_type !== "bank_transfer"
           );
         })
-        .reduce((sum, s) => {
-          const amt = Number(s.amount || 0);
-
-          return String(s.type).toLowerCase() === "debit"
-            ? sum - Math.abs(amt)
-            : sum + Math.abs(amt);
+        .reduce((sum, e) => {
+          return sum + Math.abs(Number(e.amount || 0));
         }, 0);
+
+      // ✅ ACTUAL DEBIT ENTRIES
+      const actualDebits = entries
+        .filter((e) => {
+          if (!e.bank_id) return false;
+
+          return (
+            String(e.bank_id) === String(bankId) &&
+            String(e.type).toLowerCase() === "debit" &&
+            e.date <= today &&
+            e.entry_type !== "bank_transfer"
+          );
+        })
+        .reduce((sum, e) => {
+          return sum + Math.abs(Number(e.amount || 0));
+        }, 0);
+
+      // ✅ DUE RECEIVABLES TILL TODAY
+
+      const dueReceivables = outstandingInvoices
+        .filter((i) => {
+          return (
+            String(i.bank_id) === String(bankId) &&
+            i.expected_collection_date &&
+            i.expected_collection_date <= today &&
+            Number(i.outstanding || 0) > 0
+          );
+        })
+        .reduce((sum, i) => {
+          return sum + Number(i.outstanding || 0);
+        }, 0);
+
+      // ✅ GST + TDS DUE TILL TODAY
+
+      const dueTaxes = outstandingInvoices
+        .filter((i) => {
+          return (
+            String(i.bank_id) === String(bankId) &&
+            i.expected_collection_date &&
+            i.expected_collection_date <= today
+          );
+        })
+        .reduce((sum, i) => {
+          return sum + Number(i.gst || 0) + Number(i.tds || 0);
+        }, 0);
+
+      // ✅ FINAL SOFTWARE BALANCE
+
+      const currentSoftwareMovement =
+        actualCredits + dueReceivables - actualDebits - dueTaxes;
+
       // ✅ Current month bank movement
       const currentBankMovement = row.asPerBankTotalBal;
 
@@ -701,7 +777,7 @@ const BankReco = () => {
 
       row.remainingBalance = Math.abs(row.difference);
 
-      row.status = Math.abs(row.difference) < 50000 ? "reconciled" : "pending";
+      row.status = row.difference < 50000 ? "reconciled" : "pending";
 
       return row;
     });
@@ -715,13 +791,14 @@ const BankReco = () => {
     fetchBanks();
     fetchEntries();
     fetchSoftwareEntries();
+    fetchOutstandingInvoices();
     fetchFundFlowProjection();
     fetchTransfers();
   }, []);
 
   useEffect(() => {
     buildBankRecoData();
-  }, [entries, softwareEntries]);
+  }, [entries, softwareEntries, outstandingInvoices]);
 
   useEffect(() => {
     if (bankData.length > 0 && !selectedRow) {
