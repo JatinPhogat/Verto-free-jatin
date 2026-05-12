@@ -1012,7 +1012,7 @@ const BankReco = () => {
 
         amount: finalAmount,
 
-        date: newEntry.dateOfBankBal,
+        date: newEntry.dateOfBankBal || new Date().toISOString().split("T")[0],
 
         remarks: newEntry.remarks || "",
 
