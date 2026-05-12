@@ -22,17 +22,11 @@ const AddInterestPenaltyModal = ({
 
   const [form, setForm] = useState({
     entry_date: new Date().toISOString().split("T")[0],
-
     penalty_type: "interest",
-
     bank_id: "",
-
     amount: "",
-
     remarks: "",
-
     status: "unpaid",
-
     paid_date: "",
   });
 
@@ -55,17 +49,11 @@ const AddInterestPenaltyModal = ({
         .insert([
           {
             entry_date: form.entry_date,
-
             penalty_type: form.penalty_type,
-
             bank_id: form.bank_id,
-
             amount: Number(form.amount),
-
             remarks: form.remarks,
-
             status: form.status,
-
             paid_date:
               form.status === "paid"
                 ? form.paid_date
@@ -81,24 +69,17 @@ const AddInterestPenaltyModal = ({
         entry_date: new Date()
           .toISOString()
           .split("T")[0],
-
         penalty_type: "interest",
-
         bank_id: "",
-
         amount: "",
-
         remarks: "",
-
         status: "unpaid",
-
         paid_date: "",
       });
 
       onClose();
 
       window.refreshDashboard?.();
-
     } catch (err) {
       alert(err.message);
     } finally {
@@ -111,128 +92,120 @@ const AddInterestPenaltyModal = ({
   return (
     <AnimatePresence>
       <motion.div
-        className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm"
+        className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4"
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
       >
         <motion.div
-          initial={{ scale: 0.95, opacity: 0 }}
-          animate={{ scale: 1, opacity: 1 }}
-          exit={{ scale: 0.95, opacity: 0 }}
-          className="bg-white w-full max-w-lg rounded-3xl overflow-hidden shadow-2xl"
+          initial={{ scale: 0.96, opacity: 0, y: 20 }}
+          animate={{ scale: 1, opacity: 1, y: 0 }}
+          exit={{ scale: 0.96, opacity: 0, y: 20 }}
+          transition={{ duration: 0.2 }}
+          className="w-full max-w-xl overflow-hidden rounded-3xl bg-white shadow-2xl"
         >
           {/* HEADER */}
 
-          <div className="bg-gradient-to-r from-red-600 to-orange-500 p-5 text-white flex justify-between items-center">
+          <div className="flex items-center justify-between border-b border-gray-100 px-6 py-5">
             <div className="flex items-center gap-3">
-              <div className="bg-white/20 p-3 rounded-2xl">
-                <AlertTriangle className="w-6 h-6" />
+              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-red-100">
+                <AlertTriangle className="h-6 w-6 text-red-600" />
               </div>
 
               <div>
-                <h2 className="text-xl font-bold">
-                  Interest / Penalty
+                <h2 className="text-xl font-bold text-gray-900">
+                  Add Interest / Penalty
                 </h2>
 
-                <p className="text-red-100 text-sm">
-                  Add financial penalties & interest
+                <p className="text-sm text-gray-500">
+                  Record charges and penalties
                 </p>
               </div>
             </div>
 
             <button
               onClick={onClose}
-              className="hover:bg-white/20 p-2 rounded-xl"
+              className="flex h-10 w-10 items-center justify-center rounded-xl hover:bg-gray-100 transition"
             >
-              <X className="w-5 h-5" />
+              <X className="h-5 w-5 text-gray-600" />
             </button>
           </div>
 
           {/* BODY */}
 
-          <div className="p-6 space-y-5">
+          <div className="max-h-[75vh] overflow-y-auto p-6 space-y-5">
 
-            {/* DATE */}
+            {/* DATE + TYPE */}
 
-            <div>
-              <label className="text-sm font-semibold text-gray-700 mb-2 block">
-                Entry Date
-              </label>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
 
-              <div className="relative">
-                <Calendar className="absolute left-3 top-3.5 w-4 h-4 text-gray-400" />
+              <div>
+                <label className="mb-2 block text-sm font-medium text-gray-700">
+                  Entry Date
+                </label>
 
-                <input
-                  type="date"
-                  value={form.entry_date}
+                <div className="relative">
+                  <Calendar className="absolute left-3 top-3.5 h-4 w-4 text-gray-400" />
+
+                  <input
+                    type="date"
+                    value={form.entry_date}
+                    onChange={(e) =>
+                      setForm({
+                        ...form,
+                        entry_date: e.target.value,
+                      })
+                    }
+                    className="w-full rounded-2xl border border-gray-200 bg-gray-50 pl-10 pr-4 py-3 outline-none transition focus:border-red-500 focus:bg-white"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="mb-2 block text-sm font-medium text-gray-700">
+                  Penalty Type
+                </label>
+
+                <select
+                  value={form.penalty_type}
                   onChange={(e) =>
                     setForm({
                       ...form,
-                      entry_date: e.target.value,
+                      penalty_type: e.target.value,
                     })
                   }
-                  className="w-full pl-10 border rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-red-500"
-                />
+                  className="w-full rounded-2xl border border-gray-200 bg-gray-50 px-4 py-3 outline-none transition focus:border-red-500 focus:bg-white"
+                >
+                  <option value="interest">Interest</option>
+                  <option value="late_payment">
+                    Late Payment
+                  </option>
+                  <option value="gst_penalty">
+                    GST Penalty
+                  </option>
+                  <option value="tds_penalty">
+                    TDS Penalty
+                  </option>
+                  <option value="bank_charge">
+                    Bank Charge
+                  </option>
+                  <option value="bounce_charge">
+                    Bounce Charge
+                  </option>
+                  <option value="other">Other</option>
+                </select>
               </div>
-            </div>
-
-            {/* TYPE */}
-
-            <div>
-              <label className="text-sm font-semibold text-gray-700 mb-2 block">
-                Penalty Type
-              </label>
-
-              <select
-                value={form.penalty_type}
-                onChange={(e) =>
-                  setForm({
-                    ...form,
-                    penalty_type: e.target.value,
-                  })
-                }
-                className="w-full border rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-red-500"
-              >
-                <option value="interest">
-                  Interest
-                </option>
-
-                <option value="late_payment">
-                  Late Payment
-                </option>
-
-                <option value="gst_penalty">
-                  GST Penalty
-                </option>
-
-                <option value="tds_penalty">
-                  TDS Penalty
-                </option>
-
-                <option value="bank_charge">
-                  Bank Charge
-                </option>
-
-                <option value="bounce_charge">
-                  Bounce Charge
-                </option>
-
-                <option value="other">
-                  Other
-                </option>
-              </select>
             </div>
 
             {/* BANK */}
 
             <div>
-              <label className="text-sm font-semibold text-gray-700 mb-2 block">
-                Bank
+              <label className="mb-2 block text-sm font-medium text-gray-700">
+                Select Bank
               </label>
 
               <div className="relative">
-                <Landmark className="absolute left-3 top-3.5 w-4 h-4 text-gray-400" />
+                <Landmark className="absolute left-3 top-3.5 h-4 w-4 text-gray-400" />
 
                 <select
                   value={form.bank_id}
@@ -242,10 +215,10 @@ const AddInterestPenaltyModal = ({
                       bank_id: e.target.value,
                     })
                   }
-                  className="w-full pl-10 border rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-red-500"
+                  className="w-full rounded-2xl border border-gray-200 bg-gray-50 pl-10 pr-4 py-3 outline-none transition focus:border-red-500 focus:bg-white"
                 >
                   <option value="">
-                    Select Bank
+                    Choose Bank
                   </option>
 
                   {banks.map((bank) => (
@@ -263,12 +236,12 @@ const AddInterestPenaltyModal = ({
             {/* AMOUNT */}
 
             <div>
-              <label className="text-sm font-semibold text-gray-700 mb-2 block">
+              <label className="mb-2 block text-sm font-medium text-gray-700">
                 Amount
               </label>
 
               <div className="relative">
-                <IndianRupee className="absolute left-3 top-3.5 w-4 h-4 text-gray-400" />
+                <IndianRupee className="absolute left-3 top-3.5 h-4 w-4 text-gray-400" />
 
                 <input
                   type="number"
@@ -279,8 +252,8 @@ const AddInterestPenaltyModal = ({
                       amount: e.target.value,
                     })
                   }
-                  placeholder="Enter Amount"
-                  className="w-full pl-10 border rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-red-500"
+                  placeholder="Enter amount"
+                  className="w-full rounded-2xl border border-gray-200 bg-gray-50 pl-10 pr-4 py-3 outline-none transition focus:border-red-500 focus:bg-white"
                 />
               </div>
             </div>
@@ -288,43 +261,45 @@ const AddInterestPenaltyModal = ({
             {/* STATUS */}
 
             <div>
-              <label className="text-sm font-semibold text-gray-700 mb-2 block">
-                Status
+              <label className="mb-3 block text-sm font-medium text-gray-700">
+                Payment Status
               </label>
 
               <div className="grid grid-cols-2 gap-3">
 
                 <button
+                  type="button"
                   onClick={() =>
                     setForm({
                       ...form,
                       status: "paid",
                     })
                   }
-                  className={`border rounded-2xl p-4 flex items-center gap-2 justify-center font-semibold transition ${
+                  className={`flex items-center justify-center gap-2 rounded-2xl border py-3 font-medium transition ${
                     form.status === "paid"
-                      ? "bg-emerald-100 border-emerald-500 text-emerald-700"
-                      : "bg-white"
+                      ? "border-emerald-500 bg-emerald-50 text-emerald-700"
+                      : "border-gray-200 bg-white text-gray-700 hover:bg-gray-50"
                   }`}
                 >
-                  <CheckCircle2 className="w-5 h-5" />
+                  <CheckCircle2 className="h-5 w-5" />
                   Paid
                 </button>
 
                 <button
+                  type="button"
                   onClick={() =>
                     setForm({
                       ...form,
                       status: "unpaid",
                     })
                   }
-                  className={`border rounded-2xl p-4 flex items-center gap-2 justify-center font-semibold transition ${
+                  className={`flex items-center justify-center gap-2 rounded-2xl border py-3 font-medium transition ${
                     form.status === "unpaid"
-                      ? "bg-rose-100 border-rose-500 text-rose-700"
-                      : "bg-white"
+                      ? "border-red-500 bg-red-50 text-red-700"
+                      : "border-gray-200 bg-white text-gray-700 hover:bg-gray-50"
                   }`}
                 >
-                  <XCircle className="w-5 h-5" />
+                  <XCircle className="h-5 w-5" />
                   Unpaid
                 </button>
               </div>
@@ -334,7 +309,7 @@ const AddInterestPenaltyModal = ({
 
             {form.status === "paid" && (
               <div>
-                <label className="text-sm font-semibold text-gray-700 mb-2 block">
+                <label className="mb-2 block text-sm font-medium text-gray-700">
                   Paid Date
                 </label>
 
@@ -347,7 +322,7 @@ const AddInterestPenaltyModal = ({
                       paid_date: e.target.value,
                     })
                   }
-                  className="w-full border rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-red-500"
+                  className="w-full rounded-2xl border border-gray-200 bg-gray-50 px-4 py-3 outline-none transition focus:border-red-500 focus:bg-white"
                 />
               </div>
             )}
@@ -355,15 +330,15 @@ const AddInterestPenaltyModal = ({
             {/* REMARKS */}
 
             <div>
-              <label className="text-sm font-semibold text-gray-700 mb-2 block">
+              <label className="mb-2 block text-sm font-medium text-gray-700">
                 Remarks
               </label>
 
               <div className="relative">
-                <FileText className="absolute left-3 top-3.5 w-4 h-4 text-gray-400" />
+                <FileText className="absolute left-3 top-3.5 h-4 w-4 text-gray-400" />
 
                 <textarea
-                  rows={3}
+                  rows={4}
                   value={form.remarks}
                   onChange={(e) =>
                     setForm({
@@ -371,8 +346,8 @@ const AddInterestPenaltyModal = ({
                       remarks: e.target.value,
                     })
                   }
-                  placeholder="Enter remarks..."
-                  className="w-full pl-10 border rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-red-500"
+                  placeholder="Add remarks..."
+                  className="w-full resize-none rounded-2xl border border-gray-200 bg-gray-50 pl-10 pr-4 py-3 outline-none transition focus:border-red-500 focus:bg-white"
                 />
               </div>
             </div>
@@ -380,10 +355,10 @@ const AddInterestPenaltyModal = ({
 
           {/* FOOTER */}
 
-          <div className="p-6 pt-0 flex gap-3">
+          <div className="flex gap-3 border-t border-gray-100 p-6">
             <button
               onClick={onClose}
-              className="flex-1 border border-gray-300 py-3 rounded-2xl font-semibold hover:bg-gray-100 transition"
+              className="flex-1 rounded-2xl border border-gray-300 py-3 font-semibold text-gray-700 transition hover:bg-gray-100"
             >
               Cancel
             </button>
@@ -391,11 +366,9 @@ const AddInterestPenaltyModal = ({
             <button
               onClick={handleSave}
               disabled={loading}
-              className="flex-1 bg-gradient-to-r from-red-600 to-orange-500 text-white py-3 rounded-2xl font-semibold hover:opacity-90 transition"
+              className="flex-1 rounded-2xl bg-red-600 py-3 font-semibold text-white transition hover:bg-red-700 disabled:opacity-60"
             >
-              {loading
-                ? "Saving..."
-                : "Save Entry"}
+              {loading ? "Saving..." : "Save Entry"}
             </button>
           </div>
         </motion.div>

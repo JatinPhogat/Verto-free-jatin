@@ -669,7 +669,9 @@ const BankReco = () => {
 
       grouped[key].manualEntries.push({
         date: entry.date,
-        entity: entry.entity || "Pvt Ltd",
+
+        entity: entry.entity || "Verto India Pvt Ltd",
+
         transactionLabel:
           entry.entry_type === "invoice"
             ? "Invoice Payment"
@@ -681,19 +683,37 @@ const BankReco = () => {
             ? "Payment Made"
             : entry.entry_type === "expense"
             ? "Expense"
+            : entry.entry_type === "employee_payout"
+            ? "Employee Payout"
             : entry.entry_type === "statutory_payment"
             ? "Statutory Payment"
+            : entry.entry_type === "interest_penalty"
+            ? "Interest / Penalty"
+            : entry.entry_type === "bank_transfer"
+            ? "Bank Transfer"
             : entry.entry_type === "bank_balance_adjustment"
             ? "Bank Balance Adjustment"
             : entry.entry_type === "manual_adjustment"
             ? "Manual Entry"
-            : entry.entry_type === "interest_penalty"
-            ? "Interest / Penalty"
+            : entry.entry_type === "bank_credit"
+            ? "Bank Credit"
+            : entry.entry_type === "bank_debit"
+            ? "Bank Debit"
+            : entry.entry_type === "salary"
+            ? "Salary Payout"
+            : entry.entry_type === "gst_payment"
+            ? "GST Payment"
+            : entry.entry_type === "tds_payment"
+            ? "TDS Payment"
+            : entry.entry_type === "bounce_charge"
+            ? "Bounce Charge"
             : "Other",
+
         amount:
           entry.type === "debit"
             ? -Math.abs(entry.amount)
             : Math.abs(entry.amount),
+
         remarks: entry.remarks,
       });
     });
@@ -1006,6 +1026,10 @@ const BankReco = () => {
     let finalType = newEntry.transaction_mode || "credit";
 
     let finalEntryType = newEntry.entry_type || "manual_adjustment";
+    // ✅ DEFAULT MANUAL ENTRY TYPE
+    if (!newEntry.entry_type || newEntry.entry_type === "other") {
+      finalEntryType = "manual_adjustment";
+    }
 
     // =====================================
     // TOTAL BALANCE UPDATE MODE
