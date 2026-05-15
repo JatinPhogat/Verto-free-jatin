@@ -2,7 +2,14 @@ import React, { useState, useEffect } from "react";
 import ReactDOM from "react-dom";
 import supabase from "../lib/supabaseClient";
 import { motion, AnimatePresence } from "framer-motion";
-import { X, ArrowRight, AlertCircle, Copy, CheckCircle, Eye } from "lucide-react";
+import {
+  X,
+  ArrowRight,
+  AlertCircle,
+  Copy,
+  CheckCircle,
+  Eye,
+} from "lucide-react";
 import ViewPaymentReceivedModal from "./ViewPaymentReceivedModal";
 
 const AddPaymentReceivedModal = ({
@@ -86,10 +93,10 @@ const AddPaymentReceivedModal = ({
         setInvoiceDetails(data);
         setFormData((prev) => ({
           ...prev,
-          client:     data.client_name  || "",
-          ledgerName: data.ledger_name  || "",
-          entity:     data.entity_name  || "",
-          department: data.dept_name    || "",
+          client: data.client_name || "",
+          ledgerName: data.ledger_name || "",
+          entity: data.entity_name || "",
+          department: data.dept_name || "",
           bankId: prev.bankId || data.bank_id || "",
         }));
       } else {
@@ -110,14 +117,14 @@ const AddPaymentReceivedModal = ({
   const generatePayInReference = (clientName, date) => {
     const clientCode = (clientName || "XX").substring(0, 2).toUpperCase();
     const dateObj = new Date(date);
-    const day   = String(dateObj.getDate()).padStart(2, "0");
+    const day = String(dateObj.getDate()).padStart(2, "0");
     const month = String(dateObj.getMonth() + 1).padStart(2, "0");
-    const year  = String(dateObj.getFullYear()).slice(-2);
+    const year = String(dateObj.getFullYear()).slice(-2);
     const dateStr = `${day}${month}${year}`;
 
     const storageKey = `payInSeq_${clientCode}_${dateStr}`;
     const currentSeq = parseInt(localStorage.getItem(storageKey) || "0", 10);
-    const nextSeq    = currentSeq + 1;
+    const nextSeq = currentSeq + 1;
     localStorage.setItem(storageKey, String(nextSeq));
 
     return `PI-${clientCode}-${dateStr}-${String(nextSeq).padStart(2, "0")}`;
@@ -127,9 +134,10 @@ const AddPaymentReceivedModal = ({
   const validateForm = () => {
     const newErrors = {};
 
-    if (!formData.bankId)          newErrors.bankId          = "Bank is required";
-    if (!formData.amountReceived)  newErrors.amountReceived  = "Amount is required";
-    if (!formData.dateReceived)    newErrors.dateReceived    = "Date is required";
+    if (!formData.bankId) newErrors.bankId = "Bank is required";
+    if (!formData.amountReceived)
+      newErrors.amountReceived = "Amount is required";
+    if (!formData.dateReceived) newErrors.dateReceived = "Date is required";
 
     if (formData.invoiceAvailable === "Yes") {
       if (!formData.invoiceNumber.trim())
@@ -137,12 +145,9 @@ const AddPaymentReceivedModal = ({
       if (formData.invoiceNumber.trim() && !invoiceDetails)
         newErrors.invoiceNumber = "Invoice not found — check the number";
     } else {
-      if (!formData.entity)
-        newErrors.entity = "Entity is required";
-      if (!formData.department)
-        newErrors.department = "Department is required";
-      if (!formData.client.trim())
-        newErrors.client = "Client is required";
+      if (!formData.entity) newErrors.entity = "Entity is required";
+      if (!formData.department) newErrors.department = "Department is required";
+      if (!formData.client.trim()) newErrors.client = "Client is required";
       if (!formData.ledgerName.trim())
         newErrors.ledgerName = "Ledger name is required";
       if (!formData.payoutMonth.trim())
@@ -165,7 +170,7 @@ const AddPaymentReceivedModal = ({
 
       if (formData.invoiceAvailable === "Yes") {
         const remaining = Number(invoiceDetails?.outstanding || 0);
-        const entered   = Number(formData.amountReceived);
+        const entered = Number(formData.amountReceived);
 
         if (entered <= 0) {
           alert("Amount must be greater than 0");
@@ -174,7 +179,9 @@ const AddPaymentReceivedModal = ({
         }
         if (entered > remaining) {
           alert(
-            `Payment cannot exceed remaining amount (₹ ${remaining.toLocaleString("en-IN")})`
+            `Payment cannot exceed remaining amount (₹ ${remaining.toLocaleString(
+              "en-IN"
+            )})`
           );
           setSaving(false);
           return;
@@ -182,12 +189,14 @@ const AddPaymentReceivedModal = ({
 
         const { data: paymentData, error: paymentError } = await supabase
           .from("payments_received")
-          .insert([{
-            invoice_id:      invoiceDetails.id,
-            amount_received: entered,
-            payment_date:    formData.dateReceived,
-            bank_id:         formData.bankId,
-          }])
+          .insert([
+            {
+              invoice_id: invoiceDetails.id,
+              amount_received: entered,
+              payment_date: formData.dateReceived,
+              bank_id: formData.bankId,
+            },
+          ])
           .select("payment_ref, bank_id")
           .single();
 
@@ -201,7 +210,6 @@ const AddPaymentReceivedModal = ({
         }
 
         confirmedRef = paymentData?.payment_ref || "Saved";
-
       } else {
         const payInReference = generatePayInReference(
           formData.client,
@@ -210,52 +218,147 @@ const AddPaymentReceivedModal = ({
 
         const { data: advanceData, error: advanceError } = await supabase
           .from("advance_payments")
-          .insert([{
-            payment_ref:     payInReference,
-            client_name:     formData.client,
-            ledger_name:     formData.ledgerName,
-            entity_name:     formData.entity,
-            department_name: formData.department,
-            amount:          Number(formData.amountReceived),
-            payment_date:    formData.dateReceived,
-            bank_id:         formData.bankId,
-            remarks:         formData.remarks || "Advance Payment",
-          }])
+          .insert([
+            {
+              payment_ref: payInReference,
+              client_name: formData.client,
+              ledger_name: formData.ledgerName,
+              entity_name: formData.entity,
+              department_name: formData.department,
+              amount: Number(formData.amountReceived),
+              payment_date: formData.dateReceived,
+              bank_id: formData.bankId,
+              remarks: formData.remarks || "Advance Payment",
+            },
+          ])
           .select("payment_ref")
           .single();
 
         if (advanceError) throw advanceError;
 
         confirmedRef = advanceData?.payment_ref || payInReference;
-
-        const { error: bankError } = await supabase
-          .from("bank_entries")
-          .insert([{
-            bank_id:      formData.bankId,
-            date:         formData.dateReceived,
-            amount:       Number(formData.amountReceived),
-            type:         "credit",
-            flow_type:    "advance_payment",
-            entity:       formData.entity || "Verto India Pvt Ltd",
-            remarks:      `Advance Payment - ${formData.client}`,
-            entry_type:   "advance_payment",
-            reference_no: confirmedRef,
-          }]);
-
-        if (bankError) {
-          console.warn("Bank entry warning (non-fatal):", bankError.message);
-        }
       }
 
-      if (onPaymentSaved) onPaymentSaved();
+      if (onPaymentSaved) {
+        await onPaymentSaved();
+      }
       setSavedRef(confirmedRef);
       setShowRefModal(true);
-
     } catch (err) {
       console.error("Payment save error:", err);
       alert("Error saving payment: " + err.message);
     } finally {
       setSaving(false);
+    }
+  };
+  const handleEdit = async (payment) => {
+    try {
+      if (payment._type === "invoice") {
+        const { error } = await supabase
+          .from("payments_received")
+          .update({
+            amount_received: Number(payment.amount),
+            payment_date: payment.payment_date,
+          })
+          .eq("id", payment.id);
+
+        if (error) throw error;
+      } else {
+        const { error } = await supabase
+          .from("advance_payments")
+          .update({
+            amount: Number(payment.amount),
+            payment_date: payment.payment_date,
+            remarks: payment.remarks || "",
+          })
+          .eq("id", payment.id);
+
+        if (error) throw error;
+      }
+
+      if (onPaymentSaved) onPaymentSaved();
+    } catch (err) {
+      console.error("Edit payment error:", err);
+      alert(err.message);
+    }
+  };
+  const handleDelete = async (payment) => {
+    const confirmed = window.confirm("Delete this payment?");
+
+    if (!confirmed) return;
+
+    try {
+      console.log("🔥 DELETE PAYMENT:", payment);
+
+      let error = null;
+
+      // invoice payment
+      if (payment._type === "invoice") {
+        const res = await supabase
+          .from("payments_received")
+          .delete()
+          .eq("id", payment.id)
+          .select();
+
+        console.log("🔥 DELETE RESULT:", res);
+
+        error = res.error;
+      }
+
+      // advance payment
+      else {
+        const res = await supabase
+          .from("advance_payments")
+          .delete()
+          .eq("id", payment.id)
+          .select();
+
+        console.log("🔥 DELETE RESULT:", res);
+
+        error = res.error;
+      }
+
+      if (error) throw error;
+      // recalculate invoice receivable
+      if (payment.invoice_id) {
+        const { data: remaining } = await supabase
+          .from("payments_received")
+          .select("amount_received")
+          .eq("invoice_id", payment.invoice_id);
+
+        const totalPaid = (remaining || []).reduce(
+          (sum, r) => sum + Number(r.amount_received || 0),
+          0
+        );
+
+        const { data: invoiceData } = await supabase
+          .from("invoices")
+          .select("*")
+          .eq("id", payment.invoice_id)
+          .single();
+
+        const invoiceAmount = Number(invoiceData?.invoice_value || 0);
+
+        const dueAmount = Math.max(0, invoiceAmount - totalPaid);
+
+        await supabase
+          .from("invoices")
+          .update({
+            receivable_amount: dueAmount,
+          })
+          .eq("id", payment.invoice_id);
+      }
+
+      // refresh parent
+      if (onPaymentSaved) {
+        await onPaymentSaved();
+      }
+
+      window.location.reload();
+    } catch (err) {
+      console.error("❌ DELETE FAILED:", err);
+
+      alert(err.message);
     }
   };
 
@@ -280,7 +383,10 @@ const AddPaymentReceivedModal = ({
     setInvoiceDetails(null);
   };
 
-  const handleClose = () => { resetForm(); onClose(); };
+  const handleClose = () => {
+    resetForm();
+    onClose();
+  };
 
   const handleRefModalClose = () => {
     setShowRefModal(false);
@@ -373,7 +479,6 @@ const AddPaymentReceivedModal = ({
               {/* ── Form ── */}
               <div className="p-6 overflow-y-auto max-h-[calc(90vh-140px)]">
                 <form onSubmit={handleSubmit} className="space-y-6">
-
                   {/* Invoice Available toggle */}
                   <div className="bg-blue-50 border-2 border-blue-200 rounded-xl p-4">
                     <div className="flex items-center justify-between mb-4">
@@ -385,7 +490,9 @@ const AddPaymentReceivedModal = ({
                           <button
                             key={val}
                             type="button"
-                            onClick={() => handleChange("invoiceAvailable", val)}
+                            onClick={() =>
+                              handleChange("invoiceAvailable", val)
+                            }
                             className={`px-6 py-2 rounded-lg font-medium transition-all ${
                               formData.invoiceAvailable === val
                                 ? val === "Yes"
@@ -408,16 +515,18 @@ const AddPaymentReceivedModal = ({
                         className="space-y-4 pt-4 border-t border-blue-200"
                       >
                         <div className="grid grid-cols-2 gap-4">
-
                           {/* Invoice Number */}
                           <div>
                             <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-2">
-                              Invoice Number <span className="text-rose-600">*</span>
+                              Invoice Number{" "}
+                              <span className="text-rose-600">*</span>
                             </label>
                             <input
                               type="text"
                               value={formData.invoiceNumber}
-                              onChange={(e) => handleChange("invoiceNumber", e.target.value)}
+                              onChange={(e) =>
+                                handleChange("invoiceNumber", e.target.value)
+                              }
                               className={`w-full bg-white border text-gray-900 px-4 py-2.5 rounded-lg focus:outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 ${
                                 showErrors && errors.invoiceNumber
                                   ? "border-rose-500"
@@ -427,11 +536,17 @@ const AddPaymentReceivedModal = ({
                             />
                             {invoiceDetails && (
                               <div className="mt-2 p-2 bg-green-50 border border-green-200 rounded text-xs space-y-0.5">
-                                <p><b>Client:</b> {invoiceDetails.client_name}</p>
-                                <p><b>Ledger:</b> {invoiceDetails.ledger_name}</p>
                                 <p>
-                                  <b>Outstanding:</b>{" "}
-                                  ₹{Number(invoiceDetails.outstanding || 0).toLocaleString("en-IN")}
+                                  <b>Client:</b> {invoiceDetails.client_name}
+                                </p>
+                                <p>
+                                  <b>Ledger:</b> {invoiceDetails.ledger_name}
+                                </p>
+                                <p>
+                                  <b>Outstanding:</b> ₹
+                                  {Number(
+                                    invoiceDetails.outstanding || 0
+                                  ).toLocaleString("en-IN")}
                                 </p>
                                 {invoiceDetails.bank_id && (
                                   <p className="text-amber-600">
@@ -446,11 +561,14 @@ const AddPaymentReceivedModal = ({
                           {/* Bank */}
                           <div>
                             <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-2">
-                              Payment Received In Bank <span className="text-rose-600">*</span>
+                              Payment Received In Bank{" "}
+                              <span className="text-rose-600">*</span>
                             </label>
                             <select
                               value={formData.bankId}
-                              onChange={(e) => handleChange("bankId", e.target.value)}
+                              onChange={(e) =>
+                                handleChange("bankId", e.target.value)
+                              }
                               className={`w-full border text-gray-900 px-3 py-2.5 rounded-lg focus:outline-none focus:border-emerald-500 ${
                                 showErrors && errors.bankId
                                   ? "border-rose-500"
@@ -473,13 +591,16 @@ const AddPaymentReceivedModal = ({
                           {/* Amount */}
                           <div>
                             <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-2">
-                              Amount Received <span className="text-rose-600">*</span>
+                              Amount Received{" "}
+                              <span className="text-rose-600">*</span>
                             </label>
                             <input
                               type="number"
                               min="1"
                               value={formData.amountReceived}
-                              onChange={(e) => handleChange("amountReceived", e.target.value)}
+                              onChange={(e) =>
+                                handleChange("amountReceived", e.target.value)
+                              }
                               className={`w-full bg-white border text-gray-900 px-4 py-2.5 rounded-lg focus:outline-none focus:border-emerald-500 ${
                                 showErrors && errors.amountReceived
                                   ? "border-rose-500"
@@ -488,12 +609,14 @@ const AddPaymentReceivedModal = ({
                               placeholder="₹ 0"
                             />
                             {invoiceDetails && formData.amountReceived && (
-                              <p className={`text-xs mt-1 ${
-                                Number(formData.amountReceived) >
-                                Number(invoiceDetails.outstanding || 0)
-                                  ? "text-rose-600"
-                                  : "text-emerald-600"
-                              }`}>
+                              <p
+                                className={`text-xs mt-1 ${
+                                  Number(formData.amountReceived) >
+                                  Number(invoiceDetails.outstanding || 0)
+                                    ? "text-rose-600"
+                                    : "text-emerald-600"
+                                }`}
+                              >
                                 {Number(formData.amountReceived) >
                                 Number(invoiceDetails.outstanding || 0)
                                   ? `⚠ Exceeds outstanding by ₹${(
@@ -503,7 +626,9 @@ const AddPaymentReceivedModal = ({
                                   : `✓ ₹${(
                                       Number(invoiceDetails.outstanding || 0) -
                                       Number(formData.amountReceived)
-                                    ).toLocaleString("en-IN")} will remain outstanding`}
+                                    ).toLocaleString(
+                                      "en-IN"
+                                    )} will remain outstanding`}
                               </p>
                             )}
                             <ErrorMessage error={errors.amountReceived} />
@@ -512,12 +637,15 @@ const AddPaymentReceivedModal = ({
                           {/* Date */}
                           <div>
                             <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-2">
-                              Date Received <span className="text-rose-600">*</span>
+                              Date Received{" "}
+                              <span className="text-rose-600">*</span>
                             </label>
                             <input
                               type="date"
                               value={formData.dateReceived}
-                              onChange={(e) => handleChange("dateReceived", e.target.value)}
+                              onChange={(e) =>
+                                handleChange("dateReceived", e.target.value)
+                              }
                               className={`w-full bg-white border text-gray-900 px-4 py-2.5 rounded-lg focus:outline-none focus:border-emerald-500 ${
                                 showErrors && errors.dateReceived
                                   ? "border-rose-500"
@@ -538,7 +666,6 @@ const AddPaymentReceivedModal = ({
                         className="space-y-4 pt-4 border-t border-blue-200"
                       >
                         <div className="grid grid-cols-2 gap-4">
-
                           {/* Entity */}
                           <div>
                             <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-2">
@@ -546,7 +673,9 @@ const AddPaymentReceivedModal = ({
                             </label>
                             <select
                               value={formData.entity}
-                              onChange={(e) => handleChange("entity", e.target.value)}
+                              onChange={(e) =>
+                                handleChange("entity", e.target.value)
+                              }
                               className={`w-full bg-white border text-gray-900 px-4 py-2.5 rounded-lg focus:outline-none focus:border-emerald-500 ${
                                 showErrors && errors.entity
                                   ? "border-rose-500"
@@ -564,11 +693,14 @@ const AddPaymentReceivedModal = ({
                           {/* Department */}
                           <div>
                             <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-2">
-                              Department <span className="text-rose-600">*</span>
+                              Department{" "}
+                              <span className="text-rose-600">*</span>
                             </label>
                             <select
                               value={formData.department}
-                              onChange={(e) => handleChange("department", e.target.value)}
+                              onChange={(e) =>
+                                handleChange("department", e.target.value)
+                              }
                               className={`w-full bg-white border text-gray-900 px-4 py-2.5 rounded-lg focus:outline-none focus:border-emerald-500 ${
                                 showErrors && errors.department
                                   ? "border-rose-500"
@@ -594,7 +726,9 @@ const AddPaymentReceivedModal = ({
                               type="text"
                               list="clients-list"
                               value={formData.client}
-                              onChange={(e) => handleChange("client", e.target.value)}
+                              onChange={(e) =>
+                                handleChange("client", e.target.value)
+                              }
                               className={`w-full bg-white border text-gray-900 px-4 py-2.5 rounded-lg focus:outline-none focus:border-emerald-500 ${
                                 showErrors && errors.client
                                   ? "border-rose-500"
@@ -613,12 +747,15 @@ const AddPaymentReceivedModal = ({
                           {/* Ledger Name */}
                           <div>
                             <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-2">
-                              Ledger Name <span className="text-rose-600">*</span>
+                              Ledger Name{" "}
+                              <span className="text-rose-600">*</span>
                             </label>
                             <input
                               type="text"
                               value={formData.ledgerName}
-                              onChange={(e) => handleChange("ledgerName", e.target.value)}
+                              onChange={(e) =>
+                                handleChange("ledgerName", e.target.value)
+                              }
                               className={`w-full bg-white border text-gray-900 px-4 py-2.5 rounded-lg focus:outline-none focus:border-emerald-500 ${
                                 showErrors && errors.ledgerName
                                   ? "border-rose-500"
@@ -637,7 +774,9 @@ const AddPaymentReceivedModal = ({
                           </label>
                           <textarea
                             value={formData.paymentDescription}
-                            onChange={(e) => handleChange("paymentDescription", e.target.value)}
+                            onChange={(e) =>
+                              handleChange("paymentDescription", e.target.value)
+                            }
                             rows={3}
                             className={`w-full bg-white border text-gray-900 px-4 py-2.5 rounded-lg focus:outline-none focus:border-emerald-500 ${
                               showErrors && errors.paymentDescription
@@ -650,17 +789,19 @@ const AddPaymentReceivedModal = ({
                         </div>
 
                         <div className="grid grid-cols-2 gap-4">
-
                           {/* Amount */}
                           <div>
                             <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-2">
-                              Amount Received <span className="text-rose-600">*</span>
+                              Amount Received{" "}
+                              <span className="text-rose-600">*</span>
                             </label>
                             <input
                               type="number"
                               min="1"
                               value={formData.amountReceived}
-                              onChange={(e) => handleChange("amountReceived", e.target.value)}
+                              onChange={(e) =>
+                                handleChange("amountReceived", e.target.value)
+                              }
                               className={`w-full bg-white border text-gray-900 px-4 py-2.5 rounded-lg focus:outline-none focus:border-emerald-500 ${
                                 showErrors && errors.amountReceived
                                   ? "border-rose-500"
@@ -674,12 +815,15 @@ const AddPaymentReceivedModal = ({
                           {/* Payout Month */}
                           <div>
                             <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-2">
-                              Payout for the Month <span className="text-rose-600">*</span>
+                              Payout for the Month{" "}
+                              <span className="text-rose-600">*</span>
                             </label>
                             <input
                               type="text"
                               value={formData.payoutMonth}
-                              onChange={(e) => handleChange("payoutMonth", e.target.value)}
+                              onChange={(e) =>
+                                handleChange("payoutMonth", e.target.value)
+                              }
                               className={`w-full bg-white border text-gray-900 px-4 py-2.5 rounded-lg focus:outline-none focus:border-emerald-500 ${
                                 showErrors && errors.payoutMonth
                                   ? "border-rose-500"
@@ -693,12 +837,15 @@ const AddPaymentReceivedModal = ({
                           {/* Date */}
                           <div>
                             <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-2">
-                              Date Received <span className="text-rose-600">*</span>
+                              Date Received{" "}
+                              <span className="text-rose-600">*</span>
                             </label>
                             <input
                               type="date"
                               value={formData.dateReceived}
-                              onChange={(e) => handleChange("dateReceived", e.target.value)}
+                              onChange={(e) =>
+                                handleChange("dateReceived", e.target.value)
+                              }
                               className={`w-full bg-white border text-gray-900 px-4 py-2.5 rounded-lg focus:outline-none focus:border-emerald-500 ${
                                 showErrors && errors.dateReceived
                                   ? "border-rose-500"
@@ -711,11 +858,14 @@ const AddPaymentReceivedModal = ({
                           {/* Bank */}
                           <div>
                             <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-2">
-                              Payment Received In Bank <span className="text-rose-600">*</span>
+                              Payment Received In Bank{" "}
+                              <span className="text-rose-600">*</span>
                             </label>
                             <select
                               value={formData.bankId}
-                              onChange={(e) => handleChange("bankId", e.target.value)}
+                              onChange={(e) =>
+                                handleChange("bankId", e.target.value)
+                              }
                               className={`w-full bg-white border text-gray-900 px-4 py-2.5 rounded-lg focus:outline-none focus:border-emerald-500 ${
                                 showErrors && errors.bankId
                                   ? "border-rose-500"
@@ -784,7 +934,6 @@ const AddPaymentReceivedModal = ({
                       {!saving && <ArrowRight className="w-4 h-4" />}
                     </button>
                   </div>
-
                 </form>
               </div>
             </motion.div>
@@ -848,9 +997,13 @@ const AddPaymentReceivedModal = ({
                 }`}
               >
                 {copied ? (
-                  <><CheckCircle className="w-4 h-4" /> Copied!</>
+                  <>
+                    <CheckCircle className="w-4 h-4" /> Copied!
+                  </>
                 ) : (
-                  <><Copy className="w-4 h-4" /> Copy Reference</>
+                  <>
+                    <Copy className="w-4 h-4" /> Copy Reference
+                  </>
                 )}
               </button>
 
@@ -871,6 +1024,9 @@ const AddPaymentReceivedModal = ({
           isOpen={viewOpen}
           onClose={() => setViewOpen(false)}
           invoice={invoice}
+          onEdit={handleEdit}
+          onDelete={handleDelete}
+          onRefresh={onPaymentSaved}
         />,
         document.body
       )}

@@ -55,26 +55,26 @@ const selectCls =
 ───────────────────────────────────────────── */
 const AddPaymentMadeModal = ({ isOpen, onClose, invoice, onSaved }) => {
   /* form state */
-  const [amount, setAmount]           = useState("");
-  const [date, setDate]               = useState("");
-  const [remarks, setRemarks]         = useState("");
-  const [banks, setBanks]             = useState([]);
+  const [amount, setAmount] = useState("");
+  const [date, setDate] = useState("");
+  const [remarks, setRemarks] = useState("");
+  const [banks, setBanks] = useState([]);
   const [paymentType, setPaymentType] = useState("Invoice");
-  const [bankId, setBankId]           = useState("");
+  const [bankId, setBankId] = useState("");
   const [invoiceNumber, setInvoiceNumber] = useState("");
-  const [loading, setLoading]         = useState(false);
+  const [loading, setLoading] = useState(false);
 
   /* billable toggle */
   const [isBillable, setIsBillable] = useState(false);
 
   /* manual invoice search */
-  const [invoiceSearch, setInvoiceSearch]     = useState("");
-  const [invoiceResults, setInvoiceResults]   = useState([]);
+  const [invoiceSearch, setInvoiceSearch] = useState("");
+  const [invoiceResults, setInvoiceResults] = useState([]);
   const [selectedInvoice, setSelectedInvoice] = useState(null);
-  const [searching, setSearching]             = useState(false);
+  const [searching, setSearching] = useState(false);
 
   /* view modal */
-  const [viewOpen, setViewOpen]           = useState(false);
+  const [viewOpen, setViewOpen] = useState(false);
   const [lastSavedPayment, setLastSavedPayment] = useState(null);
 
   /* ── fetch banks ── */
@@ -127,10 +127,13 @@ const AddPaymentMadeModal = ({ isOpen, onClose, invoice, onSaved }) => {
   if (!isOpen) return null;
 
   /* ── resolved values ── */
-  const resolvedInvoiceId     = selectedInvoice?.dbId || selectedInvoice?.id || invoice?.dbId || null;
-  const resolvedInvoiceNumber = invoiceNumber || selectedInvoice?.invoice_number || "";
-  const resolvedEntity        = selectedInvoice?.entity || invoice?.entity || "Pvt Ltd";
-  const resolvedBankId        = bankId || invoice?.bank_id || null;
+  const resolvedInvoiceId =
+    selectedInvoice?.dbId || selectedInvoice?.id || invoice?.dbId || null;
+  const resolvedInvoiceNumber =
+    invoiceNumber || selectedInvoice?.invoice_number || "";
+  const resolvedEntity =
+    selectedInvoice?.entity || invoice?.entity || "Pvt Ltd";
+  const resolvedBankId = bankId || invoice?.bank_id || null;
 
   /* ── save handler ── */
   const handleSave = async () => {
@@ -143,43 +146,66 @@ const AddPaymentMadeModal = ({ isOpen, onClose, invoice, onSaved }) => {
     try {
       const numAmount = Number(amount);
 
-      /* 1. payments_made */
-      const { data: savedPayment, error: payError } = await supabase
-        .from("payments_made")
+      // 1. Create software entry FIRST
+      const { data: softwareEntry, error: swError } = await supabase
+        .from("software_entries")
         .insert([
           {
-            invoice_id:     paymentType === "Invoice" ? resolvedInvoiceId : null,
-            invoice_number: paymentType === "Invoice" ? resolvedInvoiceNumber : null,
-            payment_type:   paymentType,
-            petty_cash:     paymentType === "Petty Cash",
-            other_payment:  paymentType === "Other",
-            bank_id:        resolvedBankId,
-            amount:         numAmount,
-            payment_date:   date,
-            remarks,
-            is_billable:    isBillable,
-            client_name:    selectedInvoice?.client_name || invoice?.client_name || null,
-            expense_head:   invoice?.pay_head || null,
-            transfer_amount: isBillable ? numAmount : 0,
+            bank_id: resolvedBankId,
+            entity: resolvedEntity,
+            amount: -numAmount,
+            date,
+            remarks: remarks || "Payment Made",
+            invoice_id: paymentType === "Invoice" ? resolvedInvoiceId : null,
+            invoice_number:
+              paymentType === "Invoice" ? resolvedInvoiceNumber : null,
           },
         ])
         .select()
         .single();
-      if (payError) throw payError;
 
-      /* 3. software_entries */
-      const { error: swError } = await supabase.from("software_entries").insert([
-        {
-          bank_id:        resolvedBankId,
-          entity:         resolvedEntity,
-          amount:         -numAmount,
-          date,
-          remarks:        remarks || "Payment Made",
-          invoice_id:     paymentType === "Invoice" ? resolvedInvoiceId : null,
-          invoice_number: paymentType === "Invoice" ? resolvedInvoiceNumber : null,
-        },
-      ]);
       if (swError) throw swError;
+
+      // 2. Create payment and LINK software entry
+      const { data: savedPayment, error: payError } = await supabase
+        .from("payments_made")
+        .insert([
+          {
+            invoice_id: paymentType === "Invoice" ? resolvedInvoiceId : null,
+
+            invoice_number:
+              paymentType === "Invoice" ? resolvedInvoiceNumber : null,
+
+            payment_type: paymentType,
+
+            petty_cash: paymentType === "Petty Cash",
+
+            other_payment: paymentType === "Other",
+
+            bank_id: resolvedBankId,
+
+            amount: numAmount,
+
+            payment_date: date,
+
+            remarks,
+
+            is_billable: isBillable,
+
+            client_name:
+              selectedInvoice?.client_name || invoice?.client_name || null,
+
+            expense_head: invoice?.pay_head || null,
+
+            transfer_amount: isBillable ? numAmount : 0,
+
+            software_entry_id: softwareEntry.id,
+          },
+        ])
+        .select()
+        .single();
+
+      if (payError) throw payError;
 
       /* 4. If BILLABLE → increase receivable_amount on the invoice */
       if (isBillable && resolvedInvoiceId) {
@@ -190,7 +216,8 @@ const AddPaymentMadeModal = ({ isOpen, onClose, invoice, onSaved }) => {
           .single();
         if (fetchErr) throw fetchErr;
 
-        const newReceivable = Number(invData.receivable_amount || 0) + numAmount;
+        const newReceivable =
+          Number(invData.receivable_amount || 0) + numAmount;
 
         const { error: updErr } = await supabase
           .from("invoices")
@@ -219,16 +246,16 @@ const AddPaymentMadeModal = ({ isOpen, onClose, invoice, onSaved }) => {
 
   /* Build a preview payment object for View (before save) */
   const previewPayment = {
-    amount:         Number(amount) || 0,
-    payment_date:   date,
-    payment_type:   paymentType,
-    bank_id:        resolvedBankId,
+    amount: Number(amount) || 0,
+    payment_date: date,
+    payment_type: paymentType,
+    bank_id: resolvedBankId,
     invoice_number: resolvedInvoiceNumber,
-    invoice_id:     resolvedInvoiceId,
-    client_name:    selectedInvoice?.client_name || invoice?.client_name || null,
+    invoice_id: resolvedInvoiceId,
+    client_name: selectedInvoice?.client_name || invoice?.client_name || null,
     remarks,
-    is_billable:    isBillable,
-    expense_head:   invoice?.pay_head || null,
+    is_billable: isBillable,
+    expense_head: invoice?.pay_head || null,
   };
 
   /* ────────────────── RENDER ────────────────── */
@@ -271,7 +298,9 @@ const AddPaymentMadeModal = ({ isOpen, onClose, invoice, onSaved }) => {
                   className="flex items-center gap-1.5 px-3 h-8 rounded-xl bg-white/10 hover:bg-white/20 transition-colors"
                 >
                   <Eye size={13} className="text-white/80" />
-                  <span className="text-white/80 text-xs font-semibold">View</span>
+                  <span className="text-white/80 text-xs font-semibold">
+                    View
+                  </span>
                 </button>
                 <button
                   onClick={onClose}
@@ -312,7 +341,6 @@ const AddPaymentMadeModal = ({ isOpen, onClose, invoice, onSaved }) => {
 
           {/* ── BODY ── */}
           <div className="overflow-y-auto flex-1 px-5 py-5 space-y-4">
-
             {/* ── Payment Type ── */}
             <div>
               <Label>Payment Type</Label>
@@ -456,7 +484,9 @@ const AddPaymentMadeModal = ({ isOpen, onClose, invoice, onSaved }) => {
                   >
                     <XCircle
                       size={20}
-                      className={!isBillable ? "text-slate-300" : "text-slate-400"}
+                      className={
+                        !isBillable ? "text-slate-300" : "text-slate-400"
+                      }
                     />
                     <span
                       className={`text-xs font-bold ${
@@ -489,7 +519,9 @@ const AddPaymentMadeModal = ({ isOpen, onClose, invoice, onSaved }) => {
                   >
                     <CheckCircle
                       size={20}
-                      className={isBillable ? "text-violet-200" : "text-slate-400"}
+                      className={
+                        isBillable ? "text-violet-200" : "text-slate-400"
+                      }
                     />
                     <span
                       className={`text-xs font-bold ${
@@ -514,11 +546,15 @@ const AddPaymentMadeModal = ({ isOpen, onClose, invoice, onSaved }) => {
                 {/* Billable impact note */}
                 {isBillable && (
                   <div className="mt-2 flex items-start gap-2 bg-violet-50 border border-violet-100 rounded-xl p-3">
-                    <AlertTriangle size={14} className="text-violet-500 flex-shrink-0 mt-0.5" />
+                    <AlertTriangle
+                      size={14}
+                      className="text-violet-500 flex-shrink-0 mt-0.5"
+                    />
                     <p className="text-xs text-violet-700 leading-relaxed">
-                      <strong>Billable expense:</strong> The amount you enter will be{" "}
-                      <strong>added to the invoice outstanding</strong>. The client will owe
-                      more. Both your bank and the receivable will reflect this.
+                      <strong>Billable expense:</strong> The amount you enter
+                      will be <strong>added to the invoice outstanding</strong>.
+                      The client will owe more. Both your bank and the
+                      receivable will reflect this.
                     </p>
                   </div>
                 )}
@@ -598,7 +634,9 @@ const AddPaymentMadeModal = ({ isOpen, onClose, invoice, onSaved }) => {
                 <div className="flex items-center gap-2">
                   <Layers
                     size={14}
-                    className={isBillable ? "text-violet-500" : "text-emerald-500"}
+                    className={
+                      isBillable ? "text-violet-500" : "text-emerald-500"
+                    }
                   />
                   <span
                     className={`text-xs font-semibold ${
@@ -639,11 +677,15 @@ const AddPaymentMadeModal = ({ isOpen, onClose, invoice, onSaved }) => {
             {/* ── Info note (non-billable) ── */}
             {!isBillable && (
               <div className="flex items-start gap-2 bg-amber-50 border border-amber-100 rounded-xl p-3">
-                <Info size={14} className="text-amber-500 flex-shrink-0 mt-0.5" />
+                <Info
+                  size={14}
+                  className="text-amber-500 flex-shrink-0 mt-0.5"
+                />
                 <p className="text-xs text-amber-700 leading-relaxed">
-                  This is a <strong>non-billable</strong> outgoing payment. It debits your bank
-                  but does <strong>not</strong> affect the invoice outstanding amount. To charge
-                  a client, switch to <strong>Billable</strong>.
+                  This is a <strong>non-billable</strong> outgoing payment. It
+                  debits your bank but does <strong>not</strong> affect the
+                  invoice outstanding amount. To charge a client, switch to{" "}
+                  <strong>Billable</strong>.
                 </p>
               </div>
             )}
