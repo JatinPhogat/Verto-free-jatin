@@ -195,6 +195,7 @@ const AddPaymentReceivedModal = ({
               amount_received: entered,
               payment_date: formData.dateReceived,
               bank_id: formData.bankId,
+              remarks: formData.remarks || null,
             },
           ])
           .select("payment_ref, bank_id")
@@ -251,6 +252,11 @@ const AddPaymentReceivedModal = ({
       setSaving(false);
     }
   };
+
+  // ── FIXED: handleEdit ────────────────────────────────────────
+  // Just UPDATE the record — DB triggers handle everything else:
+  //   trg_payment_received_update_bank  → syncs bank_entry amount/date
+  //   trg_recalculate_invoice_update    → recalculates outstanding on invoice
   const handleEdit = async (payment) => {
     try {
       if (payment._type === "invoice") {
@@ -259,11 +265,13 @@ const AddPaymentReceivedModal = ({
           .update({
             amount_received: Number(payment.amount),
             payment_date: payment.payment_date,
+            remarks: payment.remarks || null,
           })
           .eq("id", payment.id);
 
         if (error) throw error;
       } else {
+        // advance payment
         const { error } = await supabase
           .from("advance_payments")
           .update({
@@ -276,88 +284,52 @@ const AddPaymentReceivedModal = ({
         if (error) throw error;
       }
 
+      // Refresh dashboard — outstanding_invoice_view recomputes automatically
       if (onPaymentSaved) onPaymentSaved();
     } catch (err) {
       console.error("Edit payment error:", err);
       alert(err.message);
     }
   };
-  const handleDelete = async (payment) => {
-    const confirmed = window.confirm("Delete this payment?");
 
+  // ── FIXED: handleDelete ──────────────────────────────────────
+  // Just DELETE the record — DB triggers handle everything:
+  //   trg_payment_received_delete       → deletes linked bank_entry
+  //   trg_recalculate_invoice_delete    → recalculates outstanding on invoice
+  //
+  // REMOVED: manual receivable_amount recalculation (was wrong —
+  //   it overwrote the DB trigger result with a stale value)
+  // REMOVED: window.location.reload() (destructive, unnecessary)
+  const handleDelete = async (payment) => {
+    const confirmed = window.confirm(
+      `Delete payment of ₹${Number(payment.amount).toLocaleString(
+        "en-IN"
+      )}?\n` + `This will update the outstanding amount on the invoice.`
+    );
     if (!confirmed) return;
 
     try {
-      console.log("🔥 DELETE PAYMENT:", payment);
-
-      let error = null;
-
-      // invoice payment
       if (payment._type === "invoice") {
-        const res = await supabase
+        const { error } = await supabase
           .from("payments_received")
           .delete()
-          .eq("id", payment.id)
-          .select();
+          .eq("id", payment.id);
 
-        console.log("🔥 DELETE RESULT:", res);
-
-        error = res.error;
-      }
-
-      // advance payment
-      else {
-        const res = await supabase
+        if (error) throw error;
+      } else {
+        // advance payment
+        const { error } = await supabase
           .from("advance_payments")
           .delete()
-          .eq("id", payment.id)
-          .select();
+          .eq("id", payment.id);
 
-        console.log("🔥 DELETE RESULT:", res);
-
-        error = res.error;
+        if (error) throw error;
       }
 
-      if (error) throw error;
-      // recalculate invoice receivable
-      if (payment.invoice_id) {
-        const { data: remaining } = await supabase
-          .from("payments_received")
-          .select("amount_received")
-          .eq("invoice_id", payment.invoice_id);
-
-        const totalPaid = (remaining || []).reduce(
-          (sum, r) => sum + Number(r.amount_received || 0),
-          0
-        );
-
-        const { data: invoiceData } = await supabase
-          .from("invoices")
-          .select("*")
-          .eq("id", payment.invoice_id)
-          .single();
-
-        const invoiceAmount = Number(invoiceData?.invoice_value || 0);
-
-        const dueAmount = Math.max(0, invoiceAmount - totalPaid);
-
-        await supabase
-          .from("invoices")
-          .update({
-            receivable_amount: dueAmount,
-          })
-          .eq("id", payment.invoice_id);
-      }
-
-      // refresh parent
-      if (onPaymentSaved) {
-        await onPaymentSaved();
-      }
-
-      window.location.reload();
+      // Refresh dashboard — triggers already updated outstanding_invoice_view
+      if (onPaymentSaved) onPaymentSaved();
     } catch (err) {
-      console.error("❌ DELETE FAILED:", err);
-
+      console.error("Delete payment error:", err);
       alert(err.message);
     }
   };
@@ -442,7 +414,6 @@ const AddPaymentReceivedModal = ({
                     "linear-gradient(135deg, #022c22 0%, #065f46 50%, #059669 100%)",
                 }}
               >
-                {/* blobs */}
                 <div className="absolute top-0 right-0 w-32 h-32 bg-white/5 rounded-full -translate-y-8 translate-x-8" />
                 <div className="absolute bottom-0 left-10 w-16 h-16 bg-emerald-400/10 rounded-full translate-y-6" />
 
@@ -456,7 +427,6 @@ const AddPaymentReceivedModal = ({
                     </p>
                   </div>
 
-                  {/* ── View + Close ── */}
                   <div className="flex items-center gap-2">
                     <button
                       type="button"
@@ -915,16 +885,6 @@ const AddPaymentReceivedModal = ({
                       Cancel
                     </button>
 
-                    {/* ── View button in footer ── */}
-                    <button
-                      type="button"
-                      onClick={() => setViewOpen(true)}
-                      className="flex items-center gap-2 px-4 py-2.5 rounded-xl border-2 border-emerald-200 bg-emerald-50 text-emerald-700 text-sm font-semibold hover:bg-emerald-100 transition-colors"
-                    >
-                      <Eye size={14} />
-                      View History
-                    </button>
-
                     <button
                       type="submit"
                       disabled={saving}
@@ -1018,14 +978,12 @@ const AddPaymentReceivedModal = ({
         )}
       </AnimatePresence>
 
-      {/* ── View Payment Received Modal — rendered via portal at document.body ── */}
+      {/* ── View Payment Received Modal — portal ── */}
       {ReactDOM.createPortal(
         <ViewPaymentReceivedModal
           isOpen={viewOpen}
           onClose={() => setViewOpen(false)}
           invoice={invoice}
-          onEdit={handleEdit}
-          onDelete={handleDelete}
           onRefresh={onPaymentSaved}
         />,
         document.body

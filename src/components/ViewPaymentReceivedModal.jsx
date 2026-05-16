@@ -11,14 +11,13 @@ import {
   Building2,
   Calendar,
   FileText,
-  CheckCircle,
-  XCircle,
   AlertCircle,
   Filter,
   TrendingUp,
   Layers,
-  Users,
   ArrowDownCircle,
+  Trash2,
+  Edit3,
 } from "lucide-react";
 
 import supabase from "../lib/supabaseClient";
@@ -63,20 +62,12 @@ const TypeBadge = ({ type }) => {
 ───────────────────────────────────────────── */
 const exportToExcel = (rows) => {
   const wb = XLSX.utils.book_new();
-
   const invoiceRows = rows.filter((r) => r._type === "invoice");
   const advanceRows = rows.filter((r) => r._type === "advance");
   const totalAmount = rows.reduce((s, r) => s + Number(r.amount || 0), 0);
-  const invoiceTotal = invoiceRows.reduce(
-    (s, r) => s + Number(r.amount || 0),
-    0
-  );
-  const advanceTotal = advanceRows.reduce(
-    (s, r) => s + Number(r.amount || 0),
-    0
-  );
+  const invoiceTotal = invoiceRows.reduce((s, r) => s + Number(r.amount || 0), 0);
+  const advanceTotal = advanceRows.reduce((s, r) => s + Number(r.amount || 0), 0);
 
-  /* ── Summary sheet ── */
   const summaryData = [
     ["PAYMENT RECEIVED — SUMMARY REPORT"],
     ["Generated On", new Date().toLocaleString("en-IN")],
@@ -93,36 +84,12 @@ const exportToExcel = (rows) => {
   ];
   const summaryWs = XLSX.utils.aoa_to_sheet(summaryData);
   summaryWs["!cols"] = [{ wch: 28 }, { wch: 22 }];
-  if (summaryWs["A1"])
-    summaryWs["A1"].s = {
-      font: { bold: true, sz: 16, color: { rgb: "064E3B" } },
-      fill: { fgColor: { rgb: "ECFDF5" } },
-      alignment: { horizontal: "left" },
-    };
-  ["A4", "A10"].forEach((addr) => {
-    if (summaryWs[addr])
-      summaryWs[addr].s = {
-        font: { bold: true, sz: 11, color: { rgb: "FFFFFF" } },
-        fill: { fgColor: { rgb: "059669" } },
-      };
-  });
 
-  /* ── Detail sheet ── */
   const headers = [
-    "#",
-    "Type",
-    "Payment Ref",
-    "Invoice Number",
-    "Client",
-    "Ledger",
-    "Entity",
-    "Department",
-    "Amount (₹)",
-    "Payment Date",
-    "Bank",
-    "Remarks",
+    "#", "Type", "Payment Ref", "Invoice Number", "Client",
+    "Ledger", "Entity", "Department", "Amount (₹)", "Payment Date",
+    "Bank", "Remarks",
   ];
-
   const detail = rows.map((r, i) => [
     i + 1,
     r._type === "invoice" ? "Invoice" : "Advance",
@@ -139,99 +106,15 @@ const exportToExcel = (rows) => {
   ]);
 
   const detailWs = XLSX.utils.aoa_to_sheet([headers, ...detail]);
-
-  const headerStyle = {
-    font: { bold: true, color: { rgb: "FFFFFF" }, sz: 10 },
-    fill: { fgColor: { rgb: "064E3B" } },
-    alignment: { horizontal: "center", vertical: "center", wrapText: true },
-    border: { bottom: { style: "medium", color: { rgb: "10B981" } } },
-  };
-  headers.forEach((_, ci) => {
-    const addr = XLSX.utils.encode_cell({ r: 0, c: ci });
-    if (!detailWs[addr]) detailWs[addr] = { v: headers[ci], t: "s" };
-    detailWs[addr].s = headerStyle;
-  });
-
-  detail.forEach((row, ri) => {
-    const isAlt = ri % 2 === 0;
-    row.forEach((_, ci) => {
-      const addr = XLSX.utils.encode_cell({ r: ri + 1, c: ci });
-      if (!detailWs[addr]) return;
-      detailWs[addr].s = {
-        fill: { fgColor: { rgb: isAlt ? "ECFDF5" : "FFFFFF" } },
-        alignment: {
-          horizontal: ci === 8 ? "right" : ci === 0 ? "center" : "left",
-          vertical: "center",
-        },
-        font: {
-          color: { rgb: ci === 8 ? "064E3B" : "1E293B" },
-          bold: ci === 8,
-        },
-        border: { bottom: { style: "thin", color: { rgb: "A7F3D0" } } },
-      };
-      if (ci === 8) detailWs[addr].z = "#,##0";
-    });
-  });
-
-  /* totals row */
-  const totalRow = detail.length + 1;
-  const totalsData = [
-    "",
-    "TOTAL",
-    "",
-    "",
-    "",
-    "",
-    "",
-    "",
-    totalAmount,
-    "",
-    "",
-    "",
-  ];
-  totalsData.forEach((v, ci) => {
-    const addr = XLSX.utils.encode_cell({ r: totalRow, c: ci });
-    detailWs[addr] = {
-      v,
-      t: typeof v === "number" ? "n" : "s",
-      s: {
-        font: { bold: true, color: { rgb: "FFFFFF" }, sz: 10 },
-        fill: { fgColor: { rgb: "064E3B" } },
-        alignment: { horizontal: ci === 8 ? "right" : "left" },
-        border: { top: { style: "medium", color: { rgb: "10B981" } } },
-      },
-    };
-    if (ci === 8) detailWs[addr].z = "#,##0";
-  });
-
-  detailWs["!ref"] = XLSX.utils.encode_range(
-    { r: 0, c: 0 },
-    { r: totalRow, c: 11 }
-  );
   detailWs["!cols"] = [
-    { wch: 4 },
-    { wch: 10 },
-    { wch: 18 },
-    { wch: 18 },
-    { wch: 22 },
-    { wch: 18 },
-    { wch: 20 },
-    { wch: 16 },
-    { wch: 14 },
-    { wch: 14 },
-    { wch: 20 },
-    { wch: 28 },
+    { wch: 4 }, { wch: 10 }, { wch: 18 }, { wch: 18 }, { wch: 22 },
+    { wch: 18 }, { wch: 20 }, { wch: 16 }, { wch: 14 }, { wch: 14 },
+    { wch: 20 }, { wch: 28 },
   ];
-  detailWs["!rows"] = [{ hpt: 30 }];
 
-  wb.Workbook = wb.Workbook || {};
-  wb.Workbook.Views = [{ activeTab: 0 }];
   XLSX.utils.book_append_sheet(wb, detailWs, "Payment Details");
   XLSX.utils.book_append_sheet(wb, summaryWs, "Summary");
-  XLSX.writeFile(
-    wb,
-    `Payments_Received_${new Date().toISOString().slice(0, 10)}.xlsx`
-  );
+  XLSX.writeFile(wb, `Payments_Received_${new Date().toISOString().slice(0, 10)}.xlsx`);
 };
 
 /* ─────────────────────────────────────────────
@@ -241,8 +124,6 @@ const ViewPaymentReceivedModal = ({
   isOpen,
   onClose,
   invoice,
-  onEdit,
-  onDelete,
   onRefresh,
 }) => {
   const [rows, setRows] = useState([]);
@@ -250,16 +131,30 @@ const ViewPaymentReceivedModal = ({
   const [search, setSearch] = useState("");
   const [filterType, setFilterType] = useState("All");
   const [exporting, setExporting] = useState(false);
+
+  // Edit state
   const [editingRow, setEditingRow] = useState(null);
   const [editAmount, setEditAmount] = useState("");
   const [editDate, setEditDate] = useState("");
   const [editRemarks, setEditRemarks] = useState("");
   const [saving, setSaving] = useState(false);
 
+  // Delete confirm state
+  const [deletingRow, setDeletingRow] = useState(null);
+  const [deleting, setDeleting] = useState(false);
+
+  // Toast / error
+  const [toast, setToast] = useState(null);
+
+  const showToast = (type, msg) => {
+    setToast({ type, msg });
+    setTimeout(() => setToast(null), 3000);
+  };
+
+  /* ── Fetch all payments ── */
   const fetchAll = useCallback(async () => {
     setLoading(true);
     try {
-      // ── 1. Invoice payments ──────────────────────────────────
       let invQuery = supabase
         .from("payment_received_full_view")
         .select("*")
@@ -275,7 +170,7 @@ const ViewPaymentReceivedModal = ({
       const invoiceRows = (invData || []).map((r) => ({
         _type: "invoice",
         id: r.id,
-        invoice_id: r.invoice_id, // ADD THIS
+        invoice_id: r.invoice_id,
         payment_ref: r.payment_ref,
         invoice_number: r.invoice_number || "",
         client_name: r.client_name || "",
@@ -288,23 +183,18 @@ const ViewPaymentReceivedModal = ({
         remarks: r.remarks || "",
       }));
 
-      // ── 2. Advance payments (skip when scoped to a specific invoice) ──
       let advanceRows = [];
       if (!invoice) {
-        // Fetch banks for name lookup
         const { data: banksData } = await supabase
           .from("bank_master")
           .select("id, bank_name");
         const banksMap = {};
-        (banksData || []).forEach((b) => {
-          banksMap[b.id] = b.bank_name;
-        });
+        (banksData || []).forEach((b) => { banksMap[b.id] = b.bank_name; });
 
-        // ✅ KEY FIX: filter at DB level — only unlinked advances
         const { data: advData, error: advErr } = await supabase
           .from("advance_payments")
           .select("*")
-          .eq("is_adjusted", false) // ← DB-level filter, not JS filter
+          .eq("is_adjusted", false)
           .order("payment_date", { ascending: false });
 
         if (advErr) throw advErr;
@@ -313,7 +203,7 @@ const ViewPaymentReceivedModal = ({
           _type: "advance",
           id: r.id,
           payment_ref: r.payment_ref,
-          invoice_number: "", // unlinked → no invoice number
+          invoice_number: "",
           client_name: r.client_name || "",
           ledger_name: r.ledger_name || "",
           entity_name: r.entity_name || "",
@@ -328,63 +218,113 @@ const ViewPaymentReceivedModal = ({
       setRows([...invoiceRows, ...advanceRows]);
     } catch (err) {
       console.error("fetchAll error:", err);
+      showToast("error", "Failed to load payments");
     } finally {
       setLoading(false);
     }
   }, [invoice]);
 
-  const handleSave = async () => {
-    if (!editingRow) return;
-
-    setSaving(true);
-
-    try {
-      await onEdit({
-        ...editingRow,
-        amount: editAmount,
-        payment_date: editDate,
-        remarks: editRemarks,
-      });
-
-      setEditingRow(null);
-
-      fetchAll();
-
-      if (onRefresh) onRefresh();
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const startEdit = (row) => {
-    setEditingRow(row);
-    setEditAmount(String(row.amount || ""));
-    setEditDate(row.payment_date?.slice(0, 10) || "");
-    setEditRemarks(row.remarks || "");
-  };
-
-  const handleDeleteRow = async (row) => {
-    await onDelete(row);
-    await fetchAll();
-
-    if (onRefresh) {
-      await onRefresh();
-    }
-  };
-
   useEffect(() => {
     if (isOpen) {
       setSearch("");
       setFilterType("All");
+      setEditingRow(null);
+      setDeletingRow(null);
       fetchAll();
     }
   }, [isOpen, fetchAll]);
 
   if (!isOpen) return null;
 
-  /* ── filtered rows ── */
+  /* ── EDIT: open panel ── */
+  const startEdit = (row) => {
+    setDeletingRow(null);
+    setEditingRow(row);
+    setEditAmount(String(row.amount || ""));
+    setEditDate(row.payment_date?.slice(0, 10) || "");
+    setEditRemarks(row.remarks || "");
+  };
+
+  /* ── EDIT: save ── */
+  const handleSave = async () => {
+    if (!editingRow) return;
+    if (!editAmount || Number(editAmount) <= 0) {
+      showToast("error", "Amount must be greater than 0");
+      return;
+    }
+    if (!editDate) {
+      showToast("error", "Please select a date");
+      return;
+    }
+
+    setSaving(true);
+    try {
+      if (editingRow._type === "invoice") {
+        const { error } = await supabase
+          .from("payments_received")
+          .update({
+            amount_received: Number(editAmount),
+            payment_date: editDate,
+            remarks: editRemarks,
+          })
+          .eq("id", editingRow.id);
+        if (error) throw error;
+      } else if (editingRow._type === "advance") {
+        const { error } = await supabase
+          .from("advance_payments")
+          .update({
+            amount: Number(editAmount),
+            payment_date: editDate,
+            remarks: editRemarks,
+          })
+          .eq("id", editingRow.id);
+        if (error) throw error;
+      }
+
+      showToast("success", "Payment updated successfully");
+      setEditingRow(null);
+      await fetchAll();
+      if (onRefresh) onRefresh();
+    } catch (err) {
+      console.error("Edit error:", err);
+      showToast("error", err.message || "Failed to update payment");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  /* ── DELETE: confirm then delete ── */
+  const handleDeleteConfirm = async () => {
+    if (!deletingRow) return;
+    setDeleting(true);
+    try {
+      if (deletingRow._type === "invoice") {
+        const { error } = await supabase
+          .from("payments_received")
+          .delete()
+          .eq("id", deletingRow.id);
+        if (error) throw error;
+      } else if (deletingRow._type === "advance") {
+        const { error } = await supabase
+          .from("advance_payments")
+          .delete()
+          .eq("id", deletingRow.id);
+        if (error) throw error;
+      }
+
+      showToast("success", "Payment deleted");
+      setDeletingRow(null);
+      await fetchAll();
+      if (onRefresh) onRefresh();
+    } catch (err) {
+      console.error("Delete error:", err);
+      showToast("error", err.message || "Failed to delete payment");
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  /* ── Filtered rows ── */
   const filtered = rows.filter((r) => {
     const q = search.toLowerCase();
     const matchSearch =
@@ -417,14 +357,13 @@ const ViewPaymentReceivedModal = ({
     try {
       exportToExcel(filtered);
     } catch (error) {
-      console.error("Payment received export failed:", error);
-      alert("Export failed. Check console for details.");
+      console.error("Export failed:", error);
     } finally {
       setExporting(false);
     }
   };
 
-  /* ────────────────── RENDER via Portal ────────────────── */
+  /* ── Render ── */
   return ReactDOM.createPortal(
     <AnimatePresence>
       <motion.div
@@ -434,6 +373,19 @@ const ViewPaymentReceivedModal = ({
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
       >
+        {/* Toast */}
+        {toast && (
+          <div
+            className={`fixed top-6 right-6 z-[100000] px-5 py-3 rounded-2xl text-sm font-semibold shadow-lg transition-all ${
+              toast.type === "success"
+                ? "bg-emerald-600 text-white"
+                : "bg-rose-600 text-white"
+            }`}
+          >
+            {toast.msg}
+          </div>
+        )}
+
         <motion.div
           initial={{ scale: 0.96, opacity: 0, y: 40 }}
           animate={{ scale: 1, opacity: 1, y: 0 }}
@@ -445,11 +397,9 @@ const ViewPaymentReceivedModal = ({
           <div
             className="relative px-6 py-5 flex-shrink-0"
             style={{
-              background:
-                "linear-gradient(135deg, #022c22 0%, #065f46 50%, #059669 100%)",
+              background: "linear-gradient(135deg, #022c22 0%, #065f46 50%, #059669 100%)",
             }}
           >
-            {/* decorative blobs */}
             <div className="absolute top-0 right-0 w-44 h-44 bg-white/5 rounded-full -translate-y-14 translate-x-14" />
             <div className="absolute bottom-0 left-20 w-20 h-20 bg-emerald-400/10 rounded-full translate-y-8" />
 
@@ -492,25 +442,13 @@ const ViewPaymentReceivedModal = ({
               </div>
             </div>
 
-            {/* Stats bar */}
+            {/* Stats */}
             <div className="relative mt-4 grid grid-cols-2 sm:grid-cols-4 gap-2">
               {[
                 { label: "Records", value: filtered.length, icon: Layers },
-                {
-                  label: "Total Received",
-                  value: fmt(totalAmount),
-                  icon: TrendingUp,
-                },
-                {
-                  label: "Invoice Payments",
-                  value: fmt(invoiceTotal),
-                  icon: FileText,
-                },
-                {
-                  label: "Advance Pending",
-                  value: fmt(advanceTotal),
-                  icon: ArrowDownCircle,
-                },
+                { label: "Total Received", value: fmt(totalAmount), icon: TrendingUp },
+                { label: "Invoice Payments", value: fmt(invoiceTotal), icon: FileText },
+                { label: "Advance Pending", value: fmt(advanceTotal), icon: ArrowDownCircle },
               ].map(({ label, value, icon: Icon }) => (
                 <div
                   key={label}
@@ -531,7 +469,7 @@ const ViewPaymentReceivedModal = ({
               ))}
             </div>
 
-            {/* Invoice badge (when scoped to one invoice) */}
+            {/* Invoice badge */}
             {invoice && (
               <div className="relative mt-3 flex items-center gap-3 bg-white/10 border border-white/20 rounded-2xl p-3">
                 <div className="w-8 h-8 rounded-lg bg-white/15 flex items-center justify-center flex-shrink-0">
@@ -542,9 +480,7 @@ const ViewPaymentReceivedModal = ({
                     {invoice.invoice_number || invoice.id}
                   </p>
                   {invoice.client_name && (
-                    <p className="text-emerald-300 text-xs mt-0.5">
-                      {invoice.client_name}
-                    </p>
+                    <p className="text-emerald-300 text-xs mt-0.5">{invoice.client_name}</p>
                   )}
                 </div>
                 {invoice.receivable_amount != null && (
@@ -571,10 +507,9 @@ const ViewPaymentReceivedModal = ({
                 placeholder="Search ref, invoice, client, ledger, bank, remarks…"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-9 pr-4 py-2.5 text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 transition-all"
+                className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-9 pr-4 py-2.5 text-sm text-black placeholder-slate-400 focus:outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 transition-all"
               />
             </div>
-
             <div className="flex items-center gap-2 flex-wrap">
               <Filter size={12} className="text-slate-400" />
               {["All", "Invoice", "Advance"].map((t) => (
@@ -584,7 +519,7 @@ const ViewPaymentReceivedModal = ({
                   className={`px-3 py-1 rounded-full text-[11px] font-bold transition-all ${
                     filterType === t
                       ? "bg-emerald-600 text-white shadow-sm"
-                      : "bg-slate-100 text-slate-500 hover:bg-slate-200"
+                      : "bg-slate-100 text-slate-800 hover:bg-slate-200"
                   }`}
                 >
                   {t}
@@ -605,29 +540,16 @@ const ViewPaymentReceivedModal = ({
                 <div className="w-14 h-14 rounded-2xl bg-emerald-50 flex items-center justify-center">
                   <AlertCircle size={24} className="text-emerald-300" />
                 </div>
-                <p className="text-sm text-slate-500 font-medium">
-                  No payment records found
-                </p>
-                <p className="text-xs text-slate-400">
-                  Try adjusting filters or search
-                </p>
+                <p className="text-sm text-slate-800 font-medium">No payment records found</p>
+                <p className="text-xs text-slate-600">Try adjusting filters or search</p>
               </div>
             ) : (
               <table className="min-w-full text-sm border-collapse">
                 <thead className="sticky top-0 z-10">
                   <tr>
                     {[
-                      "Type",
-                      "Ref No.",
-                      "Invoice",
-                      "Client",
-                      "Ledger",
-                      "Entity / Dept",
-                      "Amount",
-                      "Date",
-                      "Bank",
-                      "Remarks",
-                      "Actions",
+                      "Type", "Ref No.", "Invoice", "Client", "Ledger",
+                      "Entity / Dept", "Amount", "Date", "Bank", "Remarks", "Actions",
                     ].map((h) => (
                       <th
                         key={h}
@@ -641,139 +563,263 @@ const ViewPaymentReceivedModal = ({
                 </thead>
 
                 <tbody>
-                  {filtered.map((r, index) => (
-                    <tr
-                      key={`${r._type}-${r.id}`}
-                      className={`border-b border-emerald-100 hover:bg-emerald-50 transition-colors ${
-                        index % 2 === 0 ? "bg-white" : "bg-emerald-50/30"
-                      }`}
-                    >
-                      {/* Type */}
-                      <td className="px-4 py-3 whitespace-nowrap">
-                        <TypeBadge type={r._type} />
-                      </td>
+                  {filtered.map((r, index) => {
+                    const isEditing = editingRow?.id === r.id && editingRow?._type === r._type;
+                    const isDeleting = deletingRow?.id === r.id && deletingRow?._type === r._type;
 
-                      {/* Ref No */}
-                      <td className="px-4 py-3 whitespace-nowrap">
-                        <span className="font-mono text-xs font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-lg">
-                          {r.payment_ref || "—"}
-                        </span>
-                      </td>
-
-                      {/* Invoice */}
-                      <td className="px-4 py-3 whitespace-nowrap">
-                        {r.invoice_number ? (
-                          <div className="flex items-center gap-1.5">
-                            <FileText size={11} className="text-slate-300" />
-                            <span className="text-xs text-slate-700 font-semibold">
-                              {r.invoice_number}
-                            </span>
-                          </div>
-                        ) : (
-                          <span className="text-slate-300 text-xs">—</span>
-                        )}
-                      </td>
-
-                      {/* Client */}
-                      <td className="px-4 py-3 whitespace-nowrap max-w-[150px]">
-                        <div>
-                          <p className="font-semibold text-slate-800 text-xs truncate">
-                            {r.client_name || "—"}
-                          </p>
-                          {r.ledger_name && (
-                            <p className="text-[10px] text-slate-400 truncate">
-                              {r.ledger_name}
-                            </p>
-                          )}
-                        </div>
-                      </td>
-
-                      {/* Ledger */}
-                      <td className="px-4 py-3 whitespace-nowrap hidden lg:table-cell">
-                        <span className="text-xs text-slate-500">
-                          {r.ledger_name || "—"}
-                        </span>
-                      </td>
-
-                      {/* Entity / Dept */}
-                      <td className="px-4 py-3 whitespace-nowrap">
-                        <div>
-                          {r.entity_name && (
-                            <span className="inline-flex items-center px-2 py-0.5 rounded-lg bg-emerald-100 text-emerald-800 text-[10px] font-bold">
-                              {r.entity_name}
-                            </span>
-                          )}
-                          {r.department_name && (
-                            <p className="text-[10px] text-slate-400 mt-0.5">
-                              {r.department_name}
-                            </p>
-                          )}
-                          {!r.entity_name && !r.department_name && (
-                            <span className="text-slate-300 text-xs">—</span>
-                          )}
-                        </div>
-                      </td>
-
-                      {/* Amount */}
-                      <td className="px-4 py-3 whitespace-nowrap text-right">
-                        <span className="font-bold text-emerald-700 text-sm">
-                          {fmt(r.amount)}
-                        </span>
-                      </td>
-
-                      {/* Date */}
-                      <td className="px-4 py-3 whitespace-nowrap">
-                        <div className="flex items-center gap-1.5">
-                          <Calendar size={11} className="text-slate-300" />
-                          <span className="text-xs text-slate-600">
-                            {fmtDate(r.payment_date)}
-                          </span>
-                        </div>
-                      </td>
-
-                      {/* Bank */}
-                      <td className="px-4 py-3 whitespace-nowrap">
-                        <div className="flex items-center gap-1.5">
-                          <Building2 size={11} className="text-slate-300" />
-                          <span className="text-xs text-slate-600">
-                            {r.bank_name || "—"}
-                          </span>
-                        </div>
-                      </td>
-
-                      {/* Remarks */}
-                      <td className="px-4 py-3 max-w-[160px]">
-                        <span
-                          className="text-xs text-slate-500 truncate block"
-                          title={r.remarks}
+                    return (
+                      <React.Fragment key={`${r._type}-${r.id}`}>
+                        <tr
+                          className={`border-b border-emerald-100 transition-colors ${
+                            isEditing
+                              ? "bg-emerald-50/80"
+                              : isDeleting
+                              ? "bg-rose-50/60"
+                              : index % 2 === 0
+                              ? "bg-white hover:bg-emerald-50"
+                              : "bg-emerald-50/30 hover:bg-emerald-50"
+                          }`}
                         >
-                          {r.remarks || (
-                            <span className="text-slate-300">—</span>
-                          )}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3 whitespace-nowrap">
-                        <div className="flex items-center gap-2">
-                          <button
-                            onClick={() => startEdit(r)}
-                            className="px-2 py-1 bg-emerald-100 text-emerald-700 rounded text-xs font-bold"
-                          >
-                            Edit
-                          </button>
+                          {/* Type */}
+                          <td className="px-4 py-3 whitespace-nowrap">
+                            <TypeBadge type={r._type} />
+                          </td>
 
-                          <button
-                            onClick={() => handleDeleteRow(r)}
-                            className="px-2 py-1 bg-rose-100 text-rose-700 rounded text-xs font-bold"
-                          >
-                            Delete
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
+                          {/* Ref No. */}
+                          <td className="px-4 py-3 whitespace-nowrap">
+                            <span className="font-mono text-xs font-semibold text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded-lg">
+                              {r.payment_ref || "—"}
+                            </span>
+                          </td>
+
+                          {/* Invoice */}
+                          <td className="px-4 py-3 whitespace-nowrap">
+                            {r.invoice_number ? (
+                              <div className="flex items-center gap-1.5">
+                                <FileText size={11} className="text-slate-500" />
+                                <span className="text-xs text-black font-semibold">
+                                  {r.invoice_number}
+                                </span>
+                              </div>
+                            ) : (
+                              <span className="text-slate-400 text-xs">—</span>
+                            )}
+                          </td>
+
+                          {/* Client */}
+                          <td className="px-4 py-3 whitespace-nowrap max-w-[150px]">
+                            <div>
+                              <p className="font-semibold text-black text-xs truncate">
+                                {r.client_name || "—"}
+                              </p>
+                              {r.ledger_name && (
+                                <p className="text-[10px] text-slate-600 truncate">
+                                  {r.ledger_name}
+                                </p>
+                              )}
+                            </div>
+                          </td>
+
+                          {/* Ledger (hidden on small screens) */}
+                          <td className="px-4 py-3 whitespace-nowrap hidden lg:table-cell">
+                            <span className="text-xs text-black">{r.ledger_name || "—"}</span>
+                          </td>
+
+                          {/* Entity / Dept */}
+                          <td className="px-4 py-3 whitespace-nowrap">
+                            <div>
+                              {r.entity_name && (
+                                <span className="inline-flex items-center px-2 py-0.5 rounded-lg bg-emerald-100 text-emerald-900 text-[10px] font-bold">
+                                  {r.entity_name}
+                                </span>
+                              )}
+                              {r.department_name && (
+                                <p className="text-[10px] text-black mt-0.5">{r.department_name}</p>
+                              )}
+                              {!r.entity_name && !r.department_name && (
+                                <span className="text-slate-400 text-xs">—</span>
+                              )}
+                            </div>
+                          </td>
+
+                          {/* Amount */}
+                          <td className="px-4 py-3 whitespace-nowrap text-right">
+                            <span className="font-bold text-emerald-800 text-sm">
+                              {fmt(r.amount)}
+                            </span>
+                          </td>
+
+                          {/* Date */}
+                          <td className="px-4 py-3 whitespace-nowrap">
+                            <div className="flex items-center gap-1.5">
+                              <Calendar size={11} className="text-slate-500" />
+                              <span className="text-xs text-black">{fmtDate(r.payment_date)}</span>
+                            </div>
+                          </td>
+
+                          {/* Bank */}
+                          <td className="px-4 py-3 whitespace-nowrap">
+                            <div className="flex items-center gap-1.5">
+                              <Building2 size={11} className="text-slate-500" />
+                              <span className="text-xs text-black">{r.bank_name || "—"}</span>
+                            </div>
+                          </td>
+
+                          {/* Remarks */}
+                          <td className="px-4 py-3 max-w-[160px]">
+                            <span
+                              className="text-xs text-black truncate block"
+                              title={r.remarks}
+                            >
+                              {r.remarks || <span className="text-slate-400">—</span>}
+                            </span>
+                          </td>
+
+                          {/* Actions */}
+                          <td className="px-4 py-3 whitespace-nowrap">
+                            <div className="flex items-center gap-1.5">
+                              <button
+                                onClick={() =>
+                                  isEditing ? setEditingRow(null) : startEdit(r)
+                                }
+                                className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                                  isEditing
+                                    ? "bg-slate-100 text-slate-700"
+                                    : "bg-emerald-100 text-emerald-800 hover:bg-emerald-200"
+                                }`}
+                              >
+                                <Edit3 size={11} />
+                                {isEditing ? "Cancel" : "Edit"}
+                              </button>
+                              <button
+                                onClick={() =>
+                                  isDeleting
+                                    ? setDeletingRow(null)
+                                    : setDeletingRow(r)
+                                }
+                                className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                                  isDeleting
+                                    ? "bg-slate-100 text-slate-700"
+                                    : "bg-rose-100 text-rose-800 hover:bg-rose-200"
+                                }`}
+                              >
+                                <Trash2 size={11} />
+                                {isDeleting ? "Cancel" : "Delete"}
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+
+                        {/* ── Inline Edit Panel ── */}
+                        {isEditing && (
+                          <tr>
+                            <td colSpan={11} className="p-0">
+                              <div className="bg-emerald-50 border-b border-emerald-200 px-6 py-4">
+                                <p className="text-xs font-bold text-emerald-900 uppercase tracking-widest mb-3">
+                                  Edit Payment — {r.payment_ref}
+                                </p>
+                                <div className="grid grid-cols-3 gap-4">
+                                  <div>
+                                    <label className="text-xs font-semibold text-black block mb-1">
+                                      Amount (₹)
+                                    </label>
+                                    <input
+                                      type="number"
+                                      value={editAmount}
+                                      onChange={(e) => setEditAmount(e.target.value)}
+                                      className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm text-black focus:outline-none focus:border-emerald-500"
+                                    />
+                                  </div>
+                                  <div>
+                                    <label className="text-xs font-semibold text-black block mb-1">
+                                      Payment Date
+                                    </label>
+                                    <input
+                                      type="date"
+                                      value={editDate}
+                                      onChange={(e) => setEditDate(e.target.value)}
+                                      className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm text-black focus:outline-none focus:border-emerald-500"
+                                    />
+                                  </div>
+                                  <div>
+                                    <label className="text-xs font-semibold text-black block mb-1">
+                                      Remarks
+                                    </label>
+                                    <input
+                                      type="text"
+                                      value={editRemarks}
+                                      onChange={(e) => setEditRemarks(e.target.value)}
+                                      className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm text-black focus:outline-none focus:border-emerald-500"
+                                    />
+                                  </div>
+                                </div>
+                                <div className="flex justify-end gap-3 mt-4">
+                                  <button
+                                    onClick={() => setEditingRow(null)}
+                                    className="px-4 py-2 border border-slate-300 rounded-lg text-sm text-black hover:bg-slate-50"
+                                  >
+                                    Cancel
+                                  </button>
+                                  <button
+                                    onClick={handleSave}
+                                    disabled={saving}
+                                    className="px-5 py-2 bg-emerald-600 text-white rounded-lg text-sm font-semibold hover:bg-emerald-700 disabled:opacity-60 flex items-center gap-2"
+                                  >
+                                    {saving && (
+                                      <RefreshCw size={13} className="animate-spin" />
+                                    )}
+                                    {saving ? "Saving…" : "Save Changes"}
+                                  </button>
+                                </div>
+                              </div>
+                            </td>
+                          </tr>
+                        )}
+
+                        {/* ── Inline Delete Confirm ── */}
+                        {isDeleting && (
+                          <tr>
+                            <td colSpan={11} className="p-0">
+                              <div className="bg-rose-50 border-b border-rose-200 px-6 py-4 flex items-center justify-between">
+                                <div>
+                                  <p className="text-sm font-bold text-rose-900">
+                                    Delete this payment?
+                                  </p>
+                                  <p className="text-xs text-rose-800 mt-0.5">
+                                    {fmt(r.amount)} · {fmtDate(r.payment_date)} · {r.payment_ref}
+                                  </p>
+                                  <p className="text-xs text-rose-700 mt-1">
+                                    This will update the outstanding amount on the invoice.
+                                  </p>
+                                </div>
+                                <div className="flex items-center gap-3">
+                                  <button
+                                    onClick={() => setDeletingRow(null)}
+                                    className="px-4 py-2 border border-rose-300 rounded-lg text-sm text-rose-800 hover:bg-rose-100"
+                                  >
+                                    Cancel
+                                  </button>
+                                  <button
+                                    onClick={handleDeleteConfirm}
+                                    disabled={deleting}
+                                    className="px-5 py-2 bg-rose-600 text-white rounded-lg text-sm font-semibold hover:bg-rose-700 disabled:opacity-60 flex items-center gap-2"
+                                  >
+                                    {deleting && (
+                                      <RefreshCw size={13} className="animate-spin" />
+                                    )}
+                                    {deleting ? "Deleting…" : "Yes, Delete"}
+                                  </button>
+                                </div>
+                              </div>
+                            </td>
+                          </tr>
+                        )}
+                      </React.Fragment>
+                    );
+                  })}
                 </tbody>
 
-                {/* Sticky totals footer */}
+                {/* Totals footer */}
                 <tfoot className="sticky bottom-0">
                   <tr style={{ background: "#022c22" }}>
                     <td colSpan={6} className="px-4 py-3">
@@ -782,87 +828,20 @@ const ViewPaymentReceivedModal = ({
                       </span>
                     </td>
                     <td className="px-4 py-3 text-right">
-                      <span className="font-bold text-white text-base">
-                        {fmt(totalAmount)}
-                      </span>
+                      <span className="font-bold text-white text-base">{fmt(totalAmount)}</span>
                     </td>
-                    <td colSpan={3} />
+                    <td colSpan={4} />
                   </tr>
                 </tfoot>
               </table>
             )}
           </div>
-          {editingRow && (
-            <div className="border-t border-slate-200 p-5 bg-emerald-50">
-              <h3 className="text-sm font-bold text-emerald-800 mb-4">
-                Edit Payment
-              </h3>
-
-              <div className="grid grid-cols-3 gap-4">
-                <div>
-                  <label className="text-xs font-semibold text-slate-600 block mb-1">
-                    Amount
-                  </label>
-
-                  <input
-                    type="number"
-                    value={editAmount}
-                    onChange={(e) => setEditAmount(e.target.value)}
-                    className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm"
-                  />
-                </div>
-
-                <div>
-                  <label className="text-xs font-semibold text-slate-600 block mb-1">
-                    Date
-                  </label>
-
-                  <input
-                    type="date"
-                    value={editDate}
-                    onChange={(e) => setEditDate(e.target.value)}
-                    className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm"
-                  />
-                </div>
-
-                <div>
-                  <label className="text-xs font-semibold text-slate-600 block mb-1">
-                    Remarks
-                  </label>
-
-                  <input
-                    type="text"
-                    value={editRemarks}
-                    onChange={(e) => setEditRemarks(e.target.value)}
-                    className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm"
-                  />
-                </div>
-              </div>
-
-              <div className="flex justify-end gap-3 mt-4">
-                <button
-                  onClick={() => setEditingRow(null)}
-                  className="px-4 py-2 border border-slate-300 rounded-lg text-sm"
-                >
-                  Cancel
-                </button>
-
-                <button
-                  onClick={handleSave}
-                  disabled={saving}
-                  className="px-4 py-2 bg-emerald-600 text-white rounded-lg text-sm font-semibold"
-                >
-                  {saving ? "Saving..." : "Save Changes"}
-                </button>
-              </div>
-            </div>
-          )}
 
           {/* ── FOOTER ── */}
           <div className="flex-shrink-0 px-5 pb-6 pt-3 border-t border-slate-100 bg-white flex items-center gap-3">
             <button
               onClick={fetchAll}
-              className="flex items-center gap-2 px-4 py-2.5 rounded-2xl border border-slate-200 text-slate-600 text-sm font-semibold hover:bg-slate-50 transition-colors"
+              className="flex items-center gap-2 px-4 py-2.5 rounded-2xl border border-slate-200 text-black text-sm font-semibold hover:bg-slate-50 transition-colors"
             >
               <RefreshCw size={13} /> Refresh
             </button>
@@ -875,16 +854,12 @@ const ViewPaymentReceivedModal = ({
                 boxShadow: "0 4px 14px rgba(5,150,105,0.3)",
               }}
             >
-              {exporting ? (
-                <RefreshCw size={13} className="animate-spin" />
-              ) : (
-                <Download size={13} />
-              )}
+              {exporting ? <RefreshCw size={13} className="animate-spin" /> : <Download size={13} />}
               Download Excel
             </button>
             <button
               onClick={onClose}
-              className="ml-auto px-6 py-2.5 rounded-2xl border-2 border-slate-200 text-slate-600 text-sm font-semibold hover:bg-slate-50 transition-colors"
+              className="ml-auto px-6 py-2.5 rounded-2xl border-2 border-slate-200 text-black text-sm font-semibold hover:bg-slate-50 transition-colors"
             >
               Close
             </button>
