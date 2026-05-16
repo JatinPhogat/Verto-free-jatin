@@ -12,6 +12,7 @@ import {
   AlertCircle,
   CheckCircle2,
   Loader2,
+  History,
 } from "lucide-react";
 import supabase from "../lib/supabaseClient";
 
@@ -32,6 +33,17 @@ const EMPTY_COST_HEAD = {
   os: 0, temp: 0, rec: 0, projects: 0, bd: 0,
   accts: 0, admin: 0, hr: 0, others: 0,
 };
+
+const EMPTY_COST_SHIFT = {
+  effective_month: "",
+  effective_year:  "",
+  cost_head_breakup: { ...EMPTY_COST_HEAD },
+};
+
+const MONTH_NAMES = [
+  "Jan","Feb","Mar","Apr","May","Jun",
+  "Jul","Aug","Sep","Oct","Nov","Dec",
+];
 
 const EMPTY_FORM = {
   entity: "",
@@ -55,6 +67,9 @@ const EMPTY_FORM = {
   reimbursement: "",
   cost_head_breakup: { ...EMPTY_COST_HEAD },
   client_focus: [{ clientName: "", percentage: "" }],
+  // cost shift state (not saved to internal_team, managed separately)
+  show_cost_shift: false,
+  cost_shift: { ...EMPTY_COST_SHIFT },
 };
 
 const AddInternalTeamModal = ({ isOpen, onClose, editingEmployee, onSaved }) => {
@@ -66,6 +81,12 @@ const AddInternalTeamModal = ({ isOpen, onClose, editingEmployee, onSaved }) => 
   const [deleting, setDeleting]           = useState(false);
   const [emailOptions, setEmailOptions]   = useState([]);
   const [loadingEmails, setLoadingEmails] = useState(false);
+
+  // cost history state
+  const [costHistory, setCostHistory]     = useState([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [shiftSaving, setShiftSaving]     = useState(false);
+  const [shiftSuccess, setShiftSuccess]   = useState(false);
 
   // ── Fetch emails ──────────────────────────────────────────
   useEffect(() => {
@@ -80,6 +101,20 @@ const AddInternalTeamModal = ({ isOpen, onClose, editingEmployee, onSaved }) => 
         setLoadingEmails(false);
       });
   }, [isOpen]);
+
+  // ── Fetch cost history when editing ──────────────────────
+  const fetchCostHistory = async (empId) => {
+    if (!empId) { setCostHistory([]); return; }
+    setHistoryLoading(true);
+    const { data, error } = await supabase
+      .from("internal_team_cost_history")
+      .select("*")
+      .eq("employee_id", empId)
+      .order("effective_year",  { ascending: false })
+      .order("effective_month", { ascending: false });
+    if (!error && data) setCostHistory(data);
+    setHistoryLoading(false);
+  };
 
   // ── Pre-fill or reset ─────────────────────────────────────
   useEffect(() => {
@@ -109,12 +144,17 @@ const AddInternalTeamModal = ({ isOpen, onClose, editingEmployee, onSaved }) => 
         client_focus: editingEmployee.client_focus?.length
           ? editingEmployee.client_focus
           : [{ clientName: "", percentage: "" }],
+        show_cost_shift: false,
+        cost_shift: { ...EMPTY_COST_SHIFT },
       });
+      fetchCostHistory(editingEmployee.id);
     } else {
       setFormData(EMPTY_FORM);
+      setCostHistory([]);
     }
     setErrors({});
     setSaveError("");
+    setShiftSuccess(false);
     setShowDeleteConfirm(false);
   }, [editingEmployee, isOpen]);
 
@@ -132,6 +172,19 @@ const AddInternalTeamModal = ({ isOpen, onClose, editingEmployee, onSaved }) => 
     }));
     if (errors.cost_head_breakup)
       setErrors((prev) => ({ ...prev, cost_head_breakup: "" }));
+  };
+
+  const setShiftCostHead = (key, value) => {
+    const num = Math.min(100, Math.max(0, parseInt(value) || 0));
+    setFormData((prev) => ({
+      ...prev,
+      cost_shift: {
+        ...prev.cost_shift,
+        cost_head_breakup: { ...prev.cost_shift.cost_head_breakup, [key]: num },
+      },
+    }));
+    if (errors.shift_breakup)
+      setErrors((prev) => ({ ...prev, shift_breakup: "" }));
   };
 
   const setClientFocus = (index, field, value) => {
@@ -158,6 +211,9 @@ const AddInternalTeamModal = ({ isOpen, onClose, editingEmployee, onSaved }) => 
 
   // ── Totals ────────────────────────────────────────────────
   const costTotal = Object.values(formData.cost_head_breakup).reduce(
+    (s, v) => s + (parseInt(v) || 0), 0
+  );
+  const shiftTotal = Object.values(formData.cost_shift.cost_head_breakup).reduce(
     (s, v) => s + (parseInt(v) || 0), 0
   );
   const filledClients = formData.client_focus.filter((c) => c.clientName.trim());
@@ -245,6 +301,53 @@ const AddInternalTeamModal = ({ isOpen, onClose, editingEmployee, onSaved }) => 
     } finally {
       setSaving(false);
     }
+  };
+
+  // ── Save Cost Shift ───────────────────────────────────────
+  const handleSaveCostShift = async () => {
+    const e = {};
+    if (!formData.cost_shift.effective_month) e.shift_month   = "Required";
+    if (!formData.cost_shift.effective_year)  e.shift_year    = "Required";
+    if (shiftTotal !== 100)                   e.shift_breakup = `Must total 100% (currently ${shiftTotal}%)`;
+    if (Object.keys(e).length) { setErrors((prev) => ({ ...prev, ...e })); return; }
+
+    if (!editingEmployee?.id) {
+      setSaveError("Save the employee record first before adding cost shifts.");
+      return;
+    }
+
+    setShiftSaving(true);
+    setShiftSuccess(false);
+    const { error } = await supabase
+      .from("internal_team_cost_history")
+      .upsert(
+        {
+          employee_id:       editingEmployee.id,
+          effective_month:   parseInt(formData.cost_shift.effective_month),
+          effective_year:    parseInt(formData.cost_shift.effective_year),
+          cost_head_breakup: formData.cost_shift.cost_head_breakup,
+        },
+        { onConflict: "employee_id,effective_month,effective_year" }
+      );
+
+    if (error) {
+      setSaveError(error.message || "Failed to save cost shift.");
+    } else {
+      setFormData((prev) => ({
+        ...prev,
+        show_cost_shift: false,
+        cost_shift: { ...EMPTY_COST_SHIFT },
+      }));
+      setErrors((prev) => {
+        const next = { ...prev };
+        delete next.shift_month; delete next.shift_year; delete next.shift_breakup;
+        return next;
+      });
+      setShiftSuccess(true);
+      await fetchCostHistory(editingEmployee.id);
+      setTimeout(() => setShiftSuccess(false), 3000);
+    }
+    setShiftSaving(false);
   };
 
   // ── Delete ────────────────────────────────────────────────
@@ -542,9 +645,10 @@ const AddInternalTeamModal = ({ isOpen, onClose, editingEmployee, onSaved }) => 
               </div>
             </Section>
 
-            {/* ── Section 4: Cost Head Break Up ── */}
+            {/* ── Section 4: Cost Head Break Up (Default / from DOJ) ── */}
             <Section
               title="Cost Head Break Up"
+              subtitle={formData.doj ? `Default allocation — effective from DOJ (${formData.doj})` : "Default allocation — effective from Date of Joining"}
               badge={
                 <span className={`text-sm font-bold px-3 py-1 rounded-full ${
                   costTotal === 100 ? "bg-emerald-100 text-emerald-800" : "bg-red-100 text-red-700"
@@ -608,6 +712,235 @@ const AddInternalTeamModal = ({ isOpen, onClose, editingEmployee, onSaved }) => 
                   <AlertCircle className="w-4 h-4 mr-1 flex-shrink-0" />
                   {errors.cost_head_breakup}
                 </p>
+              )}
+            </Section>
+
+            {/* ── Section 4.5: Cost Head Shift History ── */}
+            <Section
+              icon={<History className="w-4 h-4" />}
+              title="Cost Head Shift History"
+              subtitle="Record a new cost allocation change effective from a specific month & year. Each shift is saved permanently and visible in the View page."
+              action={
+                editingEmployee?.id ? (
+                  <button
+                    type="button"
+                    onClick={() => set("show_cost_shift", !formData.show_cost_shift)}
+                    className={`flex items-center space-x-1 px-3 py-1.5 rounded-lg transition-colors text-xs font-medium ${
+                      formData.show_cost_shift
+                        ? "bg-gray-200 text-gray-700 hover:bg-gray-300"
+                        : "bg-indigo-600 text-white hover:bg-indigo-700"
+                    }`}
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>{formData.show_cost_shift ? "Cancel" : "Add Shift"}</span>
+                  </button>
+                ) : (
+                  <span className="text-xs text-gray-400 italic">Save employee first to add shifts</span>
+                )
+              }
+            >
+              {/* Success banner */}
+              <AnimatePresence>
+                {shiftSuccess && (
+                  <motion.div
+                    initial={{ opacity: 0, y: -6 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0 }}
+                    className="flex items-center space-x-2 p-2.5 bg-emerald-50 border border-emerald-200 rounded-lg text-emerald-800 text-sm font-medium"
+                  >
+                    <CheckCircle2 className="w-4 h-4 flex-shrink-0" />
+                    <span>Cost shift saved successfully!</span>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
+              {/* Add Shift Form */}
+              <AnimatePresence>
+                {formData.show_cost_shift && (
+                  <motion.div
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: "auto" }}
+                    exit={{ opacity: 0, height: 0 }}
+                    className="overflow-hidden"
+                  >
+                    <div className="border border-indigo-200 bg-indigo-50/40 rounded-xl p-4 space-y-4 mb-4">
+                      <p className="text-xs font-semibold text-indigo-700 uppercase tracking-wider">New Cost Shift Entry</p>
+
+                      {/* Month + Year */}
+                      <div className="grid grid-cols-2 gap-4 max-w-xs">
+                        <Field label="Effective Month" required error={errors.shift_month}>
+                          <select
+                            value={formData.cost_shift.effective_month}
+                            onChange={(e) => {
+                              setFormData((prev) => ({
+                                ...prev,
+                                cost_shift: { ...prev.cost_shift, effective_month: e.target.value },
+                              }));
+                              if (errors.shift_month) setErrors((p) => ({ ...p, shift_month: "" }));
+                            }}
+                            className={`w-full border rounded-lg px-3 py-2 text-sm text-gray-900 font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-colors ${
+                              errors.shift_month ? "border-red-400 bg-red-50" : "border-gray-300 bg-white"
+                            }`}
+                          >
+                            <option value="">Month</option>
+                            {MONTH_NAMES.map((m, i) => (
+                              <option key={m} value={i + 1}>{m}</option>
+                            ))}
+                          </select>
+                        </Field>
+                        <Field label="Effective Year" required error={errors.shift_year}>
+                          <select
+                            value={formData.cost_shift.effective_year}
+                            onChange={(e) => {
+                              setFormData((prev) => ({
+                                ...prev,
+                                cost_shift: { ...prev.cost_shift, effective_year: e.target.value },
+                              }));
+                              if (errors.shift_year) setErrors((p) => ({ ...p, shift_year: "" }));
+                            }}
+                            className={`w-full border rounded-lg px-3 py-2 text-sm text-gray-900 font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-colors ${
+                              errors.shift_year ? "border-red-400 bg-red-50" : "border-gray-300 bg-white"
+                            }`}
+                          >
+                            <option value="">Year</option>
+                            {Array.from({ length: 10 }, (_, i) => new Date().getFullYear() - 2 + i).map((y) => (
+                              <option key={y} value={y}>{y}</option>
+                            ))}
+                          </select>
+                        </Field>
+                      </div>
+
+                      {/* Total badge */}
+                      <div className="flex items-center justify-between">
+                        <p className="text-xs text-gray-600">Enter new cost allocation for this period. Must total 100%.</p>
+                        <span className={`text-sm font-bold px-3 py-1 rounded-full ${
+                          shiftTotal === 100 ? "bg-emerald-100 text-emerald-800" : "bg-red-100 text-red-700"
+                        }`}>
+                          {shiftTotal === 100 ? (
+                            <span className="flex items-center space-x-1">
+                              <CheckCircle2 className="w-3.5 h-3.5" />
+                              <span>100% ✓</span>
+                            </span>
+                          ) : `${shiftTotal}% / 100%`}
+                        </span>
+                      </div>
+
+                      {/* 9 cost head inputs */}
+                      <div className="grid grid-cols-3 gap-3 sm:grid-cols-5">
+                        {COST_HEADS.map(({ key, label, desc }) => (
+                          <div key={key}>
+                            <label className="block text-xs font-semibold text-gray-800 mb-1">
+                              {label}
+                              <span className="block text-gray-500 font-normal text-[10px]">{desc}</span>
+                            </label>
+                            <div className="relative">
+                              <input
+                                type="number"
+                                min="0"
+                                max="100"
+                                value={formData.cost_shift.cost_head_breakup[key]}
+                                onChange={(e) => setShiftCostHead(key, e.target.value)}
+                                className={`w-full border rounded-lg px-3 py-2 pr-7 text-sm font-bold text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 text-center font-mono transition-colors ${
+                                  formData.cost_shift.cost_head_breakup[key] > 0
+                                    ? "border-indigo-300 bg-indigo-50 text-indigo-800"
+                                    : "border-gray-300 bg-white"
+                                }`}
+                              />
+                              <span className="absolute right-2 top-2 text-gray-500 text-xs font-semibold">%</span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+
+                      {/* Shift visual bar */}
+                      {shiftTotal > 0 && (
+                        <div className="h-2 rounded-full overflow-hidden bg-gray-100 flex">
+                          {COST_HEADS.filter((h) => formData.cost_shift.cost_head_breakup[h.key] > 0).map(({ key, label }, i) => (
+                            <div
+                              key={key}
+                              title={`${label}: ${formData.cost_shift.cost_head_breakup[key]}%`}
+                              style={{ width: `${formData.cost_shift.cost_head_breakup[key]}%` }}
+                              className={`h-full transition-all ${["bg-indigo-500","bg-violet-500","bg-purple-500","bg-pink-500","bg-rose-500","bg-orange-500","bg-amber-500","bg-teal-500","bg-cyan-500"][i % 9]}`}
+                            />
+                          ))}
+                        </div>
+                      )}
+
+                      {errors.shift_breakup && (
+                        <p className="text-sm text-red-700 font-medium flex items-center">
+                          <AlertCircle className="w-4 h-4 mr-1 flex-shrink-0" />
+                          {errors.shift_breakup}
+                        </p>
+                      )}
+
+                      <button
+                        type="button"
+                        onClick={handleSaveCostShift}
+                        disabled={shiftSaving}
+                        className="flex items-center space-x-2 px-5 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium transition-colors"
+                      >
+                        {shiftSaving && <Loader2 className="w-4 h-4 animate-spin" />}
+                        <span>{shiftSaving ? "Saving…" : "Save Cost Shift"}</span>
+                      </button>
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
+              {/* History Table */}
+              {historyLoading ? (
+                <div className="flex items-center space-x-2 text-sm text-gray-500 py-2">
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <span>Loading history…</span>
+                </div>
+              ) : costHistory.length === 0 ? (
+                <p className="text-sm text-gray-400 italic py-1">
+                  {editingEmployee?.id
+                    ? "No cost shifts recorded yet. Click 'Add Shift' to record a change."
+                    : "Save the employee first to manage cost shift history."}
+                </p>
+              ) : (
+                <div className="overflow-x-auto rounded-lg border border-gray-200">
+                  <table className="w-full text-xs border-collapse">
+                    <thead>
+                      <tr className="bg-gray-100 text-gray-600 font-semibold uppercase tracking-wider">
+                        <th className="px-3 py-2 text-left border-b border-gray-200 whitespace-nowrap">Period</th>
+                        {COST_HEADS.map((h) => (
+                          <th key={h.key} className="px-2 py-2 text-center border-b border-gray-200 whitespace-nowrap">{h.label}</th>
+                        ))}
+                        <th className="px-3 py-2 text-center border-b border-gray-200">Total</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100">
+                      {costHistory.map((row, idx) => {
+                        const total = COST_HEADS.reduce((s, h) => s + (row.cost_head_breakup?.[h.key] || 0), 0);
+                        const monthName = MONTH_NAMES[row.effective_month - 1];
+                        return (
+                          <tr key={row.id} className={idx % 2 === 0 ? "bg-white" : "bg-gray-50/60"}>
+                            <td className="px-3 py-2 font-semibold text-gray-900 whitespace-nowrap">
+                              {monthName} {row.effective_year}
+                            </td>
+                            {COST_HEADS.map((h) => {
+                              const v = row.cost_head_breakup?.[h.key] || 0;
+                              return (
+                                <td key={h.key} className={`px-2 py-2 text-center font-mono font-bold ${
+                                  v > 0 ? "text-indigo-700" : "text-gray-300"
+                                }`}>
+                                  {v > 0 ? `${v}%` : "—"}
+                                </td>
+                              );
+                            })}
+                            <td className={`px-3 py-2 text-center font-mono font-bold ${
+                              total === 100 ? "text-emerald-700" : "text-red-500"
+                            }`}>
+                              {total}%
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
               )}
             </Section>
 

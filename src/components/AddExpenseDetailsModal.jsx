@@ -299,48 +299,79 @@ const AddExpenseDetailsModal = ({
     }
   }, [selectedInvoice]);
 
-  // ── Invoice search debounce (only when no invoice prop and clientType=Client) ──
+  // ── Invoice search debounce with enhanced sorting ──
   useEffect(() => {
-    if (invoice || form.clientType !== "Client" || !invoiceSearch) return;
+    if (invoice || form.clientType !== "Client") {
+      return;
+    }
 
     const timer = setTimeout(async () => {
+      const keyword = invoiceSearch?.trim();
+
+      if (!keyword) {
+        setInvoiceResults([]);
+        return;
+      }
+
       setSearching(true);
+
       try {
         let query = supabase
-          .from("invoices")
+          .from("outstanding_invoice_view")
           .select(
             `
             id,
             invoice_number,
-            receivable_amount,
-            invoice_value,
-            client_id,
-            clients_master ( client_name )
+            client_name,
+            outstanding,
+            receivable_amount
           `
           )
-          .ilike("invoice_number", `%${invoiceSearch}%`)
-          .limit(8);
+          .limit(20);
 
-        if (form.clientName) {
-          const { data: clientRow } = await supabase
-            .from("clients_master")
-            .select("id")
-            .eq("client_name", form.clientName)
-            .single();
-          if (clientRow) {
-            query = query.eq("client_id", clientRow.id);
-          }
+        // SEARCH
+        query = query.ilike("invoice_number", `%${keyword}%`);
+
+        const { data, error } = await query;
+
+        if (error) {
+          console.error(error);
+          return;
         }
 
-        const { data } = await query;
-        setInvoiceResults(data || []);
+        // SORTING LOGIC
+        const sorted = [...(data || [])].sort((a, b) => {
+          const keywordLower = keyword.toLowerCase();
+
+          const aNum = a.invoice_number?.toLowerCase() || "";
+
+          const bNum = b.invoice_number?.toLowerCase() || "";
+
+          // 1. startsWith highest priority
+          const aStarts = aNum.startsWith(keywordLower);
+
+          const bStarts = bNum.startsWith(keywordLower);
+
+          if (aStarts && !bStarts) return -1;
+          if (!aStarts && bStarts) return 1;
+
+          // 2. shorter match priority
+          if (aNum.length !== bNum.length) {
+            return aNum.length - bNum.length;
+          }
+
+          // 3. alphabetical
+          return aNum.localeCompare(bNum);
+        });
+
+        setInvoiceResults(sorted);
       } finally {
         setSearching(false);
       }
-    }, 350);
+    }, 250);
 
     return () => clearTimeout(timer);
-  }, [invoiceSearch, form.clientName, form.clientType, invoice]);
+  }, [invoiceSearch, form.clientType]);
 
   const setField = (field, value) => {
     setForm((prev) => ({ ...prev, [field]: value }));
@@ -639,21 +670,76 @@ const AddExpenseDetailsModal = ({
                         ))}
                       </div>
                       {form.clientType === "Client" && (
-                        <Select
-                          value={form.clientName}
-                          onChange={(v) => {
-                            setField("clientName", v);
-                            setSelectedInvoice(invoice || null);
-                            setInvoiceSearch("");
-                            setInvoiceResults([]);
-                          }}
-                          options={clients.map((c) => ({
-                            value: c.client_name,
-                            label: c.client_name,
-                          }))}
-                          placeholder="Select client..."
-                          error={errors.clientName}
-                        />
+                        <div className="relative">
+                          <input
+                            type="text"
+                            placeholder="Type client name..."
+                            value={form.clientName}
+                            onChange={(e) => {
+                              setField("clientName", e.target.value);
+                              setSelectedInvoice(invoice || null);
+                              setInvoiceSearch("");
+                              setInvoiceResults([]);
+                            }}
+                            className={`w-full border rounded-lg px-3 py-2.5 text-sm text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-orange-400 transition
+        ${
+          errors.clientName
+            ? "border-red-400 bg-red-50"
+            : "border-gray-200 hover:border-gray-300"
+        }`}
+                          />
+
+                          {form.clientName.length > 0 && (
+                            <div className="absolute z-20 top-full left-0 right-0 bg-white border border-gray-200 rounded-xl shadow-lg mt-1 max-h-52 overflow-y-auto">
+                              {clients
+                                .filter((c) =>
+                                  c.client_name
+                                    .toLowerCase()
+                                    .includes(form.clientName.toLowerCase())
+                                )
+                                .sort((a, b) => {
+                                  const keyword = form.clientName.toLowerCase();
+                                  const aName = a.client_name.toLowerCase();
+                                  const bName = b.client_name.toLowerCase();
+
+                                  // startsWith priority
+                                  const aStarts = aName.startsWith(keyword);
+                                  const bStarts = bName.startsWith(keyword);
+                                  if (aStarts && !bStarts) return -1;
+                                  if (!aStarts && bStarts) return 1;
+
+                                  // shorter match then alphabetical
+                                  if (aName.length !== bName.length)
+                                    return aName.length - bName.length;
+                                  return aName.localeCompare(bName);
+                                })
+                                .map((c) => (
+                                  <button
+                                    key={c.id}
+                                    type="button"
+                                    onClick={() => {
+                                      setField("clientName", c.client_name);
+                                    }}
+                                    className="w-full text-left px-4 py-2.5 hover:bg-orange-50 transition text-sm border-b border-gray-100 last:border-0"
+                                  >
+                                    <p className="font-semibold text-gray-900">
+                                      {c.client_name}
+                                    </p>
+                                  </button>
+                                ))}
+
+                              {clients.filter((c) =>
+                                c.client_name
+                                  .toLowerCase()
+                                  .includes(form.clientName.toLowerCase())
+                              ).length === 0 && (
+                                <div className="px-4 py-3 text-xs text-gray-400">
+                                  No client found. You can type manually.
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </div>
                       )}
                     </div>
                   </FieldRow>
@@ -709,10 +795,9 @@ const AddExpenseDetailsModal = ({
                               {selectedInvoice.invoice_number}
                             </p>
                             <p className="text-xs text-gray-500">
-                              {selectedInvoice.clients_master?.client_name} •{" "}
-                              Outstanding: ₹
+                              {selectedInvoice.client_name} • Outstanding: ₹
                               {Number(
-                                selectedInvoice.receivable_amount || 0
+                                selectedInvoice.outstanding || 0
                               ).toLocaleString("en-IN")}
                             </p>
                           </div>
@@ -729,11 +814,16 @@ const AddExpenseDetailsModal = ({
                       ) : (
                         <div className="relative">
                           <Search className="absolute left-3 top-3 w-4 h-4 text-gray-400" />
+
                           <input
                             type="text"
-                            placeholder="Search by invoice number..."
+                            placeholder="Search invoice... Type invoice... Keyword search..."
                             value={invoiceSearch}
-                            onChange={(e) => setInvoiceSearch(e.target.value)}
+                            onChange={(e) => {
+                              setInvoiceSearch(e.target.value);
+                              // allow manual typing
+                              setSelectedInvoice(null);
+                            }}
                             className={`w-full border rounded-lg pl-9 pr-4 py-2.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-orange-400 transition
                               ${
                                 errors.invoiceId
@@ -741,13 +831,15 @@ const AddExpenseDetailsModal = ({
                                   : "border-gray-200"
                               }`}
                           />
+
                           {searching && (
                             <p className="text-xs text-gray-400 mt-1 px-1">
                               Searching...
                             </p>
                           )}
+
                           {invoiceResults.length > 0 && (
-                            <div className="absolute z-20 top-full left-0 right-0 bg-white border border-gray-200 rounded-xl shadow-lg mt-1 max-h-52 overflow-y-auto">
+                            <div className="absolute z-20 top-full left-0 right-0 bg-white border border-gray-200 rounded-xl shadow-lg mt-1 max-h-64 overflow-y-auto">
                               {invoiceResults.map((inv) => (
                                 <button
                                   key={inv.id}
@@ -755,35 +847,46 @@ const AddExpenseDetailsModal = ({
                                     setSelectedInvoice(inv);
                                     setInvoiceSearch(inv.invoice_number);
                                     setInvoiceResults([]);
-                                    if (inv.clients_master?.client_name) {
-                                      setField(
-                                        "clientName",
-                                        inv.clients_master.client_name
-                                      );
+
+                                    if (inv.client_name) {
+                                      setField("clientName", inv.client_name);
                                     }
                                   }}
                                   className="w-full text-left px-4 py-3 hover:bg-orange-50 transition text-sm border-b border-gray-100 last:border-0"
                                 >
-                                  <p className="font-semibold text-gray-900">
-                                    {inv.invoice_number}
-                                  </p>
-                                  <p className="text-xs text-gray-500 mt-0.5">
-                                    {inv.clients_master?.client_name} •{" "}
-                                    Outstanding: ₹
-                                    {Number(
-                                      inv.receivable_amount || 0
-                                    ).toLocaleString("en-IN")}
-                                  </p>
+                                  <div className="flex items-center justify-between">
+                                    <div>
+                                      <p className="font-semibold text-gray-900">
+                                        {inv.invoice_number}
+                                      </p>
+                                      <p className="text-xs text-gray-500 mt-0.5">
+                                        {inv.client_name}
+                                      </p>
+                                    </div>
+                                    <div className="text-right">
+                                      <p className="text-xs text-emerald-600 font-semibold">
+                                        ₹
+                                        {Number(
+                                          inv.outstanding || 0
+                                        ).toLocaleString("en-IN")}
+                                      </p>
+                                      <p className="text-[10px] text-gray-400">
+                                        Outstanding
+                                      </p>
+                                    </div>
+                                  </div>
                                 </button>
                               ))}
                             </div>
                           )}
+
                           {invoiceResults.length === 0 &&
                             invoiceSearch.length > 1 &&
                             !searching && (
-                              <p className="text-xs text-gray-400 mt-1 px-1">
-                                No invoices found for "{invoiceSearch}"
-                              </p>
+                              <div className="mt-2 text-xs text-gray-400 px-1">
+                                No invoice found. You can still type custom
+                                invoice manually.
+                              </div>
                             )}
                         </div>
                       )}
@@ -997,7 +1100,7 @@ const AddExpenseDetailsModal = ({
                   <div className="flex items-center gap-2">
                     <div className="w-1 h-5 bg-purple-500 rounded-full" />
                     <h4 className="font-semibold text-gray-800 text-sm uppercase tracking-wider">
-                      Cost Head Break Up
+                      Cost Head Break Up{" "}
                     </h4>
                   </div>
                   <div

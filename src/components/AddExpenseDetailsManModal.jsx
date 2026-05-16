@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import ReactDOM from "react-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import supabase from "../lib/supabaseClient";
@@ -57,6 +57,134 @@ const Select = ({ value, onChange, options, placeholder, error, disabled }) => (
     )}
   </div>
 );
+
+// ─── FIXED: Searchable Dropdown (focus stays, typing continues) ───
+const SearchableSelect = ({
+  value,
+  onChange,
+  options,
+  placeholder,
+  error,
+  disabled,
+}) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const [search, setSearch] = useState(value || "");
+  const wrapperRef = useRef(null);
+  const inputRef = useRef(null);
+
+  useEffect(() => {
+    if (!isOpen) {
+      setSearch(value || "");
+    }
+  }, [value, isOpen]);
+
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (wrapperRef.current && !wrapperRef.current.contains(event.target)) {
+        setIsOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  const filteredOptions = options.filter((opt) => {
+    const label = typeof opt === "string" ? opt : opt.label;
+    return label?.toLowerCase().includes(search.toLowerCase());
+  });
+
+  const sortedOptions = [...filteredOptions].sort((a, b) => {
+    const keyword = search.toLowerCase();
+    const aLabel = (typeof a === "string" ? a : a.label)?.toLowerCase() || "";
+    const bLabel = (typeof b === "string" ? b : b.label)?.toLowerCase() || "";
+
+    const aStarts = aLabel.startsWith(keyword);
+    const bStarts = bLabel.startsWith(keyword);
+    if (aStarts && !bStarts) return -1;
+    if (!aStarts && bStarts) return 1;
+    if (aLabel.length !== bLabel.length) return aLabel.length - bLabel.length;
+    return aLabel.localeCompare(bLabel);
+  });
+
+  return (
+    <div className="relative" ref={wrapperRef}>
+      <div className="relative">
+        <Search className="absolute left-3 top-2.5 w-4 h-4 text-gray-400 pointer-events-none" />
+        <input
+          ref={inputRef}
+          type="text"
+          value={search}
+          onChange={(e) => {
+            const val = e.target.value;
+            setSearch(val);
+            setIsOpen(true);
+          }}
+          onFocus={() => {
+            if (search.length > 0) {
+              setIsOpen(true);
+            }
+          }}
+          onClick={() => {
+            if (search.length > 0) {
+              setIsOpen(true);
+            }
+          }}
+          placeholder={placeholder || "Type to search..."}
+          disabled={disabled}
+          className={`w-full border rounded-lg pl-9 pr-3 py-2.5 text-sm focus:outline-none focus:ring-2 transition
+            ${
+              error
+                ? "border-red-400 bg-red-50 focus:ring-red-300"
+                : "border-gray-200 bg-white focus:ring-indigo-400"
+            }
+            ${disabled ? "opacity-50 cursor-not-allowed" : ""}
+            text-gray-800 placeholder-gray-400`}
+        />
+      </div>
+
+      {isOpen && sortedOptions.length > 0 && search.length > 0 && (
+        <div className="absolute z-20 top-full left-0 right-0 bg-white border border-gray-200 rounded-xl shadow-lg mt-1 max-h-52 overflow-y-auto">
+          {sortedOptions.map((opt, idx) => {
+            const label = typeof opt === "string" ? opt : opt.label;
+            const val = typeof opt === "string" ? opt : opt.value;
+            return (
+              <button
+                key={idx}
+                type="button"
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  setSearch(label);
+                  onChange(val);
+                  setTimeout(() => {
+                    setIsOpen(false);
+                  }, 100);
+                }}
+                className="w-full text-left px-4 py-2.5 hover:bg-indigo-50 transition text-sm border-b border-gray-100 last:border-0"
+              >
+                <p className="font-medium text-gray-900">{label}</p>
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      {isOpen && search.length > 0 && sortedOptions.length === 0 && (
+        <div className="absolute z-20 top-full left-0 right-0 bg-white border border-gray-200 rounded-xl shadow-lg mt-1 p-3">
+          <p className="text-xs text-gray-400">
+            No match found. You can type manually.
+          </p>
+        </div>
+      )}
+
+      {error && (
+        <p className="text-xs text-red-500 mt-1 flex items-center gap-1">
+          <AlertCircle className="w-3 h-3" />
+          {error}
+        </p>
+      )}
+    </div>
+  );
+};
 
 const Input = ({
   value,
@@ -269,7 +397,6 @@ const AddExpenseDetailsManModal = ({ isOpen, onClose, onSaved }) => {
     }));
   }, [intForm.empCode, employees]);
 
-
   // ── Reset on close ──
   useEffect(() => {
     if (!isOpen) {
@@ -366,9 +493,10 @@ const AddExpenseDetailsManModal = ({ isOpen, onClose, onSaved }) => {
     setErrors(e);
     return Object.keys(e).length === 0;
   };
+
   const netPayment =
-  (parseFloat(intForm.paymentAmount) || 0) -
-  (parseFloat(intForm.incomeTax) || 0);
+    (parseFloat(intForm.paymentAmount) || 0) -
+    (parseFloat(intForm.incomeTax) || 0);
 
   // ── Save Internal ──
   const saveInternal = async () => {
@@ -403,7 +531,7 @@ const AddExpenseDetailsManModal = ({ isOpen, onClose, onSaved }) => {
         .select()
         .single();
       if (error) throw error;
-      // ✅ SALARY TDS LIABILITY
+
       if ((parseFloat(intForm.incomeTax) || 0) > 0) {
         const { error: taxErr } = await supabase
           .from("statutory_liabilities")
@@ -411,17 +539,12 @@ const AddExpenseDetailsManModal = ({ isOpen, onClose, onSaved }) => {
             {
               source_type: "salary",
               source_id: savedPayment.id,
-
               statutory_type: "TDS",
-
               entity: intForm.entity,
-
               amount: parseFloat(intForm.incomeTax),
-
               status: "pending",
             },
           ]);
-
         if (taxErr) {
           console.error("Salary TDS error:", taxErr);
         }
@@ -438,103 +561,67 @@ const AddExpenseDetailsManModal = ({ isOpen, onClose, onSaved }) => {
       setLoading(false);
     }
   };
+
   const handleExcelUpload = async (e) => {
     try {
       const file = e.target.files[0];
-
       if (!file) return;
-
       setLoading(true);
-
       const data = await file.arrayBuffer();
-
       const workbook = XLSX.read(data);
-
       const sheetName = workbook.SheetNames[0];
-
       const worksheet = workbook.Sheets[sheetName];
-
       const jsonData = XLSX.utils.sheet_to_json(worksheet);
-
       console.log("Excel Data:", jsonData);
 
       const finalPayload = [];
-
       for (const row of jsonData) {
-        // ───── ENTITY ─────
         const entity = entities.find(
           (x) =>
             x.entity_name?.trim().toLowerCase() ===
             row["Entity"]?.trim().toLowerCase()
         );
-
-        // ───── DEPARTMENT ─────
         const department = departments.find(
           (x) =>
             x.dept_name?.trim().toLowerCase() ===
             row["Department"]?.trim().toLowerCase()
         );
-
-        // ───── BANK ─────
         const bank = banks.find(
           (x) =>
             x.bank_name?.trim().toLowerCase() ===
             row["Bank Name/Acct No"]?.trim().toLowerCase()
         );
-
         const paymentAmount = parseFloat(row["Payment Amount"]) || 0;
-
         const tax = parseFloat(row["Income Tax deducted"]) || 0;
-
         finalPayload.push({
           entity_id: entity?.id || null,
-
           department_id: department?.id || null,
-
           emp_code: row["Emp Code"] || "",
-
           employee_name: row["Name"] || "",
-
           designation: row["Designation"] || "",
-
           pay_head: row["Payment Head"] || "",
-
           payment_description: row["Payment Description"] || "",
-
           payment_amount: paymentAmount,
-
           income_tax_deducted: tax,
-
           net_payment: paymentAmount - tax,
-
           month_of_pay: row["Month of Pay"]
             ? `${row["Month of Pay"]}-01`
             : null,
-
           date_of_pay: row["Date of Pay"] || null,
-
           bank_id: bank?.id || null,
-
           bank_name: row["Bank Name/Acct No"] || "",
-
           remarks: "",
         });
       }
-
       console.log("FINAL PAYLOAD:", finalPayload);
-
       const { error } = await supabase
         .from("employee_expense_payouts")
         .insert(finalPayload);
-
       if (error) throw error;
-
       alert("Excel uploaded successfully!");
-
       onSaved?.();
     } catch (err) {
       console.error(err);
-
       alert(err.message);
     } finally {
       setLoading(false);
@@ -547,7 +634,6 @@ const AddExpenseDetailsManModal = ({ isOpen, onClose, onSaved }) => {
     setLoading(true);
     try {
       let payload;
-
       if (osForm.invoiceAvailable === "Yes") {
         const inv = invoices.find((i) => i.id === osForm.invoiceId);
         payload = {
@@ -594,10 +680,8 @@ const AddExpenseDetailsManModal = ({ isOpen, onClose, onSaved }) => {
           remarks: "",
         };
       }
-
       const { error } = await supabase.from("os_payouts").insert([payload]);
       if (error) throw error;
-
       setSaved(true);
       setTimeout(() => {
         onSaved?.();
@@ -612,7 +696,6 @@ const AddExpenseDetailsManModal = ({ isOpen, onClose, onSaved }) => {
 
   if (!isOpen) return null;
 
-  // ── Internal Pay Heads from master ──
   const internalHeads = payHeads
     .filter((p) => p.payout_type === "INTERNAL")
     .map((p) => p.pay_head_name || p.name);
@@ -715,24 +798,23 @@ const AddExpenseDetailsManModal = ({ isOpen, onClose, onSaved }) => {
         <div className="grid grid-cols-3 gap-3">
           <div>
             <FieldLabel>Emp Code *</FieldLabel>
-            <Select
+            <SearchableSelect
               value={intForm.empCode}
               onChange={(v) => setInt("empCode", v)}
               options={employees.map((e) => ({
                 value: e.emp_code,
                 label: `${e.emp_code} – ${e.employee_name}`,
               }))}
-              placeholder="Select employee"
+              placeholder="Type employee code or name..."
               error={errors.empCode}
             />
           </div>
           <div>
             <FieldLabel>Name *</FieldLabel>
-            {/* ✅ FIX: use controlled input, never show client name */}
             <input
               type="text"
-              value={intForm.name}
-              onChange={(e) => setInt("name", e.target.value)}
+              defaultValue={intForm.name}
+              onBlur={(e) => setInt("name", e.target.value)}
               placeholder="Auto-filled from emp code"
               readOnly={!!intForm.empCode}
               className={`w-full border rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 transition
@@ -759,8 +841,8 @@ const AddExpenseDetailsManModal = ({ isOpen, onClose, onSaved }) => {
             <FieldLabel>Designation</FieldLabel>
             <input
               type="text"
-              value={intForm.designation}
-              onChange={(e) => setInt("designation", e.target.value)}
+              defaultValue={intForm.designation}
+              onBlur={(e) => setInt("designation", e.target.value)}
               placeholder="Auto-filled"
               readOnly={!!intForm.empCode}
               className={`w-full border rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 transition border-gray-200 focus:ring-indigo-400
@@ -794,7 +876,10 @@ const AddExpenseDetailsManModal = ({ isOpen, onClose, onSaved }) => {
             <Select
               value={intForm.paymentHeader}
               onChange={(v) => setInt("paymentHeader", v)}
-              options={intPayHeadOptions}
+              options={intPayHeadOptions.map((p) => ({
+                value: p,
+                label: p,
+              }))}
               placeholder="Select pay head"
               error={errors.paymentHeader}
             />
@@ -803,14 +888,14 @@ const AddExpenseDetailsManModal = ({ isOpen, onClose, onSaved }) => {
             <FieldLabel>Month of Pay</FieldLabel>
             <input
               type="month"
-              value={intForm.monthOfPay}
-              onChange={(e) => setInt("monthOfPay", e.target.value)}
+              defaultValue={intForm.monthOfPay}
+              onBlur={(e) => setInt("monthOfPay", e.target.value)}
               className="w-full border border-gray-200 bg-white text-gray-800 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"
             />
           </div>
         </div>
 
-        {/* Amounts row */}
+        {/* ✅ FIXED: defaultValue + onBlur for amount fields */}
         <div className="grid grid-cols-3 gap-3 mb-3">
           <div>
             <FieldLabel>Payment Amount *</FieldLabel>
@@ -819,9 +904,12 @@ const AddExpenseDetailsManModal = ({ isOpen, onClose, onSaved }) => {
                 ₹
               </span>
               <input
-                type="number"
-                value={intForm.paymentAmount}
-                onChange={(e) => setInt("paymentAmount", e.target.value)}
+                type="text"
+                inputMode="decimal"
+                defaultValue={intForm.paymentAmount}
+                onBlur={(e) =>
+                  setInt("paymentAmount", e.target.value.replace(/[^0-9.]/g, ""))
+                }
                 className={`w-full border rounded-lg pl-7 pr-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 text-gray-800 placeholder-gray-400
                   ${
                     errors.paymentAmount
@@ -844,9 +932,12 @@ const AddExpenseDetailsManModal = ({ isOpen, onClose, onSaved }) => {
                 ₹
               </span>
               <input
-                type="number"
-                value={intForm.incomeTax}
-                onChange={(e) => setInt("incomeTax", e.target.value)}
+                type="text"
+                inputMode="decimal"
+                defaultValue={intForm.incomeTax}
+                onBlur={(e) =>
+                  setInt("incomeTax", e.target.value.replace(/[^0-9.]/g, ""))
+                }
                 className="w-full border border-gray-200 bg-white text-gray-800 placeholder-gray-400 rounded-lg pl-7 pr-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"
                 placeholder="0"
               />
@@ -859,7 +950,7 @@ const AddExpenseDetailsManModal = ({ isOpen, onClose, onSaved }) => {
                 ₹
               </span>
               <input
-                type="number"
+                type="text"
                 value={Math.max(netPayment, 0)}
                 readOnly
                 className="w-full border border-emerald-200 rounded-lg pl-7 pr-3 py-2.5 text-sm bg-emerald-50 text-emerald-700 font-semibold cursor-not-allowed"
@@ -874,8 +965,8 @@ const AddExpenseDetailsManModal = ({ isOpen, onClose, onSaved }) => {
         <div className="mb-3">
           <FieldLabel>Payment Description</FieldLabel>
           <textarea
-            value={intForm.paymentDescription}
-            onChange={(e) => setInt("paymentDescription", e.target.value)}
+            defaultValue={intForm.paymentDescription}
+            onBlur={(e) => setInt("paymentDescription", e.target.value)}
             rows={2}
             placeholder="Describe the payment..."
             className="w-full border border-gray-200 bg-white text-gray-800 placeholder-gray-400 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 resize-none"
@@ -887,8 +978,8 @@ const AddExpenseDetailsManModal = ({ isOpen, onClose, onSaved }) => {
             <FieldLabel>Date of Pay *</FieldLabel>
             <input
               type="date"
-              value={intForm.dateOfPay}
-              onChange={(e) => setInt("dateOfPay", e.target.value)}
+              defaultValue={intForm.dateOfPay}
+              onBlur={(e) => setInt("dateOfPay", e.target.value)}
               className={`w-full border rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 text-gray-800
                 ${
                   errors.dateOfPay
@@ -917,8 +1008,8 @@ const AddExpenseDetailsManModal = ({ isOpen, onClose, onSaved }) => {
         <div className="mt-3">
           <FieldLabel>Remarks</FieldLabel>
           <textarea
-            value={intForm.remarks}
-            onChange={(e) => setInt("remarks", e.target.value)}
+            defaultValue={intForm.remarks}
+            onBlur={(e) => setInt("remarks", e.target.value)}
             rows={2}
             className="w-full border border-gray-200 bg-white text-gray-800 placeholder-gray-400 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 resize-none"
             placeholder="Additional notes..."
@@ -1013,7 +1104,7 @@ const AddExpenseDetailsManModal = ({ isOpen, onClose, onSaved }) => {
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <FieldLabel>Invoice *</FieldLabel>
-                <Select
+                <SearchableSelect
                   value={osForm.invoiceId}
                   onChange={(v) => setOs("invoiceId", v)}
                   options={invoices.map((i) => ({
@@ -1024,7 +1115,7 @@ const AddExpenseDetailsManModal = ({ isOpen, onClose, onSaved }) => {
                         : ""
                     }`,
                   }))}
-                  placeholder="Select invoice"
+                  placeholder="Type invoice number..."
                   error={errors.invoiceId}
                 />
               </div>
@@ -1033,7 +1124,10 @@ const AddExpenseDetailsManModal = ({ isOpen, onClose, onSaved }) => {
                 <Select
                   value={osForm.payHeadOs}
                   onChange={(v) => setOs("payHeadOs", v)}
-                  options={osPayHeadOptions}
+                  options={osPayHeadOptions.map((p) => ({
+                    value: p,
+                    label: p,
+                  }))}
                   placeholder="Select pay head"
                 />
               </div>
@@ -1043,13 +1137,14 @@ const AddExpenseDetailsManModal = ({ isOpen, onClose, onSaved }) => {
               <FieldLabel>Payment Details</FieldLabel>
               <input
                 type="text"
-                value={osForm.paymentDetailsOs}
-                onChange={(e) => setOs("paymentDetailsOs", e.target.value)}
+                defaultValue={osForm.paymentDetailsOs}
+                onBlur={(e) => setOs("paymentDetailsOs", e.target.value)}
                 placeholder="Description of payout..."
                 className="w-full border border-gray-200 bg-white text-gray-800 placeholder-gray-400 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
               />
             </div>
 
+            {/* ✅ FIXED: defaultValue + onBlur */}
             <div className="grid grid-cols-3 gap-3">
               <div>
                 <FieldLabel>Amount Paid *</FieldLabel>
@@ -1058,9 +1153,12 @@ const AddExpenseDetailsManModal = ({ isOpen, onClose, onSaved }) => {
                     ₹
                   </span>
                   <input
-                    type="number"
-                    value={osForm.amountPaid}
-                    onChange={(e) => setOs("amountPaid", e.target.value)}
+                    type="text"
+                    inputMode="decimal"
+                    defaultValue={osForm.amountPaid}
+                    onBlur={(e) =>
+                      setOs("amountPaid", e.target.value.replace(/[^0-9.]/g, ""))
+                    }
                     className={`w-full border rounded-lg pl-7 pr-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 text-gray-800 placeholder-gray-400
                       ${
                         errors.amountPaid
@@ -1083,9 +1181,12 @@ const AddExpenseDetailsManModal = ({ isOpen, onClose, onSaved }) => {
                     ₹
                   </span>
                   <input
-                    type="number"
-                    value={osForm.incomeTaxOs}
-                    onChange={(e) => setOs("incomeTaxOs", e.target.value)}
+                    type="text"
+                    inputMode="decimal"
+                    defaultValue={osForm.incomeTaxOs}
+                    onBlur={(e) =>
+                      setOs("incomeTaxOs", e.target.value.replace(/[^0-9.]/g, ""))
+                    }
                     className="w-full border border-gray-200 bg-white text-gray-800 placeholder-gray-400 rounded-lg pl-7 pr-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
                     placeholder="0"
                   />
@@ -1094,9 +1195,12 @@ const AddExpenseDetailsManModal = ({ isOpen, onClose, onSaved }) => {
               <div>
                 <FieldLabel>No. of Employees</FieldLabel>
                 <input
-                  type="number"
-                  value={osForm.noOfEmployees}
-                  onChange={(e) => setOs("noOfEmployees", e.target.value)}
+                  type="text"
+                  inputMode="numeric"
+                  defaultValue={osForm.noOfEmployees}
+                  onBlur={(e) =>
+                    setOs("noOfEmployees", e.target.value.replace(/[^0-9]/g, ""))
+                  }
                   placeholder="0"
                   className="w-full border border-gray-200 bg-white text-gray-800 placeholder-gray-400 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
                 />
@@ -1111,8 +1215,8 @@ const AddExpenseDetailsManModal = ({ isOpen, onClose, onSaved }) => {
                 <FieldLabel>Date Paid *</FieldLabel>
                 <input
                   type="date"
-                  value={osForm.datePaid}
-                  onChange={(e) => setOs("datePaid", e.target.value)}
+                  defaultValue={osForm.datePaid}
+                  onBlur={(e) => setOs("datePaid", e.target.value)}
                   className={`w-full border rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 text-gray-800
                     ${
                       errors.datePaid
@@ -1203,18 +1307,22 @@ const AddExpenseDetailsManModal = ({ isOpen, onClose, onSaved }) => {
               </div>
               <div>
                 <FieldLabel>Client *</FieldLabel>
-                <Select
+                <SearchableSelect
                   value={osForm.osClient}
                   onChange={(v) => {
                     setOs("osClient", v);
                     const cl = clients.find((c) => c.client_name === v);
-                    if (cl?.ledger_name) setOs("ledgerName", cl.ledger_name);
+                    if (cl?.ledger_name) {
+                      setTimeout(() => {
+                        setOs("ledgerName", cl.ledger_name);
+                      }, 0);
+                    }
                   }}
                   options={clients.map((c) => ({
                     value: c.client_name,
                     label: c.client_name,
                   }))}
-                  placeholder="Select client"
+                  placeholder="Type client name..."
                   error={errors.osClient}
                 />
               </div>
@@ -1223,10 +1331,11 @@ const AddExpenseDetailsManModal = ({ isOpen, onClose, onSaved }) => {
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <FieldLabel>Ledger Name</FieldLabel>
+                {/* ✅ FIXED: defaultValue + onBlur */}
                 <input
                   type="text"
-                  value={osForm.ledgerName}
-                  onChange={(e) => setOs("ledgerName", e.target.value)}
+                  defaultValue={osForm.ledgerName}
+                  onBlur={(e) => setOs("ledgerName", e.target.value)}
                   placeholder="Auto-filled from client"
                   className="w-full border border-gray-200 bg-white text-gray-800 placeholder-gray-400 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-purple-400"
                 />
@@ -1236,7 +1345,10 @@ const AddExpenseDetailsManModal = ({ isOpen, onClose, onSaved }) => {
                 <Select
                   value={osForm.osPayHead}
                   onChange={(v) => setOs("osPayHead", v)}
-                  options={osPayHeadOptions}
+                  options={osPayHeadOptions.map((p) => ({
+                    value: p,
+                    label: p,
+                  }))}
                   placeholder="Select pay head"
                 />
               </div>
@@ -1244,10 +1356,11 @@ const AddExpenseDetailsManModal = ({ isOpen, onClose, onSaved }) => {
 
             <div>
               <FieldLabel>Payment Details *</FieldLabel>
+              {/* ✅ FIXED: defaultValue + onBlur */}
               <input
                 type="text"
-                value={osForm.paymentDetails}
-                onChange={(e) => setOs("paymentDetails", e.target.value)}
+                defaultValue={osForm.paymentDetails}
+                onBlur={(e) => setOs("paymentDetails", e.target.value)}
                 placeholder="Describe this OS payout..."
                 className={`w-full border rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-purple-400 text-gray-800 placeholder-gray-400
                   ${
@@ -1268,8 +1381,8 @@ const AddExpenseDetailsManModal = ({ isOpen, onClose, onSaved }) => {
                 <FieldLabel>Payout Month *</FieldLabel>
                 <input
                   type="month"
-                  value={osForm.payoutMonth}
-                  onChange={(e) => setOs("payoutMonth", e.target.value)}
+                  defaultValue={osForm.payoutMonth}
+                  onBlur={(e) => setOs("payoutMonth", e.target.value)}
                   className={`w-full border rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-purple-400 text-gray-800
                     ${
                       errors.payoutMonth
@@ -1288,10 +1401,14 @@ const AddExpenseDetailsManModal = ({ isOpen, onClose, onSaved }) => {
               </div>
               <div>
                 <FieldLabel>No. of Employees</FieldLabel>
+                {/* ✅ FIXED: defaultValue + onBlur */}
                 <input
-                  type="number"
-                  value={osForm.osNoOfEmployees}
-                  onChange={(e) => setOs("osNoOfEmployees", e.target.value)}
+                  type="text"
+                  inputMode="numeric"
+                  defaultValue={osForm.osNoOfEmployees}
+                  onBlur={(e) =>
+                    setOs("osNoOfEmployees", e.target.value.replace(/[^0-9]/g, ""))
+                  }
                   placeholder="0"
                   className="w-full border border-gray-200 bg-white text-gray-800 placeholder-gray-400 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-purple-400"
                 />
@@ -1301,6 +1418,7 @@ const AddExpenseDetailsManModal = ({ isOpen, onClose, onSaved }) => {
               </div>
             </div>
 
+            {/* ✅ FIXED: defaultValue + onBlur for amount fields */}
             <div className="grid grid-cols-3 gap-3">
               <div>
                 <FieldLabel>Amount Paid *</FieldLabel>
@@ -1309,9 +1427,12 @@ const AddExpenseDetailsManModal = ({ isOpen, onClose, onSaved }) => {
                     ₹
                   </span>
                   <input
-                    type="number"
-                    value={osForm.osAmountPaid}
-                    onChange={(e) => setOs("osAmountPaid", e.target.value)}
+                    type="text"
+                    inputMode="decimal"
+                    defaultValue={osForm.osAmountPaid}
+                    onBlur={(e) =>
+                      setOs("osAmountPaid", e.target.value.replace(/[^0-9.]/g, ""))
+                    }
                     className={`w-full border rounded-lg pl-7 pr-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-purple-400 text-gray-800 placeholder-gray-400
                       ${
                         errors.osAmountPaid
@@ -1334,9 +1455,12 @@ const AddExpenseDetailsManModal = ({ isOpen, onClose, onSaved }) => {
                     ₹
                   </span>
                   <input
-                    type="number"
-                    value={osForm.osIncomeTax}
-                    onChange={(e) => setOs("osIncomeTax", e.target.value)}
+                    type="text"
+                    inputMode="decimal"
+                    defaultValue={osForm.osIncomeTax}
+                    onBlur={(e) =>
+                      setOs("osIncomeTax", e.target.value.replace(/[^0-9.]/g, ""))
+                    }
                     className="w-full border border-gray-200 bg-white text-gray-800 placeholder-gray-400 rounded-lg pl-7 pr-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-purple-400"
                     placeholder="0"
                   />
@@ -1346,8 +1470,8 @@ const AddExpenseDetailsManModal = ({ isOpen, onClose, onSaved }) => {
                 <FieldLabel>Date Paid *</FieldLabel>
                 <input
                   type="date"
-                  value={osForm.osDatePaid}
-                  onChange={(e) => setOs("osDatePaid", e.target.value)}
+                  defaultValue={osForm.osDatePaid}
+                  onBlur={(e) => setOs("osDatePaid", e.target.value)}
                   className={`w-full border rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-purple-400 text-gray-800
                     ${
                       errors.osDatePaid
@@ -1461,7 +1585,6 @@ const AddExpenseDetailsManModal = ({ isOpen, onClose, onSaved }) => {
     },
   };
   const hc = headerConfig[selectedOption] || headerConfig["null"];
-
 
   return ReactDOM.createPortal(
     <div className="fixed inset-0 z-[99999]">

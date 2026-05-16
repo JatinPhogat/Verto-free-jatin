@@ -12,36 +12,64 @@ import {
   ChevronDown,
   Users,
   Filter,
-  Eye,
   Edit,
   X,
   Calendar,
   DollarSign,
   Briefcase,
+  History,
+  Loader2,
 } from "lucide-react";
 import Card from "./ui/Card";
 import Button from "./ui/button";
 import Badge from "./ui/Badge";
 import AddInternalTeamModal from "./AddInternalTeamModal";
 
+const COST_HEAD_KEYS = [
+  { key: "os",       label: "OS",       desc: "Outsourcing" },
+  { key: "temp",     label: "Temp",     desc: "Temporary" },
+  { key: "rec",      label: "Rec",      desc: "Recruitment" },
+  { key: "projects", label: "Projects", desc: "Project-Based" },
+  { key: "bd",       label: "BD",       desc: "Business Dev" },
+  { key: "accts",    label: "Accts",    desc: "Accounts" },
+  { key: "admin",    label: "Admin",    desc: "Administration" },
+  { key: "hr",       label: "HR",       desc: "Human Resources" },
+  { key: "others",   label: "Others",   desc: "Others" },
+];
+
+const MONTH_NAMES = [
+  "Jan","Feb","Mar","Apr","May","Jun",
+  "Jul","Aug","Sep","Oct","Nov","Dec",
+];
+
+const SEGMENT_COLORS = [
+  "bg-blue-500","bg-indigo-500","bg-violet-500","bg-purple-500",
+  "bg-pink-500","bg-rose-500","bg-orange-500","bg-amber-500","bg-teal-500",
+];
+
 const InternalTeamDetails = () => {
   const { role } = useAuth();
-  const [searchTerm, setSearchTerm] = useState("");
-  const [data, setData] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [deptFilter, setDeptFilter] = useState("All");
-  const [statusFilter, setStatusFilter] = useState("Active");
-  const [currentPage, setCurrentPage] = useState(1);
-  const [sortConfig, setSortConfig] = useState({ key: null, direction: "asc" });
+  const [searchTerm, setSearchTerm]       = useState("");
+  const [data, setData]                   = useState([]);
+  const [loading, setLoading]             = useState(true);
+  const [deptFilter, setDeptFilter]       = useState("All");
+  const [statusFilter, setStatusFilter]   = useState("Active");
+  const [currentPage, setCurrentPage]     = useState(1);
+  const [sortConfig, setSortConfig]       = useState({ key: null, direction: "asc" });
   const [selectedEmployee, setSelectedEmployee] = useState(null);
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [editingEmployee, setEditingEmployee] = useState(null);
-  const [teamRoles, setTeamRoles] = useState([]);
-  const [roleLoading, setRoleLoading] = useState(true);
-  const itemsPerPage = 7;
+  const [isModalOpen, setIsModalOpen]     = useState(false);
+  const [editingEmployee, setEditingEmployee]   = useState(null);
+  const [teamRoles, setTeamRoles]         = useState([]);
+  const [roleLoading, setRoleLoading]     = useState(true);
 
+  // Cost history for the view modal
+  const [costHistory, setCostHistory]     = useState([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+
+  const itemsPerPage = 7;
   const isAnyModalOpen = !!selectedEmployee || isModalOpen;
 
+  // ── Load user roles ────────────────────────────────────────
   useEffect(() => {
     const loadTeamRoles = async () => {
       setRoleLoading(true);
@@ -59,6 +87,7 @@ const InternalTeamDetails = () => {
     loadTeamRoles();
   }, []);
 
+  // ── Load employees ─────────────────────────────────────────
   useEffect(() => {
     fetchEmployees();
   }, []);
@@ -77,27 +106,49 @@ const InternalTeamDetails = () => {
     setLoading(false);
   };
 
+  // ── Load cost history when selectedEmployee changes ────────
+  useEffect(() => {
+    if (!selectedEmployee?.id) {
+      setCostHistory([]);
+      return;
+    }
+    setHistoryLoading(true);
+    supabase
+      .from("internal_team_cost_history")
+      .select("*")
+      .eq("employee_id", selectedEmployee.id)
+      .order("effective_year",  { ascending: false })
+      .order("effective_month", { ascending: false })
+      .then(({ data: histData, error }) => {
+        if (!error && histData) setCostHistory(histData);
+        else setCostHistory([]);
+        setHistoryLoading(false);
+      });
+  }, [selectedEmployee?.id]);
+
+  // ── Merge data with roles ──────────────────────────────────
   const mergedData = useMemo(() => {
     if (!teamRoles.length) return data;
     return data.map((row) => {
       const match = teamRoles.find((item) => item.email === row.email);
       return {
         ...row,
-        role: match?.role ?? row.role,
+        role:  match?.role  ?? row.role,
         email: match?.email ?? row.email,
       };
     });
   }, [data, teamRoles]);
 
+  // ── Filter + sort ──────────────────────────────────────────
   let filteredData = mergedData.filter((row) => {
     const matchesSearch =
-      row.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      row.emp_code.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      row.designation.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      row.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      row.role.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesDept = deptFilter === "All" || row.department === deptFilter;
-    const matchesStatus = statusFilter === "All" || row.status === statusFilter;
+      row.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      row.emp_code?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      row.designation?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      row.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      row.role?.toLowerCase().includes(searchTerm.toLowerCase());
+    const matchesDept   = deptFilter   === "All" || row.department === deptFilter;
+    const matchesStatus = statusFilter === "All" || row.status     === statusFilter;
     return matchesSearch && matchesDept && matchesStatus;
   });
 
@@ -105,28 +156,25 @@ const InternalTeamDetails = () => {
     filteredData = [...filteredData].sort((a, b) => {
       const aVal = a[sortConfig.key];
       const bVal = b[sortConfig.key];
-      if (typeof aVal === "number" && typeof bVal === "number") {
+      if (typeof aVal === "number" && typeof bVal === "number")
         return sortConfig.direction === "asc" ? aVal - bVal : bVal - aVal;
-      }
-      if (typeof aVal === "string" && typeof bVal === "string") {
+      if (typeof aVal === "string" && typeof bVal === "string")
         return sortConfig.direction === "asc"
           ? aVal.localeCompare(bVal)
           : bVal.localeCompare(aVal);
-      }
       return 0;
     });
   }
 
-  const totalPages = Math.ceil(filteredData.length / itemsPerPage);
+  const totalPages    = Math.ceil(filteredData.length / itemsPerPage);
   const paginatedData = filteredData.slice(
     (currentPage - 1) * itemsPerPage,
     currentPage * itemsPerPage
   );
 
-  useEffect(() => {
-    setCurrentPage(1);
-  }, [searchTerm, deptFilter, statusFilter]);
+  useEffect(() => { setCurrentPage(1); }, [searchTerm, deptFilter, statusFilter]);
 
+  // ── Sorting ────────────────────────────────────────────────
   const handleSort = (key) => {
     setSortConfig((prev) => ({
       key,
@@ -135,104 +183,105 @@ const InternalTeamDetails = () => {
   };
 
   const SortIcon = ({ columnKey }) => {
-    if (sortConfig.key !== columnKey) {
+    if (sortConfig.key !== columnKey)
       return <ChevronDown className="w-3 h-3 opacity-30" />;
-    }
-    return sortConfig.direction === "asc" ? (
-      <ChevronDown className="w-3 h-3 rotate-180" />
-    ) : (
-      <ChevronDown className="w-3 h-3" />
-    );
+    return sortConfig.direction === "asc"
+      ? <ChevronDown className="w-3 h-3 rotate-180" />
+      : <ChevronDown className="w-3 h-3" />;
   };
 
-  const formatCurrency = (val) => `₹ ${(val / 1000).toFixed(0)}K`;
-  const formatCurrencyFull = (val) => `₹ ${val.toLocaleString("en-IN")}`;
-  const formatDate = (dateStr) => {
+  // ── Formatters ─────────────────────────────────────────────
+  const formatCurrency     = (val) => `₹ ${(val / 1000).toFixed(0)}K`;
+  const formatCurrencyFull = (val) => `₹ ${(val || 0).toLocaleString("en-IN")}`;
+  const formatDate         = (dateStr) => {
     if (!dateStr) return "-";
-    const date = new Date(dateStr);
-    return date.toLocaleDateString("en-GB", {
-      day: "2-digit",
-      month: "short",
-      year: "numeric",
+    return new Date(dateStr).toLocaleDateString("en-GB", {
+      day: "2-digit", month: "short", year: "numeric",
     });
   };
 
+  // ── Edit handler ───────────────────────────────────────────
   const handleEdit = (employee) => {
     setEditingEmployee(employee);
     setIsModalOpen(true);
     setSelectedEmployee(null);
   };
 
-  // ─── Export Excel ────────────────────────────────────────────────────────────
+  // ── Export Excel ───────────────────────────────────────────
   const handleExportExcel = () => {
-    // Find the max number of clients across all rows so we can build dynamic columns
-    const maxClients = mergedData.reduce((max, row) => {
-      return Math.max(max, row.client_focus?.length || 0);
-    }, 0);
-
+    const maxClients = mergedData.reduce(
+      (max, row) => Math.max(max, row.client_focus?.length || 0), 0
+    );
     const exportRows = mergedData.map((row) => {
       const base = {
-        // Identity
-        "Emp Code": row.emp_code || "",
-        "Name": row.name || "",
-        "Father Name": row.father_name || "",
-        "Email": row.email || "",
-        // Work
-        "Department": row.department || "",
-        "Designation": row.designation || "",
-        "Location": row.location || "",
-        "Role": row.role || "employee",
-        "Status": row.status || "",
-        // Dates
-        "Date of Birth": row.dob ? formatDate(row.dob) : "",
-        "Date of Joining": row.doj ? formatDate(row.doj) : "",
-        // Compensation
-        "CTC (₹)": row.ctc || 0,
-        "PF (₹)": row.pf || 0,
-        "ESI (₹)": row.esi || 0,
-        "Bonus (₹)": row.bonus || 0,
-        "Variable (₹)": row.variable || 0,
-        "Other Component (₹)": row.other_component || 0,
-        "Reimbursement (₹)": row.reimbursement || 0,
-        // Cost Head Breakup
-        "Cost Head - OS (%)": row.cost_head_breakup?.os || 0,
-        "Cost Head - REC (%)": row.cost_head_breakup?.rec || 0,
-        "Cost Head - TEMP (%)": row.cost_head_breakup?.temp || 0,
+        "Emp Code":             row.emp_code    || "",
+        "Name":                 row.name        || "",
+        "Father Name":          row.father_name || "",
+        "Email":                row.email       || "",
+        "Department":           row.department  || "",
+        "Designation":          row.designation || "",
+        "Location":             row.location    || "",
+        "Role":                 row.role        || "employee",
+        "Status":               row.status      || "",
+        "Date of Birth":        row.dob ? formatDate(row.dob) : "",
+        "Date of Joining":      row.doj ? formatDate(row.doj) : "",
+        "CTC (₹)":              row.ctc             || 0,
+        "PF (₹)":               row.pf              || 0,
+        "ESI (₹)":              row.esi             || 0,
+        "Bonus (₹)":            row.bonus           || 0,
+        "Variable (₹)":         row.variable        || 0,
+        "Other Component (₹)":  row.other_component || 0,
+        "Reimbursement (₹)":    row.reimbursement   || 0,
+        "Cost Head - OS (%)":       row.cost_head_breakup?.os       || 0,
+        "Cost Head - REC (%)":      row.cost_head_breakup?.rec      || 0,
+        "Cost Head - TEMP (%)":     row.cost_head_breakup?.temp     || 0,
         "Cost Head - Projects (%)": row.cost_head_breakup?.projects || 0,
-        "Cost Head - BD (%)": row.cost_head_breakup?.bd || 0,
-        "Cost Head - HR (%)": row.cost_head_breakup?.hr || 0,
-        "Cost Head - Accts (%)": row.cost_head_breakup?.accts || 0,
-        "Cost Head - Admin (%)": row.cost_head_breakup?.admin || 0,
-        "Cost Head - Others (%)": row.cost_head_breakup?.others || 0,
+        "Cost Head - BD (%)":       row.cost_head_breakup?.bd       || 0,
+        "Cost Head - HR (%)":       row.cost_head_breakup?.hr       || 0,
+        "Cost Head - Accts (%)":    row.cost_head_breakup?.accts    || 0,
+        "Cost Head - Admin (%)":    row.cost_head_breakup?.admin    || 0,
+        "Cost Head - Others (%)":   row.cost_head_breakup?.others   || 0,
       };
-
-      // Dynamically add client focus columns
       for (let i = 0; i < maxClients; i++) {
         const client = row.client_focus?.[i];
         base[`Client ${i + 1} Name`] = client?.clientName || "";
-        base[`Client ${i + 1} %`] = client?.percentage ?? "";
+        base[`Client ${i + 1} %`]    = client?.percentage ?? "";
       }
-
       return base;
     });
 
     const worksheet = XLSX.utils.json_to_sheet(exportRows);
-
-    // Style: auto column widths based on header length
-    const headers = Object.keys(exportRows[0] || {});
-    worksheet["!cols"] = headers.map((h) => ({ wch: Math.max(h.length + 2, 14) }));
-
-    // Freeze the header row
+    const headers   = Object.keys(exportRows[0] || {});
+    worksheet["!cols"]   = headers.map((h) => ({ wch: Math.max(h.length + 2, 14) }));
     worksheet["!freeze"] = { xSplit: 0, ySplit: 1 };
 
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, "Internal Team");
-
-    const fileName = `Internal_Team_${new Date().toISOString().slice(0, 10)}.xlsx`;
-    XLSX.writeFile(workbook, fileName);
+    XLSX.writeFile(workbook, `Internal_Team_${new Date().toISOString().slice(0, 10)}.xlsx`);
   };
-  // ─────────────────────────────────────────────────────────────────────────────
 
+  // ── Cost bar helper ────────────────────────────────────────
+  const CostBar = ({ breakup }) => {
+    const total = COST_HEAD_KEYS.reduce((s, h) => s + (breakup?.[h.key] || 0), 0);
+    if (!total) return null;
+    return (
+      <div className="mt-2 h-1.5 rounded-full overflow-hidden bg-gray-100 flex">
+        {COST_HEAD_KEYS.map(({ key }, i) => {
+          const v = breakup?.[key] || 0;
+          if (!v) return null;
+          return (
+            <div
+              key={key}
+              style={{ width: `${v}%` }}
+              className={`h-full transition-all ${SEGMENT_COLORS[i % 9]}`}
+            />
+          );
+        })}
+      </div>
+    );
+  };
+
+  // ─────────────────────────────────────────────────────────────────────────────
   return (
     <div className="space-y-4 pb-6">
       {/* Filter Bar */}
@@ -310,41 +359,17 @@ const InternalTeamDetails = () => {
           <table className="w-full text-left border-collapse">
             <thead className="bg-gray-50 sticky top-0 z-10">
               <tr className="text-xs font-semibold text-gray-500 uppercase tracking-wider border-b border-gray-200">
-                <th
-                  className="p-3 cursor-pointer hover:bg-gray-100 transition-colors"
-                  onClick={() => handleSort("department")}
-                >
-                  <div className="flex items-center justify-between">
-                    <span>Department</span>
-                    <SortIcon columnKey="department" />
-                  </div>
+                <th className="p-3 cursor-pointer hover:bg-gray-100 transition-colors" onClick={() => handleSort("department")}>
+                  <div className="flex items-center justify-between"><span>Department</span><SortIcon columnKey="department" /></div>
                 </th>
-                <th
-                  className="p-3 cursor-pointer hover:bg-gray-100 transition-colors"
-                  onClick={() => handleSort("name")}
-                >
-                  <div className="flex items-center justify-between">
-                    <span>Name</span>
-                    <SortIcon columnKey="name" />
-                  </div>
+                <th className="p-3 cursor-pointer hover:bg-gray-100 transition-colors" onClick={() => handleSort("name")}>
+                  <div className="flex items-center justify-between"><span>Name</span><SortIcon columnKey="name" /></div>
                 </th>
-                <th
-                  className="p-3 cursor-pointer hover:bg-gray-100 transition-colors"
-                  onClick={() => handleSort("designation")}
-                >
-                  <div className="flex items-center justify-between">
-                    <span>Designation</span>
-                    <SortIcon columnKey="designation" />
-                  </div>
+                <th className="p-3 cursor-pointer hover:bg-gray-100 transition-colors" onClick={() => handleSort("designation")}>
+                  <div className="flex items-center justify-between"><span>Designation</span><SortIcon columnKey="designation" /></div>
                 </th>
-                <th
-                  className="p-3 cursor-pointer hover:bg-gray-100 transition-colors"
-                  onClick={() => handleSort("location")}
-                >
-                  <div className="flex items-center justify-between">
-                    <span>Location</span>
-                    <SortIcon columnKey="location" />
-                  </div>
+                <th className="p-3 cursor-pointer hover:bg-gray-100 transition-colors" onClick={() => handleSort("location")}>
+                  <div className="flex items-center justify-between"><span>Location</span><SortIcon columnKey="location" /></div>
                 </th>
                 <th className="p-3 cursor-pointer hover:bg-gray-100 transition-colors">
                   <span>Email</span>
@@ -352,35 +377,19 @@ const InternalTeamDetails = () => {
                 <th className="p-3 text-center cursor-pointer hover:bg-gray-100 transition-colors">
                   <span>Role</span>
                 </th>
-                <th
-                  className="p-3 text-right cursor-pointer hover:bg-gray-100 transition-colors"
-                  onClick={() => handleSort("ctc")}
-                >
-                  <div className="flex items-center justify-end space-x-2">
-                    <span>CTC</span>
-                    <SortIcon columnKey="ctc" />
-                  </div>
+                <th className="p-3 text-right cursor-pointer hover:bg-gray-100 transition-colors" onClick={() => handleSort("ctc")}>
+                  <div className="flex items-center justify-end space-x-2"><span>CTC</span><SortIcon columnKey="ctc" /></div>
                 </th>
-                <th
-                  className="p-3 text-right cursor-pointer hover:bg-gray-100 transition-colors"
-                  onClick={() => handleSort("variable")}
-                >
-                  <div className="flex items-center justify-end space-x-2">
-                    <span>Variable</span>
-                    <SortIcon columnKey="variable" />
-                  </div>
+                <th className="p-3 text-right cursor-pointer hover:bg-gray-100 transition-colors" onClick={() => handleSort("variable")}>
+                  <div className="flex items-center justify-end space-x-2"><span>Variable</span><SortIcon columnKey="variable" /></div>
                 </th>
                 <th className="p-3 text-center">Actions</th>
               </tr>
             </thead>
 
-            <tbody
-              className={`text-sm divide-y divide-gray-100 transition-all duration-300 ${
-                isAnyModalOpen
-                  ? "opacity-20 blur-sm pointer-events-none select-none"
-                  : "opacity-100 blur-none"
-              }`}
-            >
+            <tbody className={`text-sm divide-y divide-gray-100 transition-all duration-300 ${
+              isAnyModalOpen ? "opacity-20 blur-sm pointer-events-none select-none" : "opacity-100 blur-none"
+            }`}>
               {paginatedData.map((row, index) => (
                 <motion.tr
                   key={row.id}
@@ -389,41 +398,24 @@ const InternalTeamDetails = () => {
                   transition={{ delay: index * 0.02 }}
                   className="hover:bg-blue-50 transition-colors"
                 >
-                  {/* Department */}
                   <td className="p-3">
                     <Badge variant="secondary" className="text-xs font-semibold text-gray-900">
                       {row.department}
                     </Badge>
                   </td>
-
-                  {/* Name */}
                   <td className="p-3 font-semibold text-gray-900">{row.name}</td>
-
-                  {/* Designation */}
                   <td className="p-3 font-medium text-gray-900">{row.designation}</td>
-
-                  {/* Location */}
                   <td className="p-3 font-medium text-gray-900">{row.location}</td>
-
-                  {/* Email */}
                   <td className="p-3 font-medium text-gray-900 break-all">{row.email}</td>
-
-                  {/* Role */}
                   <td className="p-3 text-center text-sm font-semibold text-gray-900">
                     {row.role || "employee"}
                   </td>
-
-                  {/* CTC */}
                   <td className="p-3 text-right font-mono font-bold text-gray-900">
                     {formatCurrency(row.ctc)}
                   </td>
-
-                  {/* Variable */}
                   <td className="p-3 text-right font-mono font-semibold text-gray-900">
                     {formatCurrency(row.variable)}
                   </td>
-
-                  {/* Actions */}
                   <td className="p-3 text-center">
                     <div className="flex items-center justify-center gap-2">
                       <button
@@ -446,11 +438,8 @@ const InternalTeamDetails = () => {
                             .from("internal_team")
                             .delete()
                             .eq("id", row.id);
-                          if (error) {
-                            console.error(error);
-                          } else {
-                            fetchEmployees();
-                          }
+                          if (error) console.error(error);
+                          else fetchEmployees();
                         }}
                         className="px-2 py-1 bg-red-50 hover:bg-red-100 text-red-700 font-semibold rounded text-xs border border-red-200 transition-colors"
                       >
@@ -465,25 +454,16 @@ const InternalTeamDetails = () => {
         </div>
 
         {/* Pagination */}
-        <div
-          className={`p-4 border-t border-gray-100 bg-gray-50/50 flex items-center justify-between transition-all duration-300 ${
-            isAnyModalOpen
-              ? "opacity-20 blur-sm pointer-events-none select-none"
-              : "opacity-100 blur-none"
-          }`}
-        >
+        <div className={`p-4 border-t border-gray-100 bg-gray-50/50 flex items-center justify-between transition-all duration-300 ${
+          isAnyModalOpen ? "opacity-20 blur-sm pointer-events-none select-none" : "opacity-100 blur-none"
+        }`}>
           <div className="text-sm text-gray-800 font-medium">
             Showing{" "}
-            <span className="font-bold text-gray-900">
-              {(currentPage - 1) * itemsPerPage + 1}
-            </span>{" "}
-            to{" "}
-            <span className="font-bold text-gray-900">
-              {Math.min(currentPage * itemsPerPage, filteredData.length)}
-            </span>{" "}
-            of{" "}
-            <span className="font-bold text-gray-900">{filteredData.length}</span>{" "}
-            entries
+            <span className="font-bold text-gray-900">{(currentPage - 1) * itemsPerPage + 1}</span>
+            {" "}to{" "}
+            <span className="font-bold text-gray-900">{Math.min(currentPage * itemsPerPage, filteredData.length)}</span>
+            {" "}of{" "}
+            <span className="font-bold text-gray-900">{filteredData.length}</span> entries
           </div>
           <div className="flex items-center space-x-2">
             <button
@@ -496,15 +476,10 @@ const InternalTeamDetails = () => {
             <div className="flex items-center space-x-1">
               {Array.from({ length: Math.min(totalPages, 5) }, (_, i) => {
                 let pageNum;
-                if (totalPages <= 5) {
-                  pageNum = i + 1;
-                } else if (currentPage <= 3) {
-                  pageNum = i + 1;
-                } else if (currentPage >= totalPages - 2) {
-                  pageNum = totalPages - 4 + i;
-                } else {
-                  pageNum = currentPage - 2 + i;
-                }
+                if (totalPages <= 5)              pageNum = i + 1;
+                else if (currentPage <= 3)        pageNum = i + 1;
+                else if (currentPage >= totalPages - 2) pageNum = totalPages - 4 + i;
+                else                              pageNum = currentPage - 2 + i;
                 return (
                   <button
                     key={pageNum}
@@ -531,10 +506,10 @@ const InternalTeamDetails = () => {
         </div>
       </Card>
 
-      {/* Employee Detail Modal */}
+      {/* ── Employee Detail View Modal ── */}
       {selectedEmployee &&
         ReactDOM.createPortal(
-          <div className="fixed inset-0 z-99999">
+          <div className="fixed inset-0 z-[99999]">
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
@@ -553,7 +528,7 @@ const InternalTeamDetails = () => {
                 onClick={(e) => e.stopPropagation()}
               >
                 {/* Modal Header */}
-                <div className="p-6 border-b border-gray-200 bg-gradient-to-r from-blue-600 to-indigo-700 text-white flex justify-between items-center sticky top-0 z-10">
+                <div className="p-6 border-b border-gray-200 bg-gradient-to-r from-blue-600 to-indigo-700 text-white flex justify-between items-center sticky top-0 z-10 rounded-t-xl">
                   <div>
                     <h3 className="text-lg font-bold flex items-center">
                       <Users className="w-5 h-5 mr-2" />
@@ -581,28 +556,30 @@ const InternalTeamDetails = () => {
                 </div>
 
                 <div className="p-6 space-y-6">
-                  {/* Basic Information */}
-                  <div className="bg-gray-50 p-4 rounded-lg">
-                    <h4 className="font-semibold text-gray-900 mb-4 flex items-center">
-                      <Briefcase className="w-4 h-4 mr-2 text-blue-600" />
-                      Basic Information
-                    </h4>
+
+                  {/* ── Basic Information ── */}
+                  <ViewSection icon={<Briefcase className="w-4 h-4" />} title="Basic Information">
                     <div className="grid grid-cols-3 gap-4">
                       {[
-                        { label: "Department", value: <Badge variant="secondary" className="font-semibold text-gray-900">{selectedEmployee.department}</Badge> },
-                        { label: "Email", value: <span className="text-blue-700 font-mono font-semibold">{selectedEmployee.email}</span> },
-                        { label: "Employee Code", value: <span className="text-blue-700 font-mono font-semibold">{selectedEmployee.emp_code}</span> },
+                        { label: "Department",     value: <Badge variant="secondary" className="font-semibold text-gray-900">{selectedEmployee.department}</Badge> },
+                        { label: "Email",          value: <span className="text-blue-700 font-mono font-semibold">{selectedEmployee.email || "—"}</span> },
+                        { label: "Employee Code",  value: <span className="text-blue-700 font-mono font-semibold">{selectedEmployee.emp_code}</span> },
                         {
-                          label: "Status", value: (
-                            <Badge className={selectedEmployee.status === "Active" ? "bg-emerald-100 text-emerald-800 font-semibold" : "bg-gray-100 text-gray-800 font-semibold"}>
+                          label: "Status",
+                          value: (
+                            <Badge className={selectedEmployee.status === "Active"
+                              ? "bg-emerald-100 text-emerald-800 font-semibold"
+                              : "bg-gray-100 text-gray-800 font-semibold"
+                            }>
                               {selectedEmployee.status}
                             </Badge>
-                          )
+                          ),
                         },
-                        { label: "Name", value: <span className="font-semibold text-gray-900">{selectedEmployee.name}</span> },
-                        { label: "Father Name", value: <span className="font-semibold text-gray-900">{selectedEmployee.father_name}</span> },
+                        { label: "Name",        value: <span className="font-semibold text-gray-900">{selectedEmployee.name}</span> },
+                        { label: "Father Name", value: <span className="font-semibold text-gray-900">{selectedEmployee.father_name || "—"}</span> },
                         { label: "Designation", value: <span className="font-semibold text-gray-900">{selectedEmployee.designation}</span> },
-                        { label: "Location", value: <span className="font-semibold text-gray-900">{selectedEmployee.location}</span> },
+                        { label: "Location",    value: <span className="font-semibold text-gray-900">{selectedEmployee.location || "—"}</span> },
+                        { label: "Entity",      value: <span className="font-semibold text-gray-900">{selectedEmployee.entity || "—"}</span> },
                       ].map(({ label, value }) => (
                         <div key={label}>
                           <label className="text-xs text-gray-500 uppercase tracking-wider font-medium">{label}</label>
@@ -610,19 +587,15 @@ const InternalTeamDetails = () => {
                         </div>
                       ))}
                     </div>
-                  </div>
+                  </ViewSection>
 
-                  {/* Employment Details */}
-                  <div className="bg-gray-50 p-4 rounded-lg">
-                    <h4 className="font-semibold text-gray-900 mb-4 flex items-center">
-                      <Calendar className="w-4 h-4 mr-2 text-blue-600" />
-                      Employment Details
-                    </h4>
+                  {/* ── Employment Details ── */}
+                  <ViewSection icon={<Calendar className="w-4 h-4" />} title="Employment Details">
                     <div className="grid grid-cols-3 gap-4">
                       {[
-                        { label: "Date of Birth", value: formatDate(selectedEmployee.dob) },
-                        { label: "Date of Joining", value: formatDate(selectedEmployee.doj) },
-                        { label: "Last Working Day", value: "-" },
+                        { label: "Date of Birth",    value: formatDate(selectedEmployee.dob) },
+                        { label: "Date of Joining",  value: formatDate(selectedEmployee.doj) },
+                        { label: "Last Working Day", value: formatDate(selectedEmployee.last_working_day) },
                       ].map(({ label, value }) => (
                         <div key={label}>
                           <label className="text-xs text-gray-500 uppercase tracking-wider font-medium">{label}</label>
@@ -630,23 +603,19 @@ const InternalTeamDetails = () => {
                         </div>
                       ))}
                     </div>
-                  </div>
+                  </ViewSection>
 
-                  {/* Compensation Details */}
-                  <div className="bg-gray-50 p-4 rounded-lg">
-                    <h4 className="font-semibold text-gray-900 mb-4 flex items-center">
-                      <DollarSign className="w-4 h-4 mr-2 text-blue-600" />
-                      Compensation Details
-                    </h4>
+                  {/* ── Compensation Details ── */}
+                  <ViewSection icon={<DollarSign className="w-4 h-4" />} title="Compensation Details">
                     <div className="grid grid-cols-3 gap-4">
                       {[
-                        { label: "CTC", value: selectedEmployee.ctc },
-                        { label: "PF", value: selectedEmployee.pf },
-                        { label: "ESI", value: selectedEmployee.esi },
-                        { label: "Bonus", value: selectedEmployee.bonus },
-                        { label: "Variable", value: selectedEmployee.variable },
+                        { label: "CTC",             value: selectedEmployee.ctc },
+                        { label: "PF",              value: selectedEmployee.pf },
+                        { label: "ESI",             value: selectedEmployee.esi },
+                        { label: "Bonus",           value: selectedEmployee.bonus },
+                        { label: "Variable",        value: selectedEmployee.variable },
                         { label: "Other Component", value: selectedEmployee.other_component },
-                        { label: "Reimbursement", value: selectedEmployee.reimbursement },
+                        { label: "Reimbursement",   value: selectedEmployee.reimbursement },
                       ].map(({ label, value }) => (
                         <div key={label} className="bg-white p-3 rounded-lg border border-gray-200">
                           <label className="text-xs text-gray-500 uppercase tracking-wider font-medium">{label}</label>
@@ -656,23 +625,15 @@ const InternalTeamDetails = () => {
                         </div>
                       ))}
                     </div>
-                  </div>
+                  </ViewSection>
 
-                  {/* Cost Head Breakup */}
-                  <div className="bg-gray-50 p-4 rounded-lg">
-                    <h4 className="font-semibold text-gray-900 mb-4">Cost Head Break Up</h4>
-                    <div className="grid grid-cols-3 gap-3 sm:grid-cols-4">
-                      {[
-                        { key: "os", label: "OS", desc: "Outsourcing" },
-                        { key: "rec", label: "REC", desc: "Recruitment" },
-                        { key: "temp", label: "TEMP", desc: "Temporary" },
-                        { key: "projects", label: "PROJECTS", desc: "Project-Based" },
-                        { key: "bd", label: "BD", desc: "Business Dev" },
-                        { key: "hr", label: "HR", desc: "Human Resources" },
-                        { key: "accts", label: "ACCTS", desc: "Accounts" },
-                        { key: "admin", label: "ADMIN", desc: "Administration" },
-                        { key: "others", label: "OTHERS", desc: "Others" },
-                      ].map(({ key, label, desc }) => {
+                  {/* ── Current Cost Head Breakup (Default / from DOJ) ── */}
+                  <ViewSection title="Current Cost Head Break Up">
+                    <p className="text-xs text-gray-500 -mt-2 mb-3">
+                      Default allocation effective from DOJ ({formatDate(selectedEmployee.doj)})
+                    </p>
+                    <div className="grid grid-cols-3 gap-3 sm:grid-cols-5">
+                      {COST_HEAD_KEYS.map(({ key, label, desc }) => {
                         const val = selectedEmployee.cost_head_breakup?.[key] || 0;
                         return (
                           <div
@@ -688,39 +649,105 @@ const InternalTeamDetails = () => {
                         );
                       })}
                     </div>
-                    {(() => {
-                      const heads = ["os","rec","temp","projects","bd","hr","accts","admin","others"].map(k => ({ key: k }));
-                      const colors = ["bg-blue-500","bg-indigo-500","bg-violet-500","bg-purple-500","bg-pink-500","bg-rose-500","bg-orange-500","bg-amber-500","bg-teal-500"];
-                      const total = heads.reduce((s, h) => s + (selectedEmployee.cost_head_breakup?.[h.key] || 0), 0);
-                      if (!total) return null;
-                      return (
-                        <div className="mt-3 h-2 rounded-full overflow-hidden bg-gray-100 flex">
-                          {heads.map(({ key }, i) => {
-                            const v = selectedEmployee.cost_head_breakup?.[key] || 0;
-                            if (!v) return null;
-                            return <div key={key} style={{ width: `${v}%` }} className={`h-full transition-all ${colors[i]}`} />;
-                          })}
-                        </div>
-                      );
-                    })()}
-                  </div>
+                    <CostBar breakup={selectedEmployee.cost_head_breakup} />
+                  </ViewSection>
 
-                  {/* Client Focus */}
-                  <div className="bg-gray-50 p-4 rounded-lg">
-                    <h4 className="font-semibold text-gray-900 mb-4">Client Focus</h4>
+                  {/* ── Cost Head Shift History ── */}
+                  <ViewSection
+                    icon={<History className="w-4 h-4" />}
+                    title="Cost Head Shift History"
+                    badge={
+                      costHistory.length > 0 && (
+                        <span className="text-xs font-semibold bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full">
+                          {costHistory.length} shift{costHistory.length !== 1 ? "s" : ""}
+                        </span>
+                      )
+                    }
+                  >
+                    {historyLoading ? (
+                      <div className="flex items-center space-x-2 text-sm text-gray-500 py-3">
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        <span>Loading history…</span>
+                      </div>
+                    ) : costHistory.length === 0 ? (
+                      <p className="text-sm text-gray-400 italic py-2">
+                        No cost shift history recorded. Use Edit to add cost shifts.
+                      </p>
+                    ) : (
+                      <div className="overflow-x-auto rounded-lg border border-gray-200">
+                        <table className="w-full text-xs border-collapse">
+                          <thead>
+                            <tr className="bg-gray-100 text-gray-600 font-semibold uppercase tracking-wider">
+                              <th className="px-3 py-2.5 text-left border-b border-gray-200 whitespace-nowrap sticky left-0 bg-gray-100 z-10">
+                                Period
+                              </th>
+                              {COST_HEAD_KEYS.map((h) => (
+                                <th key={h.key} className="px-3 py-2.5 text-center border-b border-gray-200 whitespace-nowrap">
+                                  <div>{h.label}</div>
+                                  <div className="text-[9px] font-normal text-gray-400 normal-case">{h.desc}</div>
+                                </th>
+                              ))}
+                              <th className="px-3 py-2.5 text-center border-b border-gray-200 whitespace-nowrap">Total</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-gray-100">
+                            {costHistory.map((row, idx) => {
+                              const total      = COST_HEAD_KEYS.reduce((s, h) => s + (row.cost_head_breakup?.[h.key] || 0), 0);
+                              const monthName  = MONTH_NAMES[row.effective_month - 1];
+                              const isEven     = idx % 2 === 0;
+                              return (
+                                <tr key={row.id} className={isEven ? "bg-white" : "bg-gray-50/60"}>
+                                  <td className={`px-3 py-2.5 font-semibold text-gray-900 whitespace-nowrap sticky left-0 z-10 ${isEven ? "bg-white" : "bg-gray-50"}`}>
+                                    <div className="flex items-center space-x-1.5">
+                                      <span className="w-1.5 h-1.5 rounded-full bg-indigo-400 flex-shrink-0" />
+                                      <span>{monthName} {row.effective_year}</span>
+                                    </div>
+                                  </td>
+                                  {COST_HEAD_KEYS.map((h) => {
+                                    const v = row.cost_head_breakup?.[h.key] || 0;
+                                    return (
+                                      <td
+                                        key={h.key}
+                                        className={`px-3 py-2.5 text-center font-mono font-bold ${
+                                          v > 0 ? "text-indigo-700 bg-indigo-50/60" : "text-gray-300"
+                                        }`}
+                                      >
+                                        {v > 0 ? `${v}%` : "—"}
+                                      </td>
+                                    );
+                                  })}
+                                  <td className={`px-3 py-2.5 text-center font-mono font-bold ${
+                                    total === 100 ? "text-emerald-700" : "text-red-500"
+                                  }`}>
+                                    {total}%
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </ViewSection>
+
+                  {/* ── Client Focus ── */}
+                  <ViewSection title="Client Focus">
                     <div className="space-y-2">
-                      {selectedEmployee.client_focus?.length ? (
-                        selectedEmployee.client_focus.map((client, index) => (
-                          <div key={index} className="flex justify-between bg-white p-3 rounded border border-gray-200">
-                            <span className="font-semibold text-gray-900">{client.clientName}</span>
-                            <span className="font-bold text-gray-900">{client.percentage}%</span>
-                          </div>
-                        ))
+                      {selectedEmployee.client_focus?.filter((c) => c.clientName).length ? (
+                        selectedEmployee.client_focus
+                          .filter((c) => c.clientName)
+                          .map((client, index) => (
+                            <div key={index} className="flex justify-between bg-white p-3 rounded border border-gray-200">
+                              <span className="font-semibold text-gray-900">{client.clientName}</span>
+                              <span className="font-bold text-gray-900">{client.percentage}%</span>
+                            </div>
+                          ))
                       ) : (
                         <p className="text-gray-500 text-sm">No client allocation</p>
                       )}
                     </div>
-                  </div>
+                  </ViewSection>
+
                 </div>
               </motion.div>
             </div>
@@ -728,7 +755,7 @@ const InternalTeamDetails = () => {
           document.body
         )}
 
-      {/* Add/Edit Modal */}
+      {/* ── Add / Edit Modal ── */}
       <AddInternalTeamModal
         key={editingEmployee?.id || "new"}
         isOpen={isModalOpen}
@@ -742,5 +769,18 @@ const InternalTeamDetails = () => {
     </div>
   );
 };
+
+// ─── View modal section wrapper ───────────────────────────────
+const ViewSection = ({ icon, title, subtitle, badge, children }) => (
+  <div className="bg-gray-50 p-4 rounded-lg">
+    <div className="flex items-center space-x-2 mb-4">
+      {icon && <span className="text-blue-600">{icon}</span>}
+      <h4 className="font-semibold text-gray-900 text-sm">{title}</h4>
+      {badge && <span>{badge}</span>}
+    </div>
+    {subtitle && <p className="text-xs text-gray-500 -mt-3 mb-3">{subtitle}</p>}
+    {children}
+  </div>
+);
 
 export default InternalTeamDetails;
