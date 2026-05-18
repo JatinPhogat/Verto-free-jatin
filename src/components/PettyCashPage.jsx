@@ -6,7 +6,7 @@ import {
   CheckCircle2, Loader2, X, RefreshCw, TrendingUp, TrendingDown,
   History, Search,
 } from "lucide-react";
-import PettyCashHistoryModal from "./PettyCashHistoryModal";
+import PettyCashHistoryModal from "./Pettycashhistorymodal.jsx";
 
 // ─── MASTER DATA ─────────────────────────────────────────────────────────────
 const DEPARTMENTS = [
