@@ -22,7 +22,7 @@ import {
   RefreshCw,
   AlertCircle,
   ChevronDown,
-  FileCheck,
+  Wallet,
 } from "lucide-react";
 
 // Import Components
@@ -35,7 +35,6 @@ import AddPaymentReceivedModal from "./components/AddPaymentReceivedModal";
 import AddInvoiceModal from "./components/AddInvoiceModal";
 import AddCNBadDebtModal from "./components/AddCNBadDebtModal";
 import AddBounceBackModal from "./components/AddBounceBackModal";
-import AddStatutoryPayoutModal from "./components/AddStatutoryPayoutModal";
 import AddInternalTeamModal from "./components/AddInternalTeamModal";
 import AddPaymentMadeModal from "./components/AddPaymentMadeModal";
 import InternalTeamDetails from "./components/InternalTeamDetails";
@@ -43,7 +42,11 @@ import AddExpenseDetailsModal from "./components/AddExpenseDetailsModal";
 import AddInterestPenaltyModal from "./components/AddInterestPenaltyModal";
 import AddExpenseDetailsManModal from "./components/AddExpenseDetailsManModal";
 import LedgerPage from "./components/LedgerPage";
-import StatutoryPayoutPage from "./components/Statutorypayoutpage.jsx";
+import PettyCashPage from "./components/PettyCashPage";
+import AdvanceCreditCardLockerPage from "./components/advance/Advancecreditcardlockerpage.jsx";
+import AddAdvanceLoanModal from "./components/advance/Addadvanceloanmodal.jsx";
+import AddCreditCardModal from "./components/advance/Addcreditcardmodal.jsx";
+import AddStatutoryPayoutModal from "./components/AddStatutoryPayoutModal";
 
 // ── Manage Team Modal ──────────────────────────────────────────────────────
 const ManageTeamModal = ({ onClose, role }) => {
@@ -349,8 +352,23 @@ const ManageTeamModal = ({ onClose, role }) => {
 };
 
 // ── Main App ──────────────────────────────────────────────────────────────
-const App = () => {
-  const [activeTab, setActiveTab] = useState("dashboard");
+// ── Main App ──────────────────────────────────────────────────────────────
+function App() {
+
+  const getInitialTab = () => {
+
+    const params = new URLSearchParams(window.location.search);
+
+    const tab = params.get("tab");
+
+    if (tab === "petty-cash") {
+      return "petty-cash";
+    }
+
+    return "dashboard";
+  };
+  
+  const [activeTab, setActiveTab] = useState(getInitialTab);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [showProfileMenu, setShowProfileMenu] = useState(false);
   const [showUserManagement, setShowUserManagement] = useState(false);
@@ -368,7 +386,9 @@ const App = () => {
   const [editingEmployee, setEditingEmployee] = useState(null);
   const [selectedInvoice, setSelectedInvoice] = useState(null);
   const [refreshFlag, setRefreshFlag] = useState(false);
+  const [showAdvanceLoanModal, setShowAdvanceLoanModal] = useState(false);
   const [showStatutoryModal, setShowStatutoryModal] = useState(false);
+  const [showCreditCardModal, setShowCreditCardModal] = useState(false);
   const [selectedExpense, setSelectedExpense] = useState(null);
   const [banks, setBanks] = useState([]);
   const [loggedInEmployee, setLoggedInEmployee] = useState(null);
@@ -471,14 +491,20 @@ const App = () => {
       desc: "Reconciliation & projections",
     },
     {
-      id: "statutory-payout",
-      label: "Statutory Payout",
-      icon: FileCheck,
-      desc: "GST, TDS, EPF, ESI payouts",
+      id: "advance-credit-locker",
+      label: "Advance & CC Locker",
+      icon: CreditCard,
+      desc: "Advance tracker & credit cards",
+    },
+    {
+      id: "petty-cash",
+      label: "Petty Cash",
+      icon: Wallet,
+      desc: "Petty cash ledger & history",
     },
   ];
 
-  // ── QUICK ACTIONS: no color prop needed ──────────────────────────────────
+  // ── QUICK ACTIONS ────────────────────────────────────────────────────────
   const sideActions = [
     { label: "Add Invoice Details" },
     { label: "Add Payment Received" },
@@ -490,6 +516,8 @@ const App = () => {
     { label: "Add Expense / Man" },
     { label: "Interest or Penalties" },
     { label: "Internal Team Details" },
+    { label: "Add Advance / Loan" },
+    { label: "Add Credit Card" },
   ];
 
   const handleActionClick = (label) => {
@@ -503,6 +531,8 @@ const App = () => {
       "Add CN / Bad Debt": () => setShowCNBadDebtModal(true),
       "Add Bounce Back": () => setShowBounceBackModal(true),
       "Interest or Penalties": () => setShowPenaltyModal(true),
+      "Add Advance / Loan": () => setShowAdvanceLoanModal(true),
+      "Add Credit Card": () => setShowCreditCardModal(true),
       "Add Statutory Payout": () => setShowStatutoryModal(true),
       "Add Expense / Material": () => setShowExpenseDetailsModal(true),
       "Add Expense / Man": () => setShowExpenseDetailsManModal(true),
@@ -640,7 +670,7 @@ const App = () => {
             })}
           </div>
 
-          {/* ── QUICK ACTIONS ── neutral style, no background colours ── */}
+          {/* ── QUICK ACTIONS ── */}
           <div className="mt-6">
             <AnimatePresence>
               {isSidebarOpen && (
@@ -667,7 +697,6 @@ const App = () => {
                     transition-all duration-150 group
                     ${!isSidebarOpen ? "justify-center" : ""}`}
                 >
-                  {/* tiny neutral dot */}
                   <span className="w-1.5 h-1.5 rounded-full bg-gray-300 group-hover:bg-blue-400 flex-shrink-0 transition-colors duration-150" />
                   <AnimatePresence>
                     {isSidebarOpen && (
@@ -881,7 +910,10 @@ const App = () => {
                   {activeTab === "internal-team" && <InternalTeamDetails />}
                   {!(role === "manager" && activeTab === "bank-reco") &&
                     activeTab === "bank-reco" && <BankReco />}
-                  {activeTab === "statutory-payout" && <StatutoryPayoutPage />}
+                  {activeTab === "petty-cash" && <PettyCashPage />}
+                  {activeTab === "advance-credit-locker" && (
+                    <AdvanceCreditCardLockerPage />
+                  )}
                 </>
               ) : (
                 <div className="flex flex-col items-center justify-center py-20 text-center">
@@ -937,12 +969,6 @@ const App = () => {
         onClose={() => setShowPenaltyModal(false)}
         banks={banks}
       />
-      <AddStatutoryPayoutModal
-        isOpen={showStatutoryModal}
-        onClose={() => setShowStatutoryModal(false)}
-        entities={entities}
-        banks={banks}
-      />
       <AddInternalTeamModal
         isOpen={showInternalTeamModal}
         onClose={() => {
@@ -961,6 +987,20 @@ const App = () => {
       <AddExpenseDetailsManModal
         isOpen={showExpenseDetailsManModal}
         onClose={() => setShowExpenseDetailsManModal(false)}
+      />
+      <AddStatutoryPayoutModal
+        isOpen={showStatutoryModal}
+        onClose={() => setShowStatutoryModal(false)}
+        entities={entities}
+        banks={banks}
+      />
+      <AddAdvanceLoanModal
+        isOpen={showAdvanceLoanModal}
+        onClose={() => setShowAdvanceLoanModal(false)}
+      />
+      <AddCreditCardModal
+        isOpen={showCreditCardModal}
+        onClose={() => setShowCreditCardModal(false)}
       />
 
       <AnimatePresence>

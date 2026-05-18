@@ -11,6 +11,7 @@ import {
   CreditCard,
   FileX,
   ArrowLeftRight,
+  Trash2,
 } from "lucide-react";
 
 // ─── TYPE CONFIG ───────────────────────────────────────────────────────────────
@@ -52,12 +53,66 @@ const TYPE_CONFIG = {
   },
 };
 
+// ─── DELETE CONFIRMATION MODAL ─────────────────────────────────────────────────
+const DeleteModal = ({ invoiceId, onConfirm, onCancel, loading }) => (
+  <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
+    <div className="bg-white rounded-2xl shadow-2xl p-6 max-w-sm w-full mx-4 border border-red-100">
+      <div className="flex items-center gap-3 mb-4">
+        <div className="p-2.5 rounded-xl bg-red-100">
+          <Trash2 className="w-5 h-5 text-red-600" />
+        </div>
+        <div>
+          <h2 className="font-bold text-gray-900 text-base">Delete Invoice</h2>
+          <p className="text-xs text-gray-500">This cannot be undone</p>
+        </div>
+      </div>
+
+      <p className="text-sm text-gray-600 mb-2">
+        You are about to permanently delete:
+      </p>
+      <div className="bg-red-50 border border-red-100 rounded-xl p-3 mb-4 space-y-1 text-xs text-red-700 font-medium">
+        <p>🧾 Invoice <span className="font-bold">{invoiceId}</span></p>
+        <p>💳 All Payments Received & Made</p>
+        <p>🔄 Bounce Back entries</p>
+        <p>📝 Credit Notes / Bad Debt</p>
+        <p>🏦 Bank & Petty Cash entries</p>
+        <p>💾 Software entries</p>
+      </div>
+
+      <div className="flex gap-2">
+        <button
+          onClick={onCancel}
+          disabled={loading}
+          className="flex-1 px-4 py-2.5 text-sm text-gray-600 border border-gray-200 rounded-xl hover:bg-gray-50 transition disabled:opacity-50 font-medium"
+        >
+          Cancel
+        </button>
+        <button
+          onClick={onConfirm}
+          disabled={loading}
+          className="flex-1 px-4 py-2.5 text-sm text-white bg-red-600 rounded-xl hover:bg-red-700 transition disabled:opacity-50 font-medium flex items-center justify-center gap-2"
+        >
+          {loading ? (
+            <RefreshCw className="w-4 h-4 animate-spin" />
+          ) : (
+            <Trash2 className="w-4 h-4" />
+          )}
+          {loading ? "Deleting..." : "Delete Forever"}
+        </button>
+      </div>
+    </div>
+  </div>
+);
+
+// ─── MAIN COMPONENT ────────────────────────────────────────────────────────────
 const LedgerPage = () => {
   const [ledger, setLedger] = useState([]);
   const [opening, setOpening] = useState(0);
   const [invoice, setInvoice] = useState(null);
   const [outstanding, setOutstanding] = useState(0);
   const [loading, setLoading] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [deleteLoading, setDeleteLoading] = useState(false);
 
   // ── Get invoice from global state ──
   useEffect(() => {
@@ -72,7 +127,6 @@ const LedgerPage = () => {
   const fetchLedger = async () => {
     setLoading(true);
     try {
-      // 1. Base invoice
       const { data: inv, error: invErr } = await supabase
         .from("invoices")
         .select("id, invoice_value, receivable_amount, invoice_number")
@@ -84,10 +138,8 @@ const LedgerPage = () => {
         return;
       }
 
-      // Opening balance = original invoice value (what client owes)
       setOpening(inv.invoice_value);
 
-      // 2. Fetch all transaction types in parallel
       const [
         { data: payments },
         { data: paymentsMade },
@@ -121,11 +173,9 @@ const LedgerPage = () => {
 
       let rows = [];
 
-      // ── Payment Received → reduces outstanding ──
       payments?.forEach((p) =>
         rows.push({
           type: "Payment Received",
-          // Negative = reduces balance
           amount: -Number(p.amount_received || 0),
           date: p.payment_date,
           ref: p.payment_ref,
@@ -133,13 +183,9 @@ const LedgerPage = () => {
         })
       );
 
-      // ── Payment Made ──
-      // Non-billable → does NOT affect invoice outstanding (amount = 0)
-      // Billable     → adds to outstanding (client owes more)
       paymentsMade?.forEach((p) =>
         rows.push({
           type: p.is_billable ? "Billable Expense" : "Payment Made",
-          // ✅ Billable adds transfer_amount to outstanding; non-billable = 0 effect
           amount: p.is_billable
             ? +Number(p.transfer_amount || p.amount || 0)
             : 0,
@@ -148,12 +194,10 @@ const LedgerPage = () => {
           remarks: p.payment_description || p.expense_remarks || p.remarks,
           expenseHead: p.pay_head,
           isBillable: p.is_billable,
-          // Show the actual amount paid for display even if no balance effect
           displayAmount: Number(p.transfer_amount || p.amount || 0),
         })
       );
 
-      // ── Bounce Back → reverses a payment, increases outstanding ──
       bounces?.forEach((b) =>
         rows.push({
           type: "Bounce Back",
@@ -164,7 +208,6 @@ const LedgerPage = () => {
         })
       );
 
-      // ── Credit Note / Bad Debt → reduces outstanding ──
       cns?.forEach((c) =>
         rows.push({
           type: "Credit Note / Bad Debt",
@@ -175,10 +218,8 @@ const LedgerPage = () => {
         })
       );
 
-      // Sort all by date ascending
       rows.sort((a, b) => new Date(a.date) - new Date(b.date));
 
-      // Running balance starting from invoice_value
       let balance = inv.invoice_value;
       const finalLedger = rows.map((r) => {
         balance += r.amount;
@@ -186,11 +227,33 @@ const LedgerPage = () => {
       });
 
       setLedger(finalLedger);
-      setOutstanding(balance); // final running balance
+      setOutstanding(balance);
     } catch (err) {
       console.error("Ledger error:", err);
     } finally {
       setLoading(false);
+    }
+  };
+
+  // ── DELETE INVOICE ──────────────────────────────────────────────────────────
+  const handleDeleteInvoice = async () => {
+    if (!invoice?.dbId) return;
+    setDeleteLoading(true);
+    try {
+      const { error } = await supabase.rpc("delete_invoice_complete", {
+        p_invoice_id: invoice.dbId,
+      });
+
+      if (error) throw error;
+
+      setShowDeleteModal(false);
+      alert("Invoice deleted successfully.");
+      window.setActiveTab?.("dashboard");
+    } catch (err) {
+      console.error("Delete invoice error:", err);
+      alert(`Delete failed: ${err.message}`);
+    } finally {
+      setDeleteLoading(false);
     }
   };
 
@@ -212,6 +275,16 @@ const LedgerPage = () => {
 
   return (
     <div className="p-6 max-w-3xl mx-auto">
+      {/* ── Delete Confirmation Modal ── */}
+      {showDeleteModal && (
+        <DeleteModal
+          invoiceId={invoice.id}
+          onConfirm={handleDeleteInvoice}
+          onCancel={() => setShowDeleteModal(false)}
+          loading={deleteLoading}
+        />
+      )}
+
       {/* ── Header ── */}
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center gap-3">
@@ -229,14 +302,26 @@ const LedgerPage = () => {
           </div>
         </div>
 
-        <button
-          onClick={fetchLedger}
-          disabled={loading}
-          className="flex items-center gap-2 px-3 py-2 text-sm text-gray-600 border border-gray-200 rounded-xl hover:bg-gray-50 transition disabled:opacity-50"
-        >
-          <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
-          Refresh
-        </button>
+        {/* ── Action Buttons ── */}
+        <div className="flex items-center gap-2">
+          <button
+            onClick={fetchLedger}
+            disabled={loading}
+            className="flex items-center gap-2 px-3 py-2 text-sm text-gray-600 border border-gray-200 rounded-xl hover:bg-gray-50 transition disabled:opacity-50"
+          >
+            <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
+            Refresh
+          </button>
+
+          <button
+            onClick={() => setShowDeleteModal(true)}
+            disabled={loading}
+            className="flex items-center gap-2 px-3 py-2 text-sm text-white bg-red-600 rounded-xl hover:bg-red-700 transition disabled:opacity-50"
+          >
+            <Trash2 className="w-4 h-4" />
+            Delete Invoice
+          </button>
+        </div>
       </div>
 
       {/* ── Summary Cards ── */}
@@ -319,12 +404,10 @@ const LedgerPage = () => {
                 className="bg-white border border-gray-100 rounded-2xl p-4 shadow-sm hover:shadow-md transition"
               >
                 <div className="flex items-start justify-between gap-4">
-                  {/* Icon */}
                   <div className={`p-2.5 rounded-xl flex-shrink-0 ${cfg.bg}`}>
                     <Icon className={`w-4 h-4 ${cfg.color}`} />
                   </div>
 
-                  {/* Details */}
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 mb-1">
                       <span
@@ -339,23 +422,16 @@ const LedgerPage = () => {
                       )}
                     </div>
 
-                    {/* Amount effect on balance */}
                     {isNoEffect ? (
                       <div className="space-y-1">
-                        {/* 🔥 BIG BANK AMOUNT */}
                         <p className="text-xl font-bold text-rose-600">
                           - {fmt(row.displayAmount)}
                         </p>
-
-                        {/* 🔥 STATUS */}
                         <p className="text-sm text-gray-500 italic">
                           No effect on outstanding
                         </p>
-
-                        {/* 🔥 BANK TAG */}
                         <div className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-rose-50 border border-rose-100">
                           <ArrowLeftRight className="w-3 h-3 text-rose-500" />
-
                           <span className="text-xs font-medium text-rose-600">
                             Bank Deduction
                           </span>
@@ -372,7 +448,6 @@ const LedgerPage = () => {
                       </p>
                     )}
 
-                    {/* Meta */}
                     <div className="flex flex-wrap items-center gap-3 mt-1.5">
                       <span className="text-xs text-gray-400 flex items-center gap-1">
                         <Calendar className="w-3 h-3" />
@@ -397,7 +472,6 @@ const LedgerPage = () => {
                     )}
                   </div>
 
-                  {/* Running Balance */}
                   <div className="text-right flex-shrink-0">
                     <p className="text-xs text-gray-400 mb-0.5">Balance</p>
                     <p
