@@ -127,19 +127,7 @@ const AddPaymentMadeModal = ({ isOpen, onClose, invoice, onSaved }) => {
       const numAmount = Number(amount);
 
       // 1. Create software entry FIRST
-      const { data: softwareEntry, error: swError } = await supabase
-        .from("software_entries")
-        .insert([{
-          bank_id:        resolvedBankId,
-          entity:         resolvedEntity,
-          amount:         -numAmount,
-          date,
-          remarks:        remarks || "Payment Made",
-          invoice_id:     paymentType === "Invoice" ? resolvedInvoiceId : null,
-          invoice_number: paymentType === "Invoice" ? resolvedInvoiceNumber : null,
-        }])
-        .select()
-        .single();
+
 
       if (swError) throw swError;
 

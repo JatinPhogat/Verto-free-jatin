@@ -98,26 +98,18 @@ const fmtLakh = (v = 0) => `₹ ${(Number(v) / 100000).toFixed(2)}L`;
 const fmtFull = (v = 0) => `₹ ${Math.round(Number(v)).toLocaleString("en-IN")}`;
 
 // ─── BUILD PERIOD BUCKETS ──────────────────────────────────────────────────────
-// rawRows: one row per day from master_cashflow_view
-// Each row must have: full_date, opening_balance, projected_income, projected_expense,
-//   expected_receivable, advance_payment, salary_payout, statutory_outflow,
-//   other_expense, petty_cash, bounce_risk, bad_debt_cn
 const buildPeriodBuckets = (rawRows, periodDays) => {
   if (!rawRows || rawRows.length === 0) return [];
 
   const sorted = [...rawRows].sort(
     (a, b) => new Date(a.full_date) - new Date(b.full_date)
   );
-  // ALWAYS BUILD NEXT 6 MONTHS
   const today = new Date();
-
   const start = new Date(today.getFullYear(), today.getMonth(), 1);
-
   const end = new Date(today.getFullYear(), today.getMonth() + 6, 0);
 
   const buckets = [];
   let cursor = new Date(start);
-  // Opening balance for first bucket comes from the first row's opening_balance
   let runningBalance = Number(sorted[0].opening_balance || 0);
 
   while (cursor <= end) {
@@ -146,7 +138,6 @@ const buildPeriodBuckets = (rawRows, periodDays) => {
     const closingBalance = openingBalance + netFlow;
     runningBalance = closingBalance;
 
-    // Label
     let label;
     if (periodDays === 7) label = `Week of ${fmtShort(bucketStart)}`;
     else if (periodDays === 30)
@@ -216,7 +207,7 @@ const FundFlowProjectionPanel = ({ fundFlowData }) => {
 
   return (
     <div className="space-y-4">
-      {/* ── Header card: period + view selectors + summary ── */}
+      {/* ── Header card ── */}
       <Card className={`p-4 ${colors.bg} ${colors.border} border`}>
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
@@ -551,7 +542,6 @@ const FundFlowProjectionPanel = ({ fundFlowData }) => {
                               className={`px-6 py-4 ${colors.bg} border-b ${colors.border}`}
                             >
                               <div className="grid grid-cols-2 gap-6">
-                                {/* Income breakdown */}
                                 {showIncome && (
                                   <div>
                                     <p className="text-xs font-bold text-emerald-700 uppercase tracking-widest mb-3 flex items-center gap-1.5">
@@ -593,7 +583,6 @@ const FundFlowProjectionPanel = ({ fundFlowData }) => {
                                   </div>
                                 )}
 
-                                {/* Expense breakdown */}
                                 {showExpense && (
                                   <div>
                                     <p className="text-xs font-bold text-rose-700 uppercase tracking-widest mb-3 flex items-center gap-1.5">
@@ -652,7 +641,6 @@ const FundFlowProjectionPanel = ({ fundFlowData }) => {
                                 )}
                               </div>
 
-                              {/* Balance movement bar */}
                               <div className="mt-4 flex items-center gap-3 bg-white rounded-xl p-3 border border-gray-200">
                                 <div className="text-center flex-1">
                                   <p className="text-[10px] text-gray-400 font-bold uppercase">
@@ -704,7 +692,6 @@ const FundFlowProjectionPanel = ({ fundFlowData }) => {
               )}
             </tbody>
 
-            {/* ── Grand totals footer ── */}
             {buckets.length > 0 && (
               <tfoot className="sticky bottom-0">
                 <tr className="bg-gray-900 text-white text-xs font-bold">
@@ -1153,6 +1140,7 @@ const BankReco = () => {
   const [transfers, setTransfers] = useState([]);
   const [interestPenalties, setInterestPenalties] = useState([]);
   const [editTransfer, setEditTransfer] = useState(null);
+  const [futureEntries, setFutureEntries] = useState([]);
   const [newEntry, setNewEntry] = useState({
     entity: "",
     bank_id: "",
@@ -1175,20 +1163,27 @@ const BankReco = () => {
   const fetchEntries = async () => {
     const { data, error } = await supabase
       .from("bank_entries")
-      .select("*, bank_master(bank_name)")
+      .select(`
+        *,
+        bank_master(bank_name)
+      `)
+      .eq("is_deleted", false)
+      .neq("entry_type", "projection_pending")
       .order("date", { ascending: false });
+  
     if (!error) {
       const seen = new Set();
       const unique = [];
+  
       (data || []).forEach((e) => {
-        const key = `${e.reference_no || ""}-${e.bank_id || ""}-${
-          e.amount || ""
-        }-${e.date || ""}-${e.entry_type || ""}`;
+        const key = `${e.bank_id}-${e.amount}-${e.date}-${e.remarks}-${e.type}`;
+  
         if (!seen.has(key)) {
           seen.add(key);
           unique.push(e);
         }
       });
+  
       setEntries(unique);
     }
   };
@@ -1224,8 +1219,6 @@ const BankReco = () => {
     if (!error) setInterestPenalties(data || []);
   };
 
-  // KEY FIX: fetch ALL daily rows from master_cashflow_view
-  // The SQL view now returns one row per day, each with its own breakdown columns.
   const fetchFundFlowProjection = async () => {
     const { data, error } = await supabase
       .from("master_cashflow_view")
@@ -1255,7 +1248,6 @@ const BankReco = () => {
       return;
     }
 
-    // Coerce all numeric fields so breakdown math never hits NaN
     setFundFlowData(
       (data || []).map((row) => ({
         ...row,
@@ -1276,25 +1268,34 @@ const BankReco = () => {
     );
   };
 
+  const fetchFutureEntries = async (bankId) => {
+    const { data, error } = await supabase
+      .from("future_bank_projection_view")
+      .select("*")
+      .eq("bank_id", bankId)
+      .order("expected_date", { ascending: true });
+
+    if (!error) {
+      setFutureEntries(data || []);
+    }
+  };
+
   const calculateSoftwareBalance = async (bankId) => {
-    const [{ data: received }, { data: made }, { data: expenses }] =
-      await Promise.all([
-        supabase.from("payments_received").select("*").eq("bank_id", bankId),
-        supabase.from("payments_made").select("*").eq("bank_id", bankId),
-        supabase.from("expenses").select("*").eq("bank_id", bankId),
-      ]);
-    let credit = 0,
-      debit = 0;
-    (received || []).forEach((r) => {
-      credit += Number(r.amount_received || 0);
+    const { data, error } = await supabase
+      .from("software_entries")
+      .select("*")
+      .eq("bank_id", bankId)
+      .eq("is_deleted", false);
+  
+    if (error) return 0;
+  
+    let balance = 0;
+  
+    (data || []).forEach((e) => {
+      balance += Number(e.amount || 0);
     });
-    (made || []).forEach((m) => {
-      debit += Number(m.transfer_amount || m.amount || 0);
-    });
-    (expenses || []).forEach((e) => {
-      debit += Number(e.amount || 0);
-    });
-    return credit - debit;
+  
+    return balance;
   };
 
   // ─── BUILD RECO DATA ────────────────────────────────────────────────────────
@@ -1776,6 +1777,7 @@ const BankReco = () => {
                               (row.asPerBankTotalBal || 0) -
                                 (row.asPerSwTotalBal || 0)
                             );
+                            fetchFutureEntries(row.bank_id);
                           }}
                           className={`hover:bg-blue-50 cursor-pointer transition-colors ${
                             selectedRow?.id === row.id ? "bg-blue-50" : ""
@@ -1945,6 +1947,100 @@ const BankReco = () => {
                                     </table>
                                   </div>
                                 )}
+
+                                {/* ─── Pending Payment Action Center ─── */}
+                                <Card className="p-4 mt-4 border border-amber-200 bg-amber-50">
+                                  <div className="flex items-center justify-between mb-4">
+                                    <h3 className="font-bold text-amber-800 flex items-center gap-2">
+                                      <Clock className="w-4 h-4" />
+                                      Pending Payment Action Center
+                                    </h3>
+                                    <Badge className="bg-amber-100 text-amber-700">
+                                      {futureEntries.length} Pending
+                                    </Badge>
+                                  </div>
+                                  <div className="space-y-3">
+                                    {futureEntries.length === 0 && (
+                                      <div className="text-center text-gray-400 py-6">
+                                        No pending payments for this bank
+                                      </div>
+                                    )}
+                                    {futureEntries.map((item) => (
+                                      <div
+                                        key={item.id}
+                                        className="bg-white rounded-xl border border-amber-100 p-4"
+                                      >
+                                        <div className="flex justify-between items-start">
+                                          <div>
+                                            <p className="font-bold text-gray-900">
+                                              {item.category}
+                                            </p>
+                                            <p className="text-xs text-gray-500 mt-1">
+                                              {item.expected_date}
+                                            </p>
+                                            <p className="text-xs text-gray-400 mt-1">
+                                              {item.remarks}
+                                            </p>
+                                          </div>
+                                          <div className="text-right">
+                                            <p className="font-bold text-rose-700">
+                                              ₹{" "}
+                                              {Number(
+                                                item.amount
+                                              ).toLocaleString("en-IN")}
+                                            </p>
+                                            <Badge
+                                              className={
+                                                item.due_status === "overdue"
+                                                  ? "bg-red-100 text-red-700 mt-2"
+                                                  : "bg-amber-100 text-amber-700 mt-2"
+                                              }
+                                            >
+                                              {item.due_status}
+                                            </Badge>
+                                          </div>
+                                        </div>
+                                        <div className="flex gap-2 mt-4">
+                                          <button
+                                            onClick={async () => {
+                                              await supabase.rpc(
+                                                "complete_projection",
+                                                {
+                                                  p_projection_id: item.id,
+                                                }
+                                              );
+                                              fetchFutureEntries(
+                                                selectedRow.bank_id
+                                              );
+                                              fetchEntries();
+                                              fetchSoftwareEntries();
+                                              fetchFundFlowProjection();
+                                            }}
+                                            className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold"
+                                          >
+                                            DONE
+                                          </button>
+                                          <button
+                                            onClick={async () => {
+                                              await supabase.rpc(
+                                                "delete_projection",
+                                                {
+                                                  p_projection_id: item.id,
+                                                }
+                                              );
+                                              fetchFutureEntries(
+                                                selectedRow.bank_id
+                                              );
+                                            }}
+                                            className="px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-lg text-xs font-semibold"
+                                          >
+                                            DELETE
+                                          </button>
+                                        </div>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </Card>
                               </td>
                             </motion.tr>
                           )}
