@@ -3,10 +3,12 @@ import supabase from "../lib/supabaseClient";
 import { motion, AnimatePresence } from "framer-motion";
 import { X, ArrowRight, AlertCircle, Calculator } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
+
 const customRound = (num) => {
   const decimal = num - Math.floor(num);
   return decimal >= 0.75 ? Math.ceil(num) : Math.floor(num);
 };
+
 const AddInvoiceModal = ({
   isOpen,
   onClose,
@@ -56,16 +58,46 @@ const AddInvoiceModal = ({
     expectedOutflowTax: "",
   });
 
+  // ── OS-specific manual override flags ──────────────────────────
+  // isManualTds   : shared between OS and REC (existing)
+  // isManualGst   : OS only — user typed over the auto-filled GST
+  // isManualReceivable : OS only — user typed over the auto-calculated receivable
+  const [isManualTds, setIsManualTds] = useState(false);
+  const [isManualGst, setIsManualGst] = useState(false);
+  const [isManualReceivable, setIsManualReceivable] = useState(false);
+
+  const [banks, setBanks] = useState([]);
+  const [errors, setErrors] = useState({});
+  const [showErrors, setShowErrors] = useState(false);
+
+  const departments = [
+    { value: "OS", label: "OS (Operations)" },
+    { value: "REC", label: "REC (Recruitment)" },
+    { value: "TEMP", label: "TEMP (Temporary)" },
+    { value: "PROJ", label: "PROJ (Projects)" },
+    { value: "OTH", label: "OTH (Others)" },
+  ];
+
+  // ── Fetch banks ─────────────────────────────────────────────────
+  useEffect(() => {
+    const fetchBanks = async () => {
+      const { data } = await supabase
+        .from("bank_master")
+        .select("id, bank_name");
+      setBanks(data || []);
+    };
+    fetchBanks();
+  }, []);
+
+  // ── Auto-fetch ledger when client changes (edit mode) ──────────
   useEffect(() => {
     const fetchLedger = async () => {
       if (!selectedInvoice || !formData.client) return;
-
       const { data } = await supabase
         .from("clients_master")
         .select("ledger_name")
         .ilike("client_name", `%${formData.client}%`)
         .maybeSingle();
-
       if (data) {
         setFormData((prev) => ({
           ...prev,
@@ -73,15 +105,15 @@ const AddInvoiceModal = ({
         }));
       }
     };
-
     fetchLedger();
   }, [formData.client, selectedInvoice]);
 
-  const [banks, setBanks] = useState([]);
-
+  // ── Populate form when editing an existing invoice ──────────────
   useEffect(() => {
     if (!selectedInvoice || banks.length === 0) return;
     setIsManualTds(false);
+    setIsManualGst(false);
+    setIsManualReceivable(false);
 
     console.log("🔥 EDIT DATA FULL:", selectedInvoice);
 
@@ -89,35 +121,26 @@ const AddInvoiceModal = ({
 
     setFormData((prev) => ({
       ...prev,
-
       invoiceEntity: selectedInvoice?.entity_name ?? "",
       department: selectedInvoice?.dept_code ?? "",
       client: selectedInvoice?.client_name ?? "",
       ledgerName: selectedInvoice?.ledger_name ?? "",
       payHead: selectedInvoice?.pay_head ?? "",
-
       bankName: selectedBank?.bank_name ?? "",
-
       invoiceDate: selectedInvoice?.invoice_date ?? "",
-
       impactMonth: selectedInvoice?.impact_month
         ? selectedInvoice.impact_month.slice(5, 7) +
           "/" +
           selectedInvoice.impact_month.slice(2, 4)
         : "",
-
       expectedCollectionDate: selectedInvoice?.expected_collection_date ?? "",
-
       invoiceNo: selectedInvoice?.invoice_number ?? "",
-
       pay: selectedInvoice?.pay ?? "",
       vertoFee: selectedInvoice?.verto_fee ?? "",
-
       gst: selectedInvoice?.gst ?? "",
       tds: selectedInvoice?.tds ?? "",
       invoiceValue: selectedInvoice?.invoice_value ?? "",
       receivableRs: selectedInvoice?.receivable_amount ?? "",
-
       employeeCount: selectedInvoice?.employee_count ?? "",
       grossValue: selectedInvoice?.gross_value ?? "",
       netInHand: selectedInvoice?.net_in_hand ?? "",
@@ -130,35 +153,17 @@ const AddInvoiceModal = ({
     }));
   }, [selectedInvoice, banks]);
 
-  const [errors, setErrors] = useState({});
-  const [showErrors, setShowErrors] = useState(false);
-  const [isManualTds, setIsManualTds] = useState(false);
-
-  const departments = [
-    { value: "OS", label: "OS (Operations)" },
-    { value: "REC", label: "REC (Recruitment)" },
-    { value: "TEMP", label: "TEMP (Temporary)" },
-    { value: "PROJ", label: "PROJ (Projects)" },
-    { value: "OTH", label: "OTH (Others)" },
-  ];
-
-  useEffect(() => {
-    const fetchBanks = async () => {
-      const { data } = await supabase
-        .from("bank_master")
-        .select("id, bank_name");
-
-      setBanks(data || []);
-    };
-
-    fetchBanks();
-  }, []);
-
+  // ── Field change handler ─────────────────────────────────────────
   const handleChange = (field, value) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
 
-    if (["pay", "vertoFee", "tdsPercent"].includes(field)) {
+    // Reset auto-flags when source inputs change
+    if (["pay", "vertoFee", "tdsPercent", "grossValue"].includes(field)) {
       setIsManualTds(false);
+      // For OS: reset GST override so it re-auto-fills from new base
+      if (["pay", "vertoFee", "grossValue"].includes(field)) {
+        setIsManualGst(false);
+      }
     }
 
     if (errors[field]) {
@@ -166,60 +171,95 @@ const AddInvoiceModal = ({
     }
   };
 
+  // ── Core auto-calculation effect ─────────────────────────────────
+  // REC / other depts  → existing behaviour (fully auto)
+  // OS dept            → GST auto-fills unless manually overridden
+  //                      Invoice Value is ALWAYS manual for OS
+  //                      TDS auto from TDS% unless manually overridden
+  //                      Receivable = InvoiceValue - TDS unless manually overridden
   useEffect(() => {
     const pay = parseFloat(formData.pay);
     const vertoFee = parseFloat(formData.vertoFee);
-    const grossValue = parseFloat(formData.grossValue);
-
+    const grossValue = parseFloat(formData.grossValue) || 0;
     if (isNaN(pay) || isNaN(vertoFee)) return;
+
     const dept = formData.department;
+    const isOS = dept === "OS";
 
-    const baseAmount = vertoFee + pay + (dept === "OS" ? grossValue : 0);
+    const baseAmount = vertoFee + pay + (isOS ? grossValue : 0);
+    const tdsBase = pay + vertoFee + (isOS ? grossValue : 0);
 
-    const gst = baseAmount * 0.18;
-
-    const tdsBase = pay + vertoFee + (dept === "OS" ? grossValue : 0);
+    const gstCalc = baseAmount * 0.18;
 
     let tdsRate;
-
     if (formData.tdsPercent) {
       tdsRate = Number(formData.tdsPercent) / 100;
     } else {
-      tdsRate = dept === "OS" ? 0.02 : 0.1;
+      tdsRate = isOS ? 0.02 : 0.1;
     }
 
-    const invoiceValue = baseAmount + gst;
+    const tdsCalc = tdsBase * tdsRate;
+    const finalTds = isManualTds ? Number(formData.tds) || 0 : tdsCalc;
 
-    const totalBase = pay + vertoFee + (dept === "OS" ? grossValue : 0);
-
-    const tds = totalBase * tdsRate;
-
-    const finalTds = isManualTds ? Number(formData.tds) || 0 : tds;
-    const receivable = invoiceValue - finalTds;
+    const invoiceCalc = baseAmount + gstCalc; // expected value for alerts
 
     const vertoFeePostTds =
-      totalBase > 0 ? vertoFee - finalTds * (vertoFee / totalBase) : 0;
+      tdsBase > 0 ? vertoFee - finalTds * (vertoFee / tdsBase) : 0;
 
-    setFormData((prev) => ({
-      ...prev,
-      gst: gst.toFixed(2),
-      tds: isManualTds ? formData.tds : tds.toFixed(2),
-      invoiceValue: customRound(invoiceValue),
-      receivableRs: customRound(receivable),
-      vertoFeePostTds: vertoFeePostTds.toFixed(2),
-    }));
+    if (isOS) {
+      // ── OS branch ──────────────────────────────────────────────
+      // GST: auto-fill unless user manually overrode it
+      const finalGst = isManualGst ? Number(formData.gst) || 0 : gstCalc;
+
+      // Invoice Value: NEVER auto-set for OS — user types it
+      const invoiceValueNum = Number(formData.invoiceValue) || 0;
+
+      // Receivable: auto = invoiceValue - finalTds, unless manually overridden
+      const receivableCalc = invoiceValueNum - finalTds;
+      const finalReceivable = isManualReceivable
+        ? Number(formData.receivableRs) || 0
+        : receivableCalc;
+
+      setFormData((prev) => ({
+        ...prev,
+        gst: isManualGst ? prev.gst : gstCalc.toFixed(2),
+        tds: isManualTds ? prev.tds : tdsCalc.toFixed(2),
+        // invoiceValue intentionally NOT updated for OS
+        receivableRs: isManualReceivable
+          ? prev.receivableRs
+          : isNaN(receivableCalc)
+          ? ""
+          : customRound(receivableCalc),
+        vertoFeePostTds: vertoFeePostTds.toFixed(2),
+      }));
+    } else {
+      // ── REC / other depts: existing fully-auto behaviour ────────
+      const invoiceValue = baseAmount + gstCalc;
+      const receivable = invoiceValue - finalTds;
+
+      setFormData((prev) => ({
+        ...prev,
+        gst: gstCalc.toFixed(2),
+        tds: isManualTds ? prev.tds : tdsCalc.toFixed(2),
+        invoiceValue: customRound(invoiceValue),
+        receivableRs: customRound(receivable),
+        vertoFeePostTds: vertoFeePostTds.toFixed(2),
+      }));
+    }
   }, [
-    [
-      formData.pay,
-      formData.vertoFee,
-      formData.grossValue,
-      formData.department,
-      formData.tdsPercent,
-      formData.tds,
-      isManualTds,
-    ],
+    formData.pay,
+    formData.vertoFee,
+    formData.grossValue,
+    formData.department,
+    formData.tdsPercent,
+    formData.tds,
+    formData.invoiceValue, // needed so OS receivable recalcs when user types invoice value
+    isManualTds,
+    isManualGst,
+    isManualReceivable,
   ]);
 
+  // ── OS CTC auto-calculation ──────────────────────────────────────
   useEffect(() => {
     if (formData.department === "OS") {
       const netInHand = parseFloat(formData.netInHand) || 0;
@@ -228,7 +268,6 @@ const AddInvoiceModal = ({
       const lwfTax = parseFloat(formData.lwfTax) || 0;
       const ptTax = parseFloat(formData.ptTax) || 0;
       const otherDed = parseFloat(formData.otherDed) || 0;
-
       const ctc = netInHand + coPF + coESI + lwfTax + ptTax + otherDed;
       setFormData((prev) => ({ ...prev, ctc: ctc.toFixed(2) }));
     }
@@ -242,9 +281,94 @@ const AddInvoiceModal = ({
     formData.department,
   ]);
 
+  // ── OS expected outflow dates auto-fill ─────────────────────────
+  useEffect(() => {
+    if (!formData.invoiceDate || formData.department !== "OS") return;
+    const invDate = new Date(formData.invoiceDate);
+    const nextMonth = new Date(invDate);
+    nextMonth.setMonth(nextMonth.getMonth() + 1);
+    const year = nextMonth.getFullYear();
+    const month = nextMonth.getMonth();
+    const pfDate = new Date(year, month, 15);
+    const gstDate = new Date(year, month, 21);
+    const taxDate = new Date(year, month, 7);
+    setFormData((prev) => ({
+      ...prev,
+      expectedOutflowPF: pfDate.toISOString().split("T")[0],
+      expectedOutflowESI: pfDate.toISOString().split("T")[0],
+      expectedOutflowGST: gstDate.toISOString().split("T")[0],
+      expectedOutflowTax: taxDate.toISOString().split("T")[0],
+    }));
+  }, [formData.invoiceDate, formData.department]);
+
+  // ── Mismatch detection (shared helper) ──────────────────────────
+  const getMismatchData = (fd) => {
+    const tolerance = 50;
+    const vertoFeeNum = Number(fd.vertoFee) || 0;
+    const payNum = Number(fd.pay) || 0;
+    const grossValueNum = Number(fd.grossValue) || 0;
+    const isOS = fd.department === "OS";
+
+    const base = vertoFeeNum + payNum + (isOS ? grossValueNum : 0);
+    const expectedGST = 0.18 * base;
+
+    const tdsBase = payNum + vertoFeeNum + (isOS ? grossValueNum : 0);
+    const tdsRate = fd.tdsPercent
+      ? Number(fd.tdsPercent) / 100
+      : isOS
+      ? 0.02
+      : 0.1;
+    const expectedTDS = tdsBase * tdsRate;
+
+    const expectedInvoice = base + expectedGST;
+
+    // For OS: receivable expected = typed invoiceValue - expectedTDS
+    const invoiceValueNum = Number(fd.invoiceValue) || 0;
+    const expectedReceivable = isOS
+      ? invoiceValueNum - Number(fd.tds || expectedTDS)
+      : expectedInvoice - Number(fd.tds || expectedTDS);
+
+    const gstMismatch = Math.abs(Number(fd.gst) - expectedGST) > tolerance;
+    const tdsMismatch = Math.abs(Number(fd.tds) - expectedTDS) > tolerance;
+    const invoiceMismatch =
+      Math.abs(Number(fd.invoiceValue) - expectedInvoice) > tolerance;
+    const receivableMismatch = isOS
+      ? Math.abs(Number(fd.receivableRs) - expectedReceivable) > tolerance
+      : false; // REC receivable is always auto, no mismatch check needed
+
+    return {
+      gstMismatch,
+      tdsMismatch,
+      invoiceMismatch,
+      receivableMismatch,
+      expectedGST,
+      expectedTDS,
+      expectedInvoice,
+      expectedReceivable,
+    };
+  };
+
+  const mismatch = getMismatchData(formData);
+  const {
+    gstMismatch,
+    tdsMismatch,
+    invoiceMismatch,
+    receivableMismatch,
+    expectedGST,
+    expectedTDS,
+    expectedInvoice,
+    expectedReceivable,
+  } = mismatch;
+
+  const hasMismatch =
+    gstMismatch ||
+    tdsMismatch ||
+    invoiceMismatch ||
+    (formData.department === "OS" && receivableMismatch);
+
+  // ── Validation ───────────────────────────────────────────────────
   const validateForm = () => {
     const newErrors = {};
-
     if (!formData.invoiceEntity) newErrors.invoiceEntity = "Entity is required";
     if (!formData.department) newErrors.department = "Department is required";
     if (!formData.client.trim()) newErrors.client = "Client is required";
@@ -266,146 +390,30 @@ const AddInvoiceModal = ({
       if (!formData.grossValue)
         newErrors.grossValue = "Gross value is required";
       if (!formData.netInHand) newErrors.netInHand = "Net in hand is required";
+      // For OS, invoice value is manual — require it explicitly
+      if (!formData.invoiceValue)
+        newErrors.invoiceValue = "Invoice value is required";
     }
-
-    const tolerance = 50;
-
-    const vertoFeeNum = Number(formData.vertoFee) || 0;
-    const payNum = Number(formData.pay) || 0;
-    const grossValueNum = Number(formData.grossValue) || 0;
-
-    const base =
-      vertoFeeNum + payNum + (formData.department === "OS" ? grossValueNum : 0);
-
-    const expectedGST = 0.18 * base;
-
-    const tdsBase =
-      payNum + vertoFeeNum + (formData.department === "OS" ? grossValueNum : 0);
-
-    const expectedTDS =
-      tdsBase *
-      (formData.tdsPercent
-        ? Number(formData.tdsPercent) / 100
-        : formData.department === "OS"
-        ? 0.02
-        : 0.1);
-
-    const expectedInvoice = base + expectedGST;
-
-    const gstMismatch =
-      Math.abs(Number(formData.gst) - expectedGST) > tolerance;
-
-    const tdsMismatch =
-      Math.abs(Number(formData.tds) - expectedTDS) > tolerance;
-
-    const invoiceMismatch =
-      Math.abs(Number(formData.invoiceValue) - expectedInvoice) > tolerance;
 
     setErrors(newErrors);
-
-    if (Object.keys(newErrors).length > 0) return false;
-
-    if (gstMismatch || tdsMismatch || invoiceMismatch) {
-      const confirmSave = window.confirm(
-        "⚠️ Values mismatch detected.\nDo you still want to continue?"
-      );
-      return confirmSave;
-    }
-
-    return true;
+    return Object.keys(newErrors).length === 0;
   };
 
-  const getMismatchData = (formData) => {
-    const tolerance = 50;
-
-    const vertoFeeNum = Number(formData.vertoFee) || 0;
-    const payNum = Number(formData.pay) || 0;
-    const grossValueNum = Number(formData.grossValue) || 0;
-
-    const base =
-      vertoFeeNum + payNum + (formData.department === "OS" ? grossValueNum : 0);
-
-    const expectedGST = 0.18 * base;
-
-    const tdsBase =
-      payNum + vertoFeeNum + (formData.department === "OS" ? grossValueNum : 0);
-
-    const expectedTDS =
-      tdsBase *
-      (formData.tdsPercent
-        ? Number(formData.tdsPercent) / 100
-        : formData.department === "OS"
-        ? 0.02
-        : 0.1);
-
-    const expectedInvoice = base + expectedGST;
-
-    const gstMismatch =
-      Math.abs(Number(formData.gst) - expectedGST) > tolerance;
-
-    const tdsMismatch =
-      Math.abs(Number(formData.tds) - expectedTDS) > tolerance;
-
-    const invoiceMismatch =
-      Math.abs(Number(formData.invoiceValue) - expectedInvoice) > tolerance;
-
-    return {
-      gstMismatch,
-      tdsMismatch,
-      invoiceMismatch,
-      expectedGST,
-      expectedTDS,
-      expectedInvoice,
-    };
-  };
-
-  const {
-    gstMismatch,
-    tdsMismatch,
-    invoiceMismatch,
-    expectedGST,
-    expectedTDS,
-    expectedInvoice,
-  } = getMismatchData(formData);
-
+  // ── Helpers ──────────────────────────────────────────────────────
   const formatImpactMonth = (val) => {
     if (!val) return null;
     const [mm, yy] = val.split("/");
     return `20${yy}-${mm}-01`;
   };
 
-  useEffect(() => {
-    if (!formData.invoiceDate || formData.department !== "OS") return;
-
-    const invDate = new Date(formData.invoiceDate);
-
-    const nextMonth = new Date(invDate);
-    nextMonth.setMonth(nextMonth.getMonth() + 1);
-
-    const year = nextMonth.getFullYear();
-    const month = nextMonth.getMonth();
-
-    const pfDate = new Date(year, month, 15);
-    const gstDate = new Date(year, month, 21);
-    const taxDate = new Date(year, month, 7);
-
-    setFormData((prev) => ({
-      ...prev,
-      expectedOutflowPF: pfDate.toISOString().split("T")[0],
-      expectedOutflowESI: pfDate.toISOString().split("T")[0],
-      expectedOutflowGST: gstDate.toISOString().split("T")[0],
-      expectedOutflowTax: taxDate.toISOString().split("T")[0],
-    }));
-  }, [formData.invoiceDate, formData.department]);
-
-  // Handle form submission
+  // ── Submit ───────────────────────────────────────────────────────
   const handleSubmit = async (e) => {
     e.preventDefault();
     setShowErrors(true);
 
-    try {
-      let clientRow;
+    if (!validateForm()) return;
 
+    try {
       if (!formData.client) {
         alert("❌ Client is required");
         return;
@@ -417,14 +425,13 @@ const AddInvoiceModal = ({
         .ilike("client_name", `%${formData.client}%`)
         .maybeSingle();
 
-      clientRow = existingClient;
+      let clientRow = existingClient;
 
       if (!clientRow) {
         if (role !== "admin") {
           alert("❌ Only admin can create new client");
           return;
         }
-
         const { data: newClient, error: insertError } = await supabase
           .from("clients_master")
           .insert([
@@ -435,12 +442,10 @@ const AddInvoiceModal = ({
           ])
           .select()
           .single();
-
         if (insertError) {
           alert("❌ Failed to create new client");
           return;
         }
-
         clientRow = newClient;
       }
 
@@ -456,14 +461,6 @@ const AddInvoiceModal = ({
         .ilike("entity_name", `%${formData.invoiceEntity}%`)
         .maybeSingle();
 
-      console.log("DEBUG CHECK 👉");
-      console.log("CLIENT INPUT:", formData.client);
-      console.log("DEPT INPUT:", formData.department);
-      console.log("ENTITY INPUT:", formData.invoiceEntity);
-      console.log("CLIENT ROW:", clientRow);
-      console.log("DEPT ROW:", deptRow);
-      console.log("ENTITY ROW:", entityRow);
-
       if (!clientRow || !deptRow || !entityRow) {
         alert("❌ Invalid master data. Check client/entity/department.");
         return;
@@ -475,23 +472,40 @@ const AddInvoiceModal = ({
           .select("id")
           .eq("invoice_number", formData.invoiceNo)
           .maybeSingle();
-
         if (existing) {
           alert("❌ Invoice number already exists");
           return;
         }
       }
 
-      if (gstMismatch || tdsMismatch || invoiceMismatch) {
-        const confirmSave = window.confirm(
-          "⚠️ Values mismatch detected.\nDo you still want to save?"
-        );
+      // ── Mismatch popup on Save (for ALL departments) ─────────────
+      if (hasMismatch) {
+        const isOS = formData.department === "OS";
+        let mismatchDetails = "⚠️ Values mismatch detected:\n\n";
 
+        if (gstMismatch)
+          mismatchDetails += `• GST: Entered ₹${Number(formData.gst).toFixed(
+            2
+          )} | Expected ₹${expectedGST.toFixed(2)}\n`;
+        if (tdsMismatch)
+          mismatchDetails += `• TDS: Entered ₹${Number(formData.tds).toFixed(
+            2
+          )} | Expected ₹${expectedTDS.toFixed(2)}\n`;
+        if (invoiceMismatch)
+          mismatchDetails += `• Invoice Value: Entered ₹${Number(
+            formData.invoiceValue
+          ).toFixed(2)} | Expected ₹${expectedInvoice.toFixed(2)}\n`;
+        if (isOS && receivableMismatch)
+          mismatchDetails += `• Receivable: Entered ₹${Number(
+            formData.receivableRs
+          ).toFixed(2)} | Expected ₹${expectedReceivable.toFixed(2)}\n`;
+
+        mismatchDetails += "\nDo you still want to save?";
+        const confirmSave = window.confirm(mismatchDetails);
         if (!confirmSave) return;
       }
 
       const selectedBank = banks.find((b) => b.bank_name === formData.bankName);
-
       if (!selectedBank || !selectedBank.id) {
         alert("❌ Invalid Bank Selected");
         return;
@@ -529,32 +543,27 @@ const AddInvoiceModal = ({
 
       if (selectedInvoice) {
         console.log("🔥 UPDATE MODE");
-
         const res = await supabase
           .from("invoices")
           .update(payload)
           .eq("id", selectedInvoice.dbId);
-
         error = res.error;
       } else {
         console.log("🔥 INSERT MODE");
-
         const res = await supabase
           .from("invoices")
           .insert([payload])
           .select()
           .single();
-
         error = res.error;
         insertedInvoice = res.data;
 
-        // ✅ LINK ADVANCE PAYMENT — runs only ONCE
+        // Link advance payment if ref provided
         if (formData.refNoPaymentMade && insertedInvoice) {
           console.log(
             "🔥 SEARCHING ADVANCE PAYMENT:",
             formData.refNoPaymentMade
           );
-
           const { data: advancePayment, error: advanceError } = await supabase
             .from("advance_payments")
             .select("*")
@@ -562,10 +571,7 @@ const AddInvoiceModal = ({
             .maybeSingle();
 
           console.log("ADVANCE PAYMENT:", advancePayment);
-
-          if (advanceError) {
-            console.log(advanceError);
-          }
+          if (advanceError) console.log(advanceError);
 
           if (advancePayment) {
             const { error: moveError } = await supabase
@@ -590,16 +596,13 @@ const AddInvoiceModal = ({
                   is_adjusted: true,
                 })
                 .eq("id", advancePayment.id);
-
               console.log("✅ ADVANCE PAYMENT LINKED");
-
               alert(
                 `✅ Advance Payment Linked Successfully\nRef: ${advancePayment.payment_ref}`
               );
             }
           }
         }
-        // ✅ END OF ADVANCE PAYMENT LINKING — duplicate block removed
       }
 
       if (error) {
@@ -609,11 +612,7 @@ const AddInvoiceModal = ({
       }
 
       alert(selectedInvoice ? "✅ Invoice updated" : "✅ Invoice created");
-
-      if (window.refreshClients) {
-        window.refreshClients();
-      }
-
+      if (window.refreshClients) window.refreshClients();
       resetForm();
       onClose();
     } catch (err) {
@@ -622,6 +621,7 @@ const AddInvoiceModal = ({
     }
   };
 
+  // ── Reset ────────────────────────────────────────────────────────
   const resetForm = () => {
     setFormData({
       invoiceEntity: "",
@@ -633,6 +633,8 @@ const AddInvoiceModal = ({
       payHead: "",
       invoiceNo: "",
       pay: "",
+      tdsPercent: "",
+      vertoFee: "",
       gst: "",
       invoiceValue: "",
       tds: "",
@@ -662,12 +664,33 @@ const AddInvoiceModal = ({
     });
     setErrors({});
     setShowErrors(false);
+    setIsManualTds(false);
+    setIsManualGst(false);
+    setIsManualReceivable(false);
   };
 
   const handleClose = () => {
     resetForm();
     onClose();
   };
+
+  // ── Style helpers ────────────────────────────────────────────────
+  const inp =
+    "w-full bg-white border text-gray-800 px-3.5 py-2.5 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-colors placeholder-gray-400";
+  const inpNormal = `${inp} border-gray-200`;
+  const inpErr = `${inp} border-rose-400 bg-rose-50`;
+  const inpWarn = `${inp} border-amber-400 bg-amber-50`; // mismatch but editable
+  const inpAuto =
+    "w-full bg-blue-50 border border-blue-200 text-blue-700 px-3.5 py-2.5 rounded-lg text-sm font-mono font-semibold";
+  const inpAutoWarn =
+    "w-full bg-amber-50 border border-amber-400 text-amber-800 px-3.5 py-2.5 rounded-lg text-sm font-mono font-semibold"; // auto but mismatch
+
+  const fi = (field) => (showErrors && errors[field] ? inpErr : inpNormal);
+  const card = "bg-white border border-gray-200 rounded-xl p-5 shadow-sm";
+  const sectionTitle =
+    "text-[11px] font-bold text-blue-700 uppercase tracking-widest mb-4 flex items-center gap-2";
+  const lbl =
+    "block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1.5";
 
   const ErrorMessage = ({ error }) => {
     if (!showErrors || !error) return null;
@@ -679,24 +702,18 @@ const AddInvoiceModal = ({
     );
   };
 
-  // ── shared input style helpers ──────────────────────────────────
-  const inp =
-    "w-full bg-white border text-gray-800 px-3.5 py-2.5 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-colors placeholder-gray-400";
-  const inpNormal = `${inp} border-gray-200`;
-  const inpErr    = `${inp} border-rose-400 bg-rose-50`;
-  const inpAuto   =
-    "w-full bg-blue-50 border border-blue-200 text-blue-700 px-3.5 py-2.5 rounded-lg text-sm font-mono font-semibold";
+  // Inline mismatch hint shown below a field
+  const MismatchHint = ({ show, expected, label }) => {
+    if (!show) return null;
+    return (
+      <p className="text-amber-600 text-xs mt-1 flex items-center gap-1">
+        <AlertCircle className="w-3 h-3 shrink-0" />
+        {label} mismatch — Expected ₹{Number(expected).toFixed(2)}
+      </p>
+    );
+  };
 
-  const fi = (field) => (showErrors && errors[field] ? inpErr : inpNormal);
-
-  // section card wrapper
-  const card = "bg-white border border-gray-200 rounded-xl p-5 shadow-sm";
-
-  // section title
-  const sectionTitle = "text-[11px] font-bold text-blue-700 uppercase tracking-widest mb-4 flex items-center gap-2";
-
-  // label
-  const lbl = "block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1.5";
+  const isOS = formData.department === "OS";
 
   return (
     <AnimatePresence>
@@ -716,7 +733,7 @@ const AddInvoiceModal = ({
             onClick={(e) => e.stopPropagation()}
             className="bg-white rounded-2xl shadow-2xl w-full max-w-5xl max-h-[90vh] overflow-hidden"
           >
-            {/* ── Header ── */}
+            {/* Header */}
             <div
               className="px-7 py-5 text-white relative overflow-hidden"
               style={{
@@ -724,7 +741,6 @@ const AddInvoiceModal = ({
                   "linear-gradient(135deg, #1d4ed8 0%, #1e40af 60%, #1e3a8a 100%)",
               }}
             >
-              {/* decorative glow blob */}
               <div
                 className="absolute -top-8 -right-8 w-40 h-40 rounded-full pointer-events-none"
                 style={{
@@ -738,7 +754,9 @@ const AddInvoiceModal = ({
                     {selectedInvoice ? "✏️ Edit Invoice" : "+ Add Invoice"}
                   </h2>
                   <p className="text-blue-200 text-sm mt-0.5">
-                    Create new invoice with auto-calculations
+                    {isOS
+                      ? "OS mode — Invoice Value is manual; GST auto-fills, both overridable"
+                      : "Create new invoice with auto-calculations"}
                   </p>
                 </div>
                 <button
@@ -750,11 +768,32 @@ const AddInvoiceModal = ({
               </div>
             </div>
 
-            {/* ── Form Content ── */}
+            {/* Form */}
             <div className="p-6 overflow-y-auto max-h-[calc(90vh-82px)] bg-gray-50/60">
               <form onSubmit={handleSubmit} className="space-y-4">
+                {/* ── OS mode banner ─────────────────────────────── */}
+                {isOS && (
+                  <motion.div
+                    initial={{ opacity: 0, y: -6 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="flex items-start gap-3 bg-amber-50 border border-amber-300 rounded-xl px-4 py-3 text-sm text-amber-800"
+                  >
+                    <AlertCircle className="w-4 h-4 mt-0.5 shrink-0 text-amber-500" />
+                    <div>
+                      <span className="font-semibold">OS Invoice mode</span>
+                      {" — "}GST auto-fills but is editable · TDS auto from TDS%
+                      but overridable ·{" "}
+                      <span className="font-semibold">
+                        Invoice Value must be entered manually
+                      </span>
+                      {" · "}Receivable auto-calculates from Invoice Value − TDS
+                      but is overridable. Mismatches are flagged inline and
+                      confirmed on Save.
+                    </div>
+                  </motion.div>
+                )}
 
-                {/* Basic Invoice Details */}
+                {/* ── Section 1: Basic Invoice Details ─────────────────── */}
                 <div className={card}>
                   <h3 className={sectionTitle}>
                     <span className="w-5 h-5 rounded-md bg-blue-600 flex items-center justify-center shrink-0">
@@ -777,7 +816,9 @@ const AddInvoiceModal = ({
                       >
                         <option value="">Select Entity</option>
                         {entities.map((entity, idx) => (
-                          <option key={idx} value={entity}>{entity}</option>
+                          <option key={idx} value={entity}>
+                            {entity}
+                          </option>
                         ))}
                       </select>
                       <ErrorMessage error={errors.invoiceEntity} />
@@ -797,7 +838,9 @@ const AddInvoiceModal = ({
                       >
                         <option value="">Select Department</option>
                         {departments.map((dept) => (
-                          <option key={dept.value} value={dept.value}>{dept.label}</option>
+                          <option key={dept.value} value={dept.value}>
+                            {dept.label}
+                          </option>
                         ))}
                       </select>
                       <ErrorMessage error={errors.department} />
@@ -893,13 +936,16 @@ const AddInvoiceModal = ({
                   </div>
                 </div>
 
-                {/* Financial Details */}
+                {/* ── Section 2: Financial Details ──────────────────────── */}
                 <div className={card}>
                   <h3 className={sectionTitle}>
                     <span className="w-5 h-5 rounded-md bg-blue-600 flex items-center justify-center shrink-0 text-white font-bold text-[10px]">
                       ₹
                     </span>
-                    Financial Details &amp; Auto-Calculations
+                    Financial Details &amp;{" "}
+                    {isOS
+                      ? "Partial Auto-Calculations (OS)"
+                      : "Auto-Calculations"}
                   </h3>
 
                   <div className="grid grid-cols-3 gap-4">
@@ -943,48 +989,38 @@ const AddInvoiceModal = ({
                       />
                       <ErrorMessage error={errors.vertoFee} />
                     </div>
+                  </div>
+
+                  {/* GST — auto-fill for all, manual override allowed, mismatch alert */}
+                  <div className="grid grid-cols-3 gap-4 mt-4">
                     <div>
-                      <label className={lbl}>GST 18%</label>
+                      <label className={lbl}>
+                        GST 18%
+                        {isOS && (
+                          <span className="ml-1 text-amber-600 normal-case font-normal">
+                            (auto-fill · editable)
+                          </span>
+                        )}
+                      </label>
                       <input
                         type="number"
                         value={formData.gst || ""}
-                        onChange={(e) => handleChange("gst", e.target.value)}
+                        onChange={(e) => {
+                          handleChange("gst", e.target.value);
+                          if (isOS) setIsManualGst(true);
+                        }}
                         className={
                           gstMismatch
-                            ? `${inp} border-red-400 bg-red-50`
+                            ? `${inp} border-amber-400 bg-amber-50`
                             : inpNormal
                         }
                         placeholder="Enter GST"
                       />
-                      {gstMismatch && (
-                        <p className="text-red-500 text-xs mt-1">
-                          ❌ GST mismatch (Expected ₹ {expectedGST.toFixed(2)})
-                        </p>
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-3 gap-4 mt-4">
-                    <div>
-                      <label className={lbl}>Invoice Value</label>
-                      <input
-                        type="number"
-                        value={formData.invoiceValue || ""}
-                        onChange={(e) =>
-                          handleChange("invoiceValue", e.target.value)
-                        }
-                        className={
-                          invoiceMismatch
-                            ? `${inp} border-red-400 bg-red-50 font-bold`
-                            : `${inpNormal} font-bold`
-                        }
+                      <MismatchHint
+                        show={gstMismatch}
+                        expected={expectedGST}
+                        label="GST"
                       />
-                      {invoiceMismatch && (
-                        <p className="text-red-500 text-xs mt-1">
-                          ❌ Invoice mismatch (Expected ₹{" "}
-                          {expectedInvoice.toFixed(2)})
-                        </p>
-                      )}
                     </div>
 
                     <div>
@@ -1001,7 +1037,12 @@ const AddInvoiceModal = ({
                     </div>
 
                     <div>
-                      <label className={lbl}>TDS</label>
+                      <label className={lbl}>
+                        TDS
+                        <span className="ml-1 text-gray-400 normal-case font-normal">
+                          (auto · overridable)
+                        </span>
+                      </label>
                       <input
                         type="number"
                         value={formData.tds || ""}
@@ -1011,17 +1052,56 @@ const AddInvoiceModal = ({
                         }}
                         className={
                           tdsMismatch
-                            ? `${inp} border-red-400 bg-red-50`
+                            ? `${inp} border-amber-400 bg-amber-50`
                             : inpNormal
                         }
                       />
-                      {tdsMismatch && (
-                        <p className="text-red-500 text-xs mt-1">
-                          ❌ TDS mismatch (Expected ₹ {expectedTDS.toFixed(2)})
-                        </p>
-                      )}
+                      <MismatchHint
+                        show={tdsMismatch}
+                        expected={expectedTDS}
+                        label="TDS"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-3 gap-4 mt-4">
+                    {/* Invoice Value — MANUAL for OS, auto for REC */}
+                    <div>
+                      <label className={lbl}>
+                        Invoice Value
+                        {isOS ? (
+                          <span className="ml-1 text-rose-500 normal-case font-normal">
+                            * (enter manually)
+                          </span>
+                        ) : null}
+                      </label>
+                      <input
+                        type="number"
+                        value={formData.invoiceValue || ""}
+                        onChange={(e) =>
+                          handleChange("invoiceValue", e.target.value)
+                        }
+                        readOnly={!isOS && false} // REC: value set by useEffect; still technically editable but auto-overwritten
+                        className={
+                          showErrors && errors.invoiceValue
+                            ? inpErr
+                            : invoiceMismatch
+                            ? `${inp} border-amber-400 bg-amber-50 font-bold`
+                            : `${inpNormal} font-bold`
+                        }
+                        placeholder={
+                          isOS ? "₹ Enter manually" : "₹ Auto-calculated"
+                        }
+                      />
+                      <ErrorMessage error={errors.invoiceValue} />
+                      <MismatchHint
+                        show={invoiceMismatch}
+                        expected={expectedInvoice}
+                        label="Invoice Value"
+                      />
                     </div>
 
+                    {/* Verto Fee Post TDS — always auto, read-only */}
                     <div>
                       <label className={lbl}>Verto Fee (Post TDS)</label>
                       <input
@@ -1032,20 +1112,50 @@ const AddInvoiceModal = ({
                         placeholder="Auto-calculated"
                       />
                     </div>
+
+                    {/* Receivable — auto for REC, auto+overridable for OS */}
+                    <div>
+                      <label className={lbl}>
+                        Receivable Rs
+                        {isOS && (
+                          <span className="ml-1 text-amber-600 normal-case font-normal">
+                            (auto · overridable)
+                          </span>
+                        )}
+                      </label>
+                      {isOS ? (
+                        <input
+                          type="number"
+                          value={formData.receivableRs || ""}
+                          onChange={(e) => {
+                            handleChange("receivableRs", e.target.value);
+                            setIsManualReceivable(true);
+                          }}
+                          className={
+                            receivableMismatch
+                              ? `${inp} border-amber-400 bg-amber-50`
+                              : inpNormal
+                          }
+                          placeholder="Auto: InvoiceValue − TDS"
+                        />
+                      ) : (
+                        <input
+                          type="text"
+                          value={formData.receivableRs || ""}
+                          readOnly
+                          className={inpAuto}
+                          placeholder="Auto-calculated"
+                        />
+                      )}
+                      <MismatchHint
+                        show={isOS && receivableMismatch}
+                        expected={expectedReceivable}
+                        label="Receivable"
+                      />
+                    </div>
                   </div>
 
                   <div className="grid grid-cols-3 gap-4 mt-4">
-                    <div>
-                      <label className={lbl}>Receivable Rs</label>
-                      <input
-                        type="text"
-                        value={formData.receivableRs || ""}
-                        readOnly
-                        className={inpAuto}
-                        placeholder="Auto-calculated"
-                      />
-                    </div>
-
                     <div>
                       <label className={lbl}>
                         Expected Collection Date{" "}
@@ -1060,7 +1170,9 @@ const AddInvoiceModal = ({
                         className={fi("expectedCollectionDate")}
                       />
                       <ErrorMessage error={errors.expectedCollectionDate} />
-                      <p className="text-xs text-amber-500 mt-1">📌 Alert Ping</p>
+                      <p className="text-xs text-amber-500 mt-1">
+                        📌 Alert Ping
+                      </p>
                     </div>
 
                     <div>
@@ -1100,7 +1212,6 @@ const AddInvoiceModal = ({
                         placeholder="Optional description"
                       />
                     </div>
-
                     <div>
                       <label className={lbl}>
                         Ref No of payment made against Invoice (If Any)
@@ -1121,8 +1232,8 @@ const AddInvoiceModal = ({
                   </div>
                 </div>
 
-                {/* OS Department Extra Fields */}
-                {formData.department === "OS" && (
+                {/* ── Section 3: OS Extra Fields ────────────────────────── */}
+                {isOS && (
                   <motion.div
                     initial={{ opacity: 0, height: 0 }}
                     animate={{ opacity: 1, height: "auto" }}
@@ -1153,7 +1264,6 @@ const AddInvoiceModal = ({
                         />
                         <ErrorMessage error={errors.employeeCount} />
                       </div>
-
                       <div>
                         <label className={lbl}>
                           Gross Value <span className="text-rose-500">*</span>
@@ -1169,7 +1279,6 @@ const AddInvoiceModal = ({
                         />
                         <ErrorMessage error={errors.grossValue} />
                       </div>
-
                       <div>
                         <label className={lbl}>
                           Net In Hand <span className="text-rose-500">*</span>
@@ -1200,11 +1309,14 @@ const AddInvoiceModal = ({
                           className={inpNormal}
                           placeholder="₹ 0"
                         />
-                        <p className="text-xs text-rose-500 mt-1">Gross Value - Co</p>
+                        <p className="text-xs text-rose-500 mt-1">
+                          Gross Value - Co
+                        </p>
                       </div>
-
                       <div>
-                        <label className={lbl}>Co ESI = ER ESIC + EE ESIC</label>
+                        <label className={lbl}>
+                          Co ESI = ER ESIC + EE ESIC
+                        </label>
                         <input
                           type="number"
                           value={formData.coESI}
@@ -1214,9 +1326,10 @@ const AddInvoiceModal = ({
                           className={inpNormal}
                           placeholder="₹ 0"
                         />
-                        <p className="text-xs text-rose-500 mt-1">Gross Value - Co</p>
+                        <p className="text-xs text-rose-500 mt-1">
+                          Gross Value - Co
+                        </p>
                       </div>
-
                       <div>
                         <label className={lbl}>LWF Tax</label>
                         <input
@@ -1229,7 +1342,6 @@ const AddInvoiceModal = ({
                           placeholder="₹ 0"
                         />
                       </div>
-
                       <div>
                         <label className={lbl}>PT Tax</label>
                         <input
@@ -1257,7 +1369,6 @@ const AddInvoiceModal = ({
                           placeholder="₹ 0"
                         />
                       </div>
-
                       <div>
                         <label className={lbl}>(CTC)</label>
                         <input
@@ -1267,9 +1378,10 @@ const AddInvoiceModal = ({
                           className={inpAuto}
                           placeholder="Auto-calculated"
                         />
-                        <p className="text-xs text-rose-500 mt-1">Gross Value - Co</p>
+                        <p className="text-xs text-rose-500 mt-1">
+                          Gross Value - Co
+                        </p>
                       </div>
-
                       <div>
                         <label className={lbl}>Month of Payout</label>
                         <input
@@ -1295,9 +1407,10 @@ const AddInvoiceModal = ({
                           }
                           className={inpNormal}
                         />
-                        <p className="text-xs text-amber-500 mt-1">📌 Alert Ping</p>
+                        <p className="text-xs text-amber-500 mt-1">
+                          📌 Alert Ping
+                        </p>
                       </div>
-
                       <div>
                         <label className={lbl}>
                           Verto Fee Payout Date by Client
@@ -1310,7 +1423,9 @@ const AddInvoiceModal = ({
                           }
                           className={inpNormal}
                         />
-                        <p className="text-xs text-amber-500 mt-1">📌 Alert Ping</p>
+                        <p className="text-xs text-amber-500 mt-1">
+                          📌 Alert Ping
+                        </p>
                       </div>
                     </div>
 
@@ -1331,7 +1446,6 @@ const AddInvoiceModal = ({
                           className={inpNormal}
                         />
                       </div>
-
                       <div>
                         <label className={lbl}>Expected Outflow "PF"</label>
                         <input
@@ -1346,7 +1460,6 @@ const AddInvoiceModal = ({
                           As per master due date
                         </p>
                       </div>
-
                       <div>
                         <label className={lbl}>Expected Outflow "ESI"</label>
                         <input
@@ -1361,7 +1474,6 @@ const AddInvoiceModal = ({
                           As per master due date
                         </p>
                       </div>
-
                       <div>
                         <label className={lbl}>Expected Outflow "GST"</label>
                         <input
@@ -1376,7 +1488,6 @@ const AddInvoiceModal = ({
                           As per master due date
                         </p>
                       </div>
-
                       <div>
                         <label className={lbl}>
                           Expected Outflow "Tax Deducted"
@@ -1397,7 +1508,7 @@ const AddInvoiceModal = ({
                   </motion.div>
                 )}
 
-                {/* Footer Actions */}
+                {/* ── Footer ───────────────────────────────────────────── */}
                 <div className="flex items-center justify-between pt-4 border-t border-gray-200">
                   <button
                     type="button"
