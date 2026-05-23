@@ -2023,7 +2023,7 @@ const BankReco = () => {
                                           <button
                                             onClick={async () => {
                                               await supabase.rpc(
-                                                "delete_projection",
+                                                "delete_projection_complete",
                                                 {
                                                   p_projection_id: item.id,
                                                 }
