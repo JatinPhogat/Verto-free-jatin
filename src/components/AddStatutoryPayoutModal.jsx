@@ -255,11 +255,20 @@ const StatutoryRecordsPanel = ({ onClose }) => {
 
   // ── Derived stats ──────────────────────────────────────────────────────────
   // CHANGE 2: use month_total_paid and month_pending_due from view
-  const totalPaid = records.reduce(
+  // ── Derived stats ──────────────────────────────────────────────────────────
+  // De-duplicate by type+month before summing — avoids double-counting
+  const uniqueMonthMap = {};
+  records.forEach((r) => {
+    const key = `${r.type}__${r.month}`;
+    if (!uniqueMonthMap[key]) uniqueMonthMap[key] = r;
+  });
+  const uniqueRecords = Object.values(uniqueMonthMap);
+
+  const totalPaid = uniqueRecords.reduce(
     (s, r) => s + Number(r.month_total_paid || 0),
     0
   );
-  const totalPending = records.reduce(
+  const totalPending = uniqueRecords.reduce(
     (s, r) => s + Number(r.month_pending_due || 0),
     0
   );
@@ -823,24 +832,64 @@ const AddStatutoryPayoutModal = ({
 
     setLoading(true);
     try {
-      const payload = {
-        entity: formData.entity,
-        bank_id: formData.bank_id,
-        month: `${formData.forTheMonth}-01`,
-        type: formData.statutoryPayoutType,
-        total_due: Number(formData.totalDue),
-        total_paid: Number(formData.totalPaid),
-        pending_due: Number(formData.pendingDue),
-        penalty: formData.anyInterestPenalties === "Yes",
-        penalty_amount: Number(formData.penaltyAmount || 0),
-        remarks: formData.remarks,
-        projection_status: "actual",
-        payment_status: Number(formData.pendingDue) <= 0 ? "paid" : "partial",
-      };
-      const { error } = await supabase
+      const month = `${formData.forTheMonth}-01`;
+
+      // Check if row already exists for same entity + type + month
+      const { data: existing, error: fetchErr } = await supabase
         .from("statutory_payments")
-        .insert([payload]);
-      if (error) throw error;
+        .select("id, total_paid, total_due")
+        .eq("entity", formData.entity)
+        .eq("type", formData.statutoryPayoutType)
+        .eq("month", month)
+        .maybeSingle();
+      if (fetchErr) throw fetchErr;
+
+      if (existing) {
+        // ACCUMULATE: add this payment to existing total_paid
+        // Keep original total_due (full liability), recalculate pending
+        const newTotalPaid =
+          Number(existing.total_paid) + Number(formData.totalPaid);
+        const newPending = Math.max(
+          Number(existing.total_due) - newTotalPaid,
+          0
+        );
+
+        const { error } = await supabase
+          .from("statutory_payments")
+          .update({
+            total_paid: newTotalPaid,
+            pending_due: newPending,
+            payment_status: newPending <= 0 ? "paid" : "partial",
+            bank_id: formData.bank_id,
+            remarks: formData.remarks,
+            penalty: formData.anyInterestPenalties === "Yes",
+            penalty_amount: Number(formData.penaltyAmount || 0),
+            // total_due stays as original full liability — DO NOT overwrite
+          })
+          .eq("id", existing.id);
+        if (error) throw error;
+      } else {
+        // First time this type+month — INSERT with full liability as total_due
+        const { error } = await supabase.from("statutory_payments").insert([
+          {
+            entity: formData.entity,
+            bank_id: formData.bank_id,
+            month,
+            type: formData.statutoryPayoutType,
+            total_due: Number(formData.totalDue), // full original liability
+            total_paid: Number(formData.totalPaid),
+            pending_due: Number(formData.pendingDue),
+            penalty: formData.anyInterestPenalties === "Yes",
+            penalty_amount: Number(formData.penaltyAmount || 0),
+            remarks: formData.remarks,
+            projection_status: "actual",
+            payment_status:
+              Number(formData.pendingDue) <= 0 ? "paid" : "partial",
+          },
+        ]);
+        if (error) throw error;
+      }
+
       window.refreshDashboard?.();
       alert("✅ Statutory Payment Saved");
       resetForm();

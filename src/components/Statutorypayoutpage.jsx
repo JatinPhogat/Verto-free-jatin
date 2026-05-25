@@ -296,9 +296,21 @@ const StatutoryPayoutPage = () => {
   });
 
   // ── Stats ───────────────────────────────────────────────────────────────────
-  const totalPaid = records.reduce((s, r) => s + Number(r.total_paid || 0), 0);
-  const totalPending = records.reduce(
-    (s, r) => s + Number(r.pending_due || 0),
+  // ── Stats ───────────────────────────────────────────────────────────────────
+  // De-duplicate by type+month — avoids double-counting if duplicates exist
+  const uniqueMonthMap = {};
+  records.forEach((r) => {
+    const key = `${r.type}__${r.month}`;
+    if (!uniqueMonthMap[key]) uniqueMonthMap[key] = r;
+  });
+  const uniqueRecords = Object.values(uniqueMonthMap);
+
+  const totalPaid = uniqueRecords.reduce(
+    (s, r) => s + Number(r.month_total_paid || 0),
+    0
+  );
+  const totalPending = uniqueRecords.reduce(
+    (s, r) => s + Number(r.month_pending_due || 0),
     0
   );
   const totalPenalty = records.reduce(
