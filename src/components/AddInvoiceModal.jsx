@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import supabase from "../lib/supabaseClient";
 import { motion, AnimatePresence } from "framer-motion";
-import { X, ArrowRight, AlertCircle, Calculator } from "lucide-react";
+import { X, ArrowRight, AlertCircle, Calculator, Search, Plus, CheckCircle2 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 
 const customRound = (num) => {
@@ -9,6 +9,96 @@ const customRound = (num) => {
   return decimal >= 0.75 ? Math.ceil(num) : Math.floor(num);
 };
 
+// ─── SEARCHABLE CLIENT DROPDOWN ───────────────────────────────────────────────
+// - Any role: substring search across existing clients
+// - Admin only: shows "+ Create new client" option when no exact match
+const ClientSearchInput = ({ value, onChange, clients, role, className, error }) => {
+  const [open, setOpen] = useState(false);
+  const [inputVal, setInputVal] = useState(value || "");
+  const wrapRef = useRef(null);
+
+  // Sync when parent resets form
+  useEffect(() => { setInputVal(value || ""); }, [value]);
+
+  // Close on outside click
+  useEffect(() => {
+    const handler = (e) => {
+      if (wrapRef.current && !wrapRef.current.contains(e.target)) setOpen(false);
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, []);
+
+  const filtered = clients.filter((c) =>
+    c.client_name.toLowerCase().includes(inputVal.toLowerCase())
+  );
+  const exactMatch = clients.some(
+    (c) => c.client_name.toLowerCase() === inputVal.toLowerCase()
+  );
+  const showCreate = role === "admin" && inputVal.trim().length > 0 && !exactMatch;
+
+  const pick = (name) => {
+    setInputVal(name);
+    onChange(name);
+    setOpen(false);
+  };
+
+  return (
+    <div className="relative" ref={wrapRef}>
+      <div className="relative">
+        <Search className="absolute left-3 top-2.5 w-4 h-4 text-gray-400 pointer-events-none" />
+        <input
+          type="text"
+          value={inputVal}
+          onChange={(e) => { setInputVal(e.target.value); onChange(e.target.value); setOpen(true); }}
+          onFocus={() => { if (inputVal.length > 0) setOpen(true); }}
+          placeholder="Type to search or add client…"
+          className={`${className} pl-9`}
+        />
+      </div>
+
+      {open && (filtered.length > 0 || showCreate) && (
+        <div className="absolute z-30 top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-xl shadow-xl max-h-56 overflow-y-auto">
+          {filtered.map((c) => (
+            <button
+              key={c.id}
+              type="button"
+              onMouseDown={(e) => { e.preventDefault(); pick(c.client_name); }}
+              className="w-full text-left px-4 py-2.5 hover:bg-blue-50 text-sm text-gray-800 border-b border-gray-100 last:border-0 flex items-center gap-2"
+            >
+              <span className="w-2 h-2 rounded-full bg-emerald-400 flex-shrink-0" />
+              {c.client_name}
+            </button>
+          ))}
+          {showCreate && (
+            <button
+              type="button"
+              onMouseDown={(e) => { e.preventDefault(); pick(inputVal.trim()); }}
+              className="w-full text-left px-4 py-2.5 hover:bg-blue-50 text-sm font-semibold text-blue-700 flex items-center gap-2 border-t border-gray-100"
+            >
+              <Plus className="w-4 h-4 text-blue-600 flex-shrink-0" />
+              Create new client &ldquo;{inputVal.trim()}&rdquo;
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* Status hints below the input */}
+      {exactMatch && inputVal.trim() && (
+        <p className="text-xs text-emerald-600 mt-1 flex items-center gap-1">
+          <CheckCircle2 className="w-3 h-3" /> Existing client
+        </p>
+      )}
+      {showCreate && !open && (
+        <p className="text-xs text-blue-600 mt-1 flex items-center gap-1">
+          <Plus className="w-3 h-3" /> New client — will be created on save
+        </p>
+      )}
+    </div>
+  );
+};
+
+// ─── MAIN COMPONENT ───────────────────────────────────────────────────────────
 const AddInvoiceModal = ({
   isOpen,
   onClose,
@@ -59,14 +149,13 @@ const AddInvoiceModal = ({
   });
 
   // ── OS-specific manual override flags ──────────────────────────
-  // isManualTds   : shared between OS and REC (existing)
-  // isManualGst   : OS only — user typed over the auto-filled GST
-  // isManualReceivable : OS only — user typed over the auto-calculated receivable
   const [isManualTds, setIsManualTds] = useState(false);
   const [isManualGst, setIsManualGst] = useState(false);
   const [isManualReceivable, setIsManualReceivable] = useState(false);
 
   const [banks, setBanks] = useState([]);
+  // ── LOCAL clients list — fetched fresh so new additions appear immediately ──
+  const [clientsList, setClientsList] = useState([]);
   const [errors, setErrors] = useState({});
   const [showErrors, setShowErrors] = useState(false);
 
@@ -78,35 +167,43 @@ const AddInvoiceModal = ({
     { value: "OTH", label: "OTH (Others)" },
   ];
 
-  // ── Fetch banks ─────────────────────────────────────────────────
+  // ── Fetch banks + clients from DB ───────────────────────────────
+  const fetchMasters = async () => {
+    const [banksRes, clientsRes] = await Promise.all([
+      supabase.from("bank_master").select("id, bank_name"),
+      supabase.from("clients_master").select("id, client_name, ledger_name").order("client_name"),
+    ]);
+    if (!banksRes.error) setBanks(banksRes.data || []);
+    if (!clientsRes.error) setClientsList(clientsRes.data || []);
+  };
+
   useEffect(() => {
-    const fetchBanks = async () => {
-      const { data } = await supabase
-        .from("bank_master")
-        .select("id, bank_name");
-      setBanks(data || []);
-    };
-    fetchBanks();
-  }, []);
+    if (isOpen) fetchMasters();
+  }, [isOpen]);
+
+  // Merge prop clients (string array from parent) with locally fetched DB rows,
+  // deduplicated by client_name so both sources are covered.
+  const mergedClients = React.useMemo(() => {
+    const map = new Map();
+    clients.forEach((name) => {
+      if (typeof name === "string") map.set(name.toLowerCase(), { id: name, client_name: name });
+    });
+    clientsList.forEach((c) => map.set(c.client_name.toLowerCase(), c));
+    return Array.from(map.values()).sort((a, b) =>
+      a.client_name.localeCompare(b.client_name)
+    );
+  }, [clients, clientsList]);
 
   // ── Auto-fetch ledger when client changes (edit mode) ──────────
   useEffect(() => {
-    const fetchLedger = async () => {
-      if (!selectedInvoice || !formData.client) return;
-      const { data } = await supabase
-        .from("clients_master")
-        .select("ledger_name")
-        .ilike("client_name", `%${formData.client}%`)
-        .maybeSingle();
-      if (data) {
-        setFormData((prev) => ({
-          ...prev,
-          ledgerName: data.ledger_name || "",
-        }));
-      }
-    };
-    fetchLedger();
-  }, [formData.client, selectedInvoice]);
+    if (!formData.client) return;
+    const match = clientsList.find(
+      (c) => c.client_name.toLowerCase() === formData.client.toLowerCase()
+    );
+    if (match?.ledger_name) {
+      setFormData((prev) => ({ ...prev, ledgerName: match.ledger_name }));
+    }
+  }, [formData.client, clientsList]);
 
   // ── Populate form when editing an existing invoice ──────────────
   useEffect(() => {
@@ -160,7 +257,6 @@ const AddInvoiceModal = ({
     // Reset auto-flags when source inputs change
     if (["pay", "vertoFee", "tdsPercent", "grossValue"].includes(field)) {
       setIsManualTds(false);
-      // For OS: reset GST override so it re-auto-fills from new base
       if (["pay", "vertoFee", "grossValue"].includes(field)) {
         setIsManualGst(false);
       }
@@ -172,11 +268,6 @@ const AddInvoiceModal = ({
   };
 
   // ── Core auto-calculation effect ─────────────────────────────────
-  // REC / other depts  → existing behaviour (fully auto)
-  // OS dept            → GST auto-fills unless manually overridden
-  //                      Invoice Value is ALWAYS manual for OS
-  //                      TDS auto from TDS% unless manually overridden
-  //                      Receivable = InvoiceValue - TDS unless manually overridden
   useEffect(() => {
     const pay = parseFloat(formData.pay);
     const vertoFee = parseFloat(formData.vertoFee);
@@ -201,26 +292,17 @@ const AddInvoiceModal = ({
     const tdsCalc = tdsBase * tdsRate;
     const finalTds = isManualTds ? Number(formData.tds) || 0 : tdsCalc;
 
-    const invoiceCalc = baseAmount + gstCalc; // expected value for alerts
+    const invoiceCalc = baseAmount + gstCalc;
 
     const vertoFeePostTds =
       tdsBase > 0 ? vertoFee - finalTds * (vertoFee / tdsBase) : 0;
 
     if (isOS) {
-      // ── OS branch ──────────────────────────────────────────────
-      // GST: auto-fill unless user manually overrode it
       const finalGst = isManualGst ? Number(formData.gst) || 0 : gstCalc;
-
-      // Invoice Value: NEVER auto-set for OS — user types it
-      // Invoice Value auto-calculate for OS
       const invoiceCalc = baseAmount + finalGst;
-
-      // If user manually edits invoice value, keep manual value
       const invoiceValueNum = isManualReceivable
         ? Number(formData.invoiceValue) || 0
         : invoiceCalc;
-
-      // Receivable: auto = invoiceValue - finalTds, unless manually overridden
       const receivableCalc = invoiceValueNum - finalTds;
       const finalReceivable = isManualReceivable
         ? Number(formData.receivableRs) || 0
@@ -228,26 +310,15 @@ const AddInvoiceModal = ({
 
       setFormData((prev) => ({
         ...prev,
-
         gst: isManualGst ? prev.gst : gstCalc.toFixed(2),
-
         tds: isManualTds ? prev.tds : tdsCalc.toFixed(2),
-
-        // Auto-fill invoice value but allow override
-        invoiceValue: isManualReceivable
-          ? prev.invoiceValue
-          : customRound(invoiceCalc),
-
+        invoiceValue: isManualReceivable ? prev.invoiceValue : customRound(invoiceCalc),
         receivableRs: isManualReceivable
           ? prev.receivableRs
-          : isNaN(receivableCalc)
-          ? ""
-          : customRound(receivableCalc),
-
+          : isNaN(receivableCalc) ? "" : customRound(receivableCalc),
         vertoFeePostTds: vertoFeePostTds.toFixed(2),
       }));
     } else {
-      // ── REC / other depts: existing fully-auto behaviour ────────
       const invoiceValue = baseAmount + gstCalc;
       const receivable = invoiceValue - finalTds;
 
@@ -267,7 +338,7 @@ const AddInvoiceModal = ({
     formData.department,
     formData.tdsPercent,
     formData.tds,
-    formData.invoiceValue, // needed so OS receivable recalcs when user types invoice value
+    formData.invoiceValue,
     isManualTds,
     isManualGst,
     isManualReceivable,
@@ -328,14 +399,11 @@ const AddInvoiceModal = ({
     const tdsBase = payNum + vertoFeeNum;
     const tdsRate = fd.tdsPercent
       ? Number(fd.tdsPercent) / 100
-      : isOS
-      ? 0.02
-      : 0.1;
+      : isOS ? 0.02 : 0.1;
     const expectedTDS = tdsBase * tdsRate;
 
     const expectedInvoice = base + expectedGST;
 
-    // For OS: receivable expected = typed invoiceValue - expectedTDS
     const invoiceValueNum = Number(fd.invoiceValue) || 0;
     const expectedReceivable = isOS
       ? invoiceValueNum - Number(fd.tds || expectedTDS)
@@ -343,13 +411,12 @@ const AddInvoiceModal = ({
 
     const gstMismatch = Math.abs(Number(fd.gst) - expectedGST) > tolerance;
     const tdsMismatch = Math.abs(Number(fd.tds) - expectedTDS) > tolerance;
-    // OS invoices are manual — do not compare with auto expected value
     const invoiceMismatch = isOS
       ? false
       : Math.abs(Number(fd.invoiceValue) - expectedInvoice) > tolerance;
     const receivableMismatch = isOS
       ? Math.abs(Number(fd.receivableRs) - expectedReceivable) > tolerance
-      : false; // REC receivable is always auto, no mismatch check needed
+      : false;
 
     return {
       gstMismatch,
@@ -405,7 +472,6 @@ const AddInvoiceModal = ({
       if (!formData.grossValue)
         newErrors.grossValue = "Gross value is required";
       if (!formData.netInHand) newErrors.netInHand = "Net in hand is required";
-      // For OS, invoice value is manual — require it explicitly
       if (!formData.invoiceValue)
         newErrors.invoiceValue = "Invoice value is required";
     }
@@ -462,6 +528,9 @@ const AddInvoiceModal = ({
           return;
         }
         clientRow = newClient;
+        // ── Refresh local list so the new client is immediately searchable ──
+        await fetchMasters();
+        if (window.refreshClients) window.refreshClients();
       }
 
       const { data: deptRow } = await supabase
@@ -694,11 +763,11 @@ const AddInvoiceModal = ({
     "w-full bg-white border text-gray-800 px-3.5 py-2.5 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-colors placeholder-gray-400";
   const inpNormal = `${inp} border-gray-200`;
   const inpErr = `${inp} border-rose-400 bg-rose-50`;
-  const inpWarn = `${inp} border-amber-400 bg-amber-50`; // mismatch but editable
+  const inpWarn = `${inp} border-amber-400 bg-amber-50`;
   const inpAuto =
     "w-full bg-blue-50 border border-blue-200 text-blue-700 px-3.5 py-2.5 rounded-lg text-sm font-mono font-semibold";
   const inpAutoWarn =
-    "w-full bg-amber-50 border border-amber-400 text-amber-800 px-3.5 py-2.5 rounded-lg text-sm font-mono font-semibold"; // auto but mismatch
+    "w-full bg-amber-50 border border-amber-400 text-amber-800 px-3.5 py-2.5 rounded-lg text-sm font-mono font-semibold";
 
   const fi = (field) => (showErrors && errors[field] ? inpErr : inpNormal);
   const card = "bg-white border border-gray-200 rounded-xl p-5 shadow-sm";
@@ -717,7 +786,6 @@ const AddInvoiceModal = ({
     );
   };
 
-  // Inline mismatch hint shown below a field
   const MismatchHint = ({ show, expected, label }) => {
     if (!show) return null;
     return (
@@ -861,23 +929,24 @@ const AddInvoiceModal = ({
                       <ErrorMessage error={errors.department} />
                     </div>
 
+                    {/* ── CLIENT — replaced datalist with ClientSearchInput ── */}
                     <div>
                       <label className={lbl}>
                         Client <span className="text-rose-500">*</span>
+                        {role === "admin" && (
+                          <span className="ml-1 text-blue-500 normal-case font-normal">
+                            (admin can add new)
+                          </span>
+                        )}
                       </label>
-                      <input
-                        type="text"
-                        list="invoice-clients-list"
+                      <ClientSearchInput
                         value={formData.client || ""}
-                        onChange={(e) => handleChange("client", e.target.value)}
+                        onChange={(v) => handleChange("client", v)}
+                        clients={mergedClients}
+                        role={role}
                         className={fi("client")}
-                        placeholder="Type or select"
+                        error={showErrors && errors.client}
                       />
-                      <datalist id="invoice-clients-list">
-                        {clients.map((client, idx) => (
-                          <option key={idx} value={client} />
-                        ))}
-                      </datalist>
                       <ErrorMessage error={errors.client} />
                     </div>
                   </div>
@@ -1096,7 +1165,7 @@ const AddInvoiceModal = ({
                         onChange={(e) =>
                           handleChange("invoiceValue", e.target.value)
                         }
-                        readOnly={!isOS && false} // REC: value set by useEffect; still technically editable but auto-overwritten
+                        readOnly={!isOS && false}
                         className={
                           showErrors && errors.invoiceValue
                             ? inpErr
