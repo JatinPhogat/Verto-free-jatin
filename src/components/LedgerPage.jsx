@@ -13,6 +13,9 @@ import {
   ArrowLeftRight,
   Trash2,
   CheckCircle2,
+  Users,
+  ChevronDown,
+  ChevronUp,
 } from "lucide-react";
 
 // ─── TYPE CONFIG ───────────────────────────────────────────────────────────────
@@ -72,9 +75,7 @@ const DeleteModal = ({ invoiceId, onConfirm, onCancel, loading }) => (
         You are about to permanently delete:
       </p>
       <div className="bg-red-50 border border-red-100 rounded-xl p-3 mb-4 space-y-1 text-xs text-red-700 font-medium">
-        <p>
-          🧾 Invoice <span className="font-bold">{invoiceId}</span>
-        </p>
+        <p>🧾 Invoice <span className="font-bold">{invoiceId}</span></p>
         <p>💳 All Payments Received & Made</p>
         <p>🔄 Bounce Back entries</p>
         <p>📝 Credit Notes / Bad Debt</p>
@@ -107,6 +108,230 @@ const DeleteModal = ({ invoiceId, onConfirm, onCancel, loading }) => (
   </div>
 );
 
+// ─── OS PAYOUTS SECTION ────────────────────────────────────────────────────────
+const OSPayoutsSection = ({ osPayouts, netInHand }) => {
+  const [expanded, setExpanded] = useState(true);
+
+  const fmt = (val) => `₹ ${Number(val || 0).toLocaleString("en-IN")}`;
+  const fmtDate = (d) => {
+    if (!d) return "—";
+    const date = new Date(d);
+    return isNaN(date)
+      ? d
+      : date.toLocaleDateString("en-GB", {
+          day: "2-digit",
+          month: "short",
+          year: "numeric",
+        });
+  };
+
+  if (!osPayouts || osPayouts.length === 0) return null;
+
+  // Build running balance from net_in_hand
+  let balance = netInHand;
+  const rows = osPayouts.map((p) => {
+    const netPaid = Math.max(
+      Number(p.amount_paid || 0) - Number(p.income_tax_deducted || 0),
+      0
+    );
+    balance -= netPaid;
+    return { ...p, netPaid, runningBalance: balance };
+  });
+
+  const totalPaid = osPayouts.reduce(
+    (s, p) =>
+      s +
+      Math.max(
+        Number(p.amount_paid || 0) - Number(p.income_tax_deducted || 0),
+        0
+      ),
+    0
+  );
+  const leftAmount = Math.max(netInHand - totalPaid, 0);
+  const paidPct = netInHand > 0 ? Math.min((totalPaid / netInHand) * 100, 100) : 0;
+
+  return (
+    <div className="mt-6 rounded-2xl border-2 border-violet-200 bg-violet-50/40 overflow-hidden">
+      {/* Section Header */}
+      <button
+        onClick={() => setExpanded((v) => !v)}
+        className="w-full flex items-center justify-between px-5 py-4 hover:bg-violet-50 transition"
+      >
+        <div className="flex items-center gap-3">
+          <div className="p-2 rounded-xl bg-violet-100">
+            <Users className="w-4 h-4 text-violet-600" />
+          </div>
+          <div className="text-left">
+            <p className="font-bold text-violet-800 text-sm">
+              3rd Party OS Payouts
+            </p>
+            <p className="text-xs text-violet-500">
+              {osPayouts.length} payout{osPayouts.length !== 1 ? "s" : ""} · Against Net-in-Hand
+            </p>
+          </div>
+        </div>
+        <div className="flex items-center gap-4">
+          <div className="text-right hidden sm:block">
+            <p className="text-xs text-violet-500 mb-0.5">Left Balance</p>
+            <p
+              className={`font-bold text-sm ${
+                leftAmount <= 0 ? "text-emerald-600" : "text-violet-700"
+              }`}
+            >
+              {fmt(leftAmount)}
+            </p>
+          </div>
+          {expanded ? (
+            <ChevronUp className="w-4 h-4 text-violet-400" />
+          ) : (
+            <ChevronDown className="w-4 h-4 text-violet-400" />
+          )}
+        </div>
+      </button>
+
+      {expanded && (
+        <div className="px-5 pb-5 space-y-3">
+          {/* Net-in-Hand Opening */}
+          <div className="flex items-center justify-between bg-white border border-violet-100 rounded-xl px-4 py-3">
+            <div className="flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-violet-400 inline-block" />
+              <span className="text-xs font-semibold text-violet-700 uppercase tracking-wide">
+                Net in Hand (Opening)
+              </span>
+            </div>
+            <span className="font-bold text-violet-700 text-sm">
+              {fmt(netInHand)}
+            </span>
+          </div>
+
+          {/* Progress bar */}
+          <div className="bg-white border border-violet-100 rounded-xl px-4 py-3">
+            <div className="flex justify-between text-xs text-gray-500 mb-2">
+              <span>Paid out so far</span>
+              <span className="font-semibold text-violet-700">
+                {paidPct.toFixed(1)}%
+              </span>
+            </div>
+            <div className="w-full h-2 bg-violet-100 rounded-full overflow-hidden">
+              <div
+                className="h-full bg-violet-500 rounded-full transition-all duration-500"
+                style={{ width: `${paidPct}%` }}
+              />
+            </div>
+            <div className="flex justify-between text-xs mt-2">
+              <span className="text-rose-600 font-medium">
+                Paid: {fmt(totalPaid)}
+              </span>
+              <span
+                className={`font-medium ${
+                  leftAmount <= 0 ? "text-emerald-600" : "text-violet-700"
+                }`}
+              >
+                Left: {fmt(leftAmount)}
+              </span>
+            </div>
+          </div>
+
+          {/* Individual Payout Rows */}
+          <div className="space-y-2">
+            {rows.map((row, i) => (
+              <div
+                key={i}
+                className="bg-white border border-violet-100 rounded-xl p-4 flex items-start justify-between gap-4"
+              >
+                <div className="flex-1 min-w-0">
+                  <div className="flex flex-wrap items-center gap-2 mb-1">
+                    <span className="text-xs font-semibold bg-violet-100 text-violet-700 px-2 py-0.5 rounded-full">
+                      {row.pay_head || "OS Payout"}
+                    </span>
+                    {row.income_tax_deducted > 0 && (
+                      <span className="text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full">
+                        TDS: {fmt(row.income_tax_deducted)}
+                      </span>
+                    )}
+                  </div>
+
+                  <p className="text-base font-bold text-rose-600">
+                    − {fmt(row.netPaid)}
+                  </p>
+
+                  {row.income_tax_deducted > 0 && (
+                    <p className="text-xs text-gray-400 mt-0.5">
+                      Gross: {fmt(row.amount_paid)} − TDS:{" "}
+                      {fmt(row.income_tax_deducted)}
+                    </p>
+                  )}
+
+                  <div className="flex flex-wrap items-center gap-3 mt-1.5">
+                    <span className="text-xs text-gray-400 flex items-center gap-1">
+                      <Calendar className="w-3 h-3" />
+                      {fmtDate(row.payment_date)}
+                    </span>
+                    {row.payout_ref_no && (
+                      <span className="text-xs text-gray-400 font-mono">
+                        {row.payout_ref_no}
+                      </span>
+                    )}
+                  </div>
+
+                  {(row.payment_details || row.remarks) && (
+                    <p className="text-xs text-gray-500 mt-1.5 truncate">
+                      💬 {row.payment_details || row.remarks}
+                    </p>
+                  )}
+                </div>
+
+                {/* Running Balance */}
+                <div className="text-right flex-shrink-0">
+                  <p className="text-xs text-gray-400 mb-0.5">Balance Left</p>
+                  <p
+                    className={`font-bold text-sm ${
+                      row.runningBalance <= 0
+                        ? "text-emerald-600"
+                        : "text-violet-700"
+                    }`}
+                  >
+                    {fmt(Math.max(row.runningBalance, 0))}
+                  </p>
+                  {row.runningBalance < 0 && (
+                    <p className="text-xs text-emerald-500 mt-0.5">Overpaid</p>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Final Left Amount */}
+          <div
+            className={`flex items-center justify-between rounded-xl px-4 py-3 border-2 ${
+              leftAmount <= 0
+                ? "bg-emerald-50 border-emerald-200"
+                : "bg-violet-100 border-violet-200"
+            }`}
+          >
+            <span
+              className={`text-xs font-bold uppercase tracking-wide ${
+                leftAmount <= 0 ? "text-emerald-700" : "text-violet-800"
+              }`}
+            >
+              {leftAmount <= 0
+                ? "✅ Fully Disbursed"
+                : "Remaining to Disburse"}
+            </span>
+            <span
+              className={`font-bold text-base ${
+                leftAmount <= 0 ? "text-emerald-700" : "text-violet-800"
+              }`}
+            >
+              {fmt(leftAmount)}
+            </span>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
 // ─── MAIN COMPONENT ────────────────────────────────────────────────────────────
 const LedgerPage = () => {
   const [ledger, setLedger] = useState([]);
@@ -118,6 +343,8 @@ const LedgerPage = () => {
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [completeLoading, setCompleteLoading] = useState(false);
   const [isCompleted, setIsCompleted] = useState(false);
+  const [netInHand, setNetInHand] = useState(0);
+  const [osPayouts, setOsPayouts] = useState([]);
 
   // ── Get invoice from global state ──
   useEffect(() => {
@@ -134,15 +361,7 @@ const LedgerPage = () => {
     try {
       const { data: inv, error: invErr } = await supabase
         .from("invoices")
-        .select(
-          `
-          id,
-          invoice_value,
-          receivable_amount,
-          invoice_number,
-          is_completed
-        `
-        )
+        .select(`id, invoice_value, receivable_amount, invoice_number, is_completed, net_in_hand`)
         .eq("id", invoice.dbId)
         .single();
 
@@ -152,29 +371,21 @@ const LedgerPage = () => {
       }
 
       setOpening(inv.invoice_value);
+      setNetInHand(Number(inv.net_in_hand || 0));
       setIsCompleted(inv.is_completed || false);
 
       const [
         { data: payments },
         { data: paymentsMade },
-        { data: osPayouts },
-        { data: nonSalary },
+        { data: osPayoutsData },
         { data: bounces },
         { data: cns },
       ] = await Promise.all([
-        //------------------------------------------------
-        // PAYMENTS RECEIVED
-        //------------------------------------------------
-
         supabase
           .from("payments_received")
           .select("*")
           .eq("invoice_id", invoice.dbId)
           .order("payment_date", { ascending: true }),
-
-        //------------------------------------------------
-        // PAYMENTS MADE
-        //------------------------------------------------
 
         supabase
           .from("payments_made")
@@ -182,29 +393,11 @@ const LedgerPage = () => {
           .eq("invoice_id", invoice.dbId)
           .order("payment_date", { ascending: true }),
 
-        //------------------------------------------------
-        // OS PAYOUTS
-        //------------------------------------------------
-
         supabase
           .from("os_payouts")
           .select("*")
           .eq("invoice_id", invoice.dbId)
           .order("payment_date", { ascending: true }),
-
-        //------------------------------------------------
-        // NON SALARY EXPENSES
-        //------------------------------------------------
-
-        supabase
-          .from("non_salary_expenses")
-          .select("*")
-          .eq("invoice_id", invoice.dbId)
-          .order("expense_date", { ascending: true }),
-
-        //------------------------------------------------
-        // BOUNCE BACK
-        //------------------------------------------------
 
         supabase
           .from("bounce_back")
@@ -212,16 +405,15 @@ const LedgerPage = () => {
           .eq("invoice_id", invoice.dbId)
           .order("bounce_date", { ascending: true }),
 
-        //------------------------------------------------
-        // CREDIT NOTE / BAD DEBT
-        //------------------------------------------------
-
         supabase
           .from("credit_note_bad_debt")
           .select("*")
           .eq("invoice_id", invoice.dbId)
           .order("issue_date", { ascending: true }),
       ]);
+
+      // ── Store OS payouts separately for dedicated section ──
+      setOsPayouts(osPayoutsData || []);
 
       let rows = [];
 
@@ -237,77 +429,38 @@ const LedgerPage = () => {
 
       paymentsMade?.forEach((p) => {
         const amt = Number(p.transfer_amount || p.amount || 0);
-
         rows.push({
           type: p.is_billable ? "Billable Expense" : "Payment Made",
-
           amount: p.is_billable ? +amt : 0,
-
           displayAmount: amt,
-
           date: p.payment_date,
-
           ref: null,
-
           remarks: p.payment_description || p.expense_remarks || p.remarks,
-
           expenseHead: p.pay_head,
-
           isBillable: p.is_billable,
         });
       });
 
-      //------------------------------------------------
-      // OS PAYOUTS
-      //------------------------------------------------
-
-      osPayouts?.forEach((p) => {
+      // NOTE: OS Payouts are shown in their own dedicated section below,
+      // but billable ones still affect the invoice outstanding balance
+      osPayoutsData?.forEach((p) => {
         const netAmount =
           Number(p.amount_paid || 0) - Number(p.income_tax_deducted || 0);
-
-        rows.push({
-          type: p.is_billable ? "Billable Expense" : "Payment Made",
-
-          amount: p.is_billable ? +Math.max(netAmount, 0) : 0,
-
-          displayAmount: Math.max(netAmount, 0),
-
-          date: p.payment_date,
-
-          ref: p.payout_ref || null,
-
-          remarks: p.payment_details || p.remarks,
-
-          expenseHead: p.pay_head,
-
-          isBillable: p.is_billable,
-        });
-      });
-
-      //------------------------------------------------
-      // NON SALARY EXPENSES
-      //------------------------------------------------
-
-      nonSalary?.forEach((p) => {
-        const amt = Number(p.amount || 0);
-
-        rows.push({
-          type: p.is_billable ? "Billable Expense" : "Payment Made",
-
-          amount: p.is_billable ? +amt : 0,
-
-          displayAmount: amt,
-
-          date: p.expense_date || p.created_at,
-
-          ref: null,
-
-          remarks: p.remarks,
-
-          expenseHead: p.expense_head,
-
-          isBillable: p.is_billable,
-        });
+        if (p.is_billable) {
+          rows.push({
+            type: "Billable Expense",
+            amount: +Math.max(netAmount, 0),
+            displayAmount: Math.max(netAmount, 0),
+            date: p.payment_date,
+            ref: p.payout_ref_no || null,
+            remarks: p.payment_details || p.remarks,
+            expenseHead: p.pay_head,
+            isBillable: true,
+            isOsPayout: true,
+          });
+        }
+        // Non-billable OS payouts do NOT appear in invoice ledger
+        // They are tracked separately in the OS Payouts section
       });
 
       bounces?.forEach((b) =>
@@ -350,39 +503,17 @@ const LedgerPage = () => {
   // ── COMPLETE/UNCOMPLETE INVOICE ─────────────────────────────────────────────
   const handleCompleteInvoice = async () => {
     if (!invoice?.dbId) return;
-
     setCompleteLoading(true);
-
     try {
       const rpc = isCompleted ? "uncomplete_invoice" : "complete_invoice";
-
-      const { error } = await supabase.rpc(rpc, {
-        p_invoice_id: invoice.dbId,
-      });
-
+      const { error } = await supabase.rpc(rpc, { p_invoice_id: invoice.dbId });
       if (error) throw error;
-
       setIsCompleted(!isCompleted);
       await fetchLedger();
-
-      if (window.refreshDashboard) {
-        await window.refreshDashboard();
-      }
-
-      alert(
-        isCompleted
-          ? "Invoice moved back to active."
-          : "Invoice marked completed."
-      );
-
-      fetchLedger();
-
-      if (window.refreshDashboard) {
-        window.refreshDashboard();
-      }
+      if (window.refreshDashboard) await window.refreshDashboard();
+      alert(isCompleted ? "Invoice moved back to active." : "Invoice marked completed.");
     } catch (err) {
       console.error(err);
-
       alert(err.message);
     } finally {
       setCompleteLoading(false);
@@ -392,10 +523,8 @@ const LedgerPage = () => {
   // ── DELETE INVOICE ──────────────────────────────────────────────────────────
   const handleDeleteInvoice = async () => {
     if (!invoice?.dbId) return;
-    console.log("Deleting dbId:", invoice.dbId, "| invoice.id:", invoice.id);
     setDeleteLoading(true);
     try {
-      // Resolve dbId safely in case it's missing
       let invoiceDbId = invoice.dbId;
       if (!invoiceDbId && invoice.id) {
         const { data } = await supabase
@@ -405,22 +534,14 @@ const LedgerPage = () => {
           .single();
         invoiceDbId = data?.id;
       }
-
       if (!invoiceDbId) throw new Error("Could not resolve invoice ID");
-
       const { error } = await supabase.rpc("delete_invoice_complete", {
         p_invoice_id: invoiceDbId,
       });
-
       if (error) throw error;
-
       setShowDeleteModal(false);
       window.ledgerInvoice = null;
-
-      if (window.refreshDashboard) {
-        await window.refreshDashboard();
-      }
-
+      if (window.refreshDashboard) await window.refreshDashboard();
       window.setActiveTab?.("dashboard");
     } catch (err) {
       console.error("Delete invoice error:", err);
@@ -475,7 +596,6 @@ const LedgerPage = () => {
           </div>
         </div>
 
-        {/* ── Action Buttons ── */}
         <div className="flex items-center gap-2">
           <button
             onClick={handleCompleteInvoice}
@@ -487,12 +607,7 @@ const LedgerPage = () => {
             }`}
           >
             <CheckCircle2 className="w-4 h-4" />
-
-            {completeLoading
-              ? "Updating..."
-              : isCompleted
-              ? "Move To Active"
-              : "Mark Complete"}
+            {completeLoading ? "Updating..." : isCompleted ? "Move To Active" : "Mark Complete"}
           </button>
 
           <button
@@ -556,6 +671,141 @@ const LedgerPage = () => {
         </div>
       </div>
 
+      {/* ── Net in Hand Summary (only when OS payouts exist) ── */}
+      {osPayouts.length > 0 && (
+        <div className="grid grid-cols-3 gap-3 mb-6">
+          <div className="bg-violet-50 border border-violet-200 rounded-2xl p-3 text-center">
+            <p className="text-xs text-violet-600 font-semibold uppercase tracking-wider mb-1">
+              Net in Hand
+            </p>
+            <p className="text-lg font-bold text-violet-700">{fmt(netInHand)}</p>
+            <p className="text-xs text-violet-400 mt-0.5">Total to disburse</p>
+          </div>
+          <div className="bg-rose-50 border border-rose-100 rounded-2xl p-3 text-center">
+            <p className="text-xs text-rose-600 font-semibold uppercase tracking-wider mb-1">
+              OS Paid Out
+            </p>
+            <p className="text-lg font-bold text-rose-700">
+              {fmt(
+                osPayouts.reduce(
+                  (s, p) =>
+                    s +
+                    Math.max(
+                      Number(p.amount_paid || 0) -
+                        Number(p.income_tax_deducted || 0),
+                      0
+                    ),
+                  0
+                )
+              )}
+            </p>
+            <p className="text-xs text-rose-400 mt-0.5">3rd party paid</p>
+          </div>
+          <div
+            className={`rounded-2xl p-3 text-center border ${
+              Math.max(
+                netInHand -
+                  osPayouts.reduce(
+                    (s, p) =>
+                      s +
+                      Math.max(
+                        Number(p.amount_paid || 0) -
+                          Number(p.income_tax_deducted || 0),
+                        0
+                      ),
+                    0
+                  ),
+                0
+              ) === 0
+                ? "bg-emerald-50 border-emerald-100"
+                : "bg-amber-50 border-amber-100"
+            }`}
+          >
+            <p
+              className={`text-xs font-semibold uppercase tracking-wider mb-1 ${
+                Math.max(
+                  netInHand -
+                    osPayouts.reduce(
+                      (s, p) =>
+                        s +
+                        Math.max(
+                          Number(p.amount_paid || 0) -
+                            Number(p.income_tax_deducted || 0),
+                          0
+                        ),
+                      0
+                    ),
+                  0
+                ) === 0
+                  ? "text-emerald-600"
+                  : "text-amber-600"
+              }`}
+            >
+              Left to Pay
+            </p>
+            <p
+              className={`text-lg font-bold ${
+                Math.max(
+                  netInHand -
+                    osPayouts.reduce(
+                      (s, p) =>
+                        s +
+                        Math.max(
+                          Number(p.amount_paid || 0) -
+                            Number(p.income_tax_deducted || 0),
+                          0
+                        ),
+                      0
+                    ),
+                  0
+                ) === 0
+                  ? "text-emerald-700"
+                  : "text-amber-700"
+              }`}
+            >
+              {fmt(
+                Math.max(
+                  netInHand -
+                    osPayouts.reduce(
+                      (s, p) =>
+                        s +
+                        Math.max(
+                          Number(p.amount_paid || 0) -
+                            Number(p.income_tax_deducted || 0),
+                          0
+                        ),
+                      0
+                    ),
+                  0
+                )
+              )}
+            </p>
+            <p
+              className={`text-xs mt-0.5 ${
+                Math.max(
+                  netInHand -
+                    osPayouts.reduce(
+                      (s, p) =>
+                        s +
+                        Math.max(
+                          Number(p.amount_paid || 0) -
+                            Number(p.income_tax_deducted || 0),
+                          0
+                        ),
+                      0
+                    ),
+                  0
+                ) === 0
+                  ? "text-emerald-400"
+                  : "text-amber-400"
+              }`}
+            >
+              Pending disbursal
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* ── Legend ── */}
       <div className="flex flex-wrap gap-2 mb-4">
         {Object.entries(TYPE_CONFIG).map(([type, cfg]) => (
@@ -568,7 +818,7 @@ const LedgerPage = () => {
         ))}
       </div>
 
-      {/* ── Ledger Rows ── */}
+      {/* ── Invoice Ledger Rows ── */}
       {loading ? (
         <div className="text-center py-16 text-gray-400">
           <RefreshCw className="w-8 h-8 animate-spin mx-auto mb-3 opacity-40" />
@@ -578,9 +828,7 @@ const LedgerPage = () => {
         <div className="text-center py-16 text-gray-400 bg-gray-50 rounded-2xl">
           <AlertCircle className="w-10 h-10 mx-auto mb-3 opacity-30" />
           <p className="font-medium">No transactions found</p>
-          <p className="text-sm mt-1">
-            Payments and adjustments will appear here
-          </p>
+          <p className="text-sm mt-1">Payments and adjustments will appear here</p>
         </div>
       ) : (
         <div className="space-y-3">
@@ -601,14 +849,17 @@ const LedgerPage = () => {
 
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 mb-1">
-                      <span
-                        className={`text-xs font-semibold px-2 py-0.5 rounded-full ${cfg.badge}`}
-                      >
+                      <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${cfg.badge}`}>
                         {row.type}
                       </span>
                       {row.isBillable && (
                         <span className="text-xs bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full">
                           Billable
+                        </span>
+                      )}
+                      {row.isOsPayout && (
+                        <span className="text-xs bg-violet-100 text-violet-700 px-2 py-0.5 rounded-full">
+                          OS Payout
                         </span>
                       )}
                     </div>
@@ -673,9 +924,7 @@ const LedgerPage = () => {
                       {fmt(Math.max(row.balance, 0))}
                     </p>
                     {row.balance < 0 && (
-                      <p className="text-xs text-emerald-500 mt-0.5">
-                        Overpaid
-                      </p>
+                      <p className="text-xs text-emerald-500 mt-0.5">Overpaid</p>
                     )}
                   </div>
                 </div>
@@ -684,6 +933,9 @@ const LedgerPage = () => {
           })}
         </div>
       )}
+
+      {/* ── OS PAYOUTS DEDICATED SECTION ── */}
+      <OSPayoutsSection osPayouts={osPayouts} netInHand={netInHand} />
 
       {/* ── Footer Summary ── */}
       {ledger.length > 0 && (

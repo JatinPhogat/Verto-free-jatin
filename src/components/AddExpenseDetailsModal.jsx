@@ -810,6 +810,7 @@ const AddExpenseDetailsModal = ({ isOpen, onClose, onSaved, editData, invoice })
                   <div className="flex gap-3 mt-3 flex-wrap">
                     {[
                       { label: "Ops 100%",     fn: () => setForm((p) => ({ ...p, costHeadBreakup: { ops:100, temp:0, recruitment:0, projects:0, others:0 } })) },
+                      { label: "Ops-Temp 50-50", fn: () => setForm((p) => ({ ...p, costHeadBreakup: { ops:50, temp:50, recruitment:0, projects:0, others:0 } })) },
                       { label: "Split equally", fn: () => { const e = Math.floor(100/5); setForm((p) => ({ ...p, costHeadBreakup: { ops:e, temp:e, recruitment:e, projects:e, others:100-e*4 } })); } },
                       { label: "Reset",         fn: () => setForm((p) => ({ ...p, costHeadBreakup: { ops:0, temp:0, recruitment:0, projects:0, others:0 } })) },
                     ].map((b) => (
