@@ -1,28 +1,171 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useMemo } from "react";
 import supabase from "../lib/supabaseClient";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   X, ArrowRight, AlertCircle, FileX, Eye, Trash2, Loader2,
-  ChevronLeft, CheckCircle2, RefreshCcw, Building2, CreditCard,
-  Hash, BadgeCheck, XCircle,
+  ChevronLeft, CheckCircle2, RefreshCcw, Building2,
+  Hash, BadgeCheck, XCircle, Search, ChevronDown,
+  ArrowUpDown, ArrowUp, ArrowDown, Filter, Calendar,
+  SlidersHorizontal, Users,
 } from "lucide-react";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
-const fmt = (v) => Number(v || 0).toLocaleString("en-IN");
-const num = (v) => parseFloat(v || 0);
+const fmt  = (v) => Number(v || 0).toLocaleString("en-IN");
+const num  = (v) => parseFloat(v || 0);
 
-// ─── Invoice Detail Card shown after lookup ───────────────────────────────────
+// ─── Searchable Invoice Dropdown ──────────────────────────────────────────────
+const SearchableInvoiceDropdown = ({ invoiceList, value, onChange, disabled }) => {
+  const [open,   setOpen]   = useState(false);
+  const [query,  setQuery]  = useState("");
+  const containerRef        = useRef(null);
+  const inputRef            = useRef(null);
+
+  // close on outside click
+  useEffect(() => {
+    const handler = (e) => {
+      if (containerRef.current && !containerRef.current.contains(e.target)) {
+        setOpen(false);
+        setQuery("");
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, []);
+
+  const filtered = useMemo(() => {
+    if (!query.trim()) return invoiceList.slice(0, 80);
+    const q = query.toLowerCase();
+    return invoiceList
+      .filter(
+        (inv) =>
+          inv.invoice_number?.toLowerCase().includes(q) ||
+          inv.client_name?.toLowerCase().includes(q) ||
+          inv.ledger_name?.toLowerCase().includes(q) ||
+          inv.entity_name?.toLowerCase().includes(q)
+      )
+      .slice(0, 60);
+  }, [invoiceList, query]);
+
+  const selected = invoiceList.find((i) => i.invoice_number === value);
+
+  const handleSelect = (inv) => {
+    onChange(inv.invoice_number);
+    setOpen(false);
+    setQuery("");
+  };
+
+  return (
+    <div ref={containerRef} className="relative">
+      {/* Trigger */}
+      <button
+        type="button"
+        disabled={disabled}
+        onClick={() => {
+          setOpen((o) => !o);
+          setTimeout(() => inputRef.current?.focus(), 50);
+        }}
+        className={`w-full flex items-center justify-between gap-2 bg-white border-2 rounded-xl px-3.5 py-2.5 text-sm font-medium transition-all
+          ${disabled ? "opacity-50 cursor-not-allowed border-gray-100" : "cursor-pointer hover:border-violet-300 border-gray-200"}
+          ${open ? "border-violet-500 ring-4 ring-violet-500/10" : ""}
+        `}
+      >
+        <span className={selected ? "text-gray-900 font-semibold" : "text-gray-400"}>
+          {selected
+            ? `${selected.invoice_number} — ${selected.client_name}`
+            : "Search by invoice no., client or ledger…"}
+        </span>
+        <ChevronDown className={`w-4 h-4 text-gray-400 flex-shrink-0 transition-transform ${open ? "rotate-180" : ""}`} />
+      </button>
+
+      {/* Dropdown */}
+      <AnimatePresence>
+        {open && (
+          <motion.div
+            initial={{ opacity: 0, y: -6, scale: 0.98 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -6, scale: 0.98 }}
+            transition={{ duration: 0.12 }}
+            className="absolute left-0 right-0 top-full mt-1.5 z-50 bg-white border-2 border-violet-200 rounded-2xl shadow-2xl overflow-hidden"
+          >
+            {/* Search inside dropdown */}
+            <div className="p-2.5 border-b border-gray-100 bg-violet-50/40">
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
+                <input
+                  ref={inputRef}
+                  type="text"
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  placeholder="Type invoice no., client name…"
+                  className="w-full pl-8 pr-3 py-2 text-sm bg-white border border-gray-200 rounded-xl outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-500/10"
+                />
+              </div>
+            </div>
+
+            {/* List */}
+            <div className="max-h-64 overflow-y-auto">
+              {filtered.length === 0 ? (
+                <div className="py-8 text-center text-gray-400 text-xs font-medium">
+                  No invoices match "{query}"
+                </div>
+              ) : (
+                filtered.map((inv) => (
+                  <button
+                    key={inv.id}
+                    type="button"
+                    onClick={() => handleSelect(inv)}
+                    className={`w-full text-left flex items-start gap-3 px-4 py-2.5 hover:bg-violet-50 transition-colors border-b border-gray-50 last:border-b-0
+                      ${inv.invoice_number === value ? "bg-violet-50" : ""}
+                    `}
+                  >
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-bold text-xs text-violet-700 font-mono">{inv.invoice_number}</span>
+                        <span className="text-[10px] text-gray-400">·</span>
+                        <span className="text-xs font-semibold text-gray-800 truncate">{inv.client_name}</span>
+                      </div>
+                      <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                        <span className="text-[10px] text-gray-400">{inv.entity_name}</span>
+                        {inv.dept_name && (
+                          <>
+                            <span className="text-[10px] text-gray-300">·</span>
+                            <span className="text-[10px] text-gray-400">{inv.dept_name}</span>
+                          </>
+                        )}
+                        <span className="text-[10px] text-gray-300">·</span>
+                        <span className={`text-[10px] font-bold ${num(inv.outstanding) > 0 ? "text-emerald-600" : "text-gray-400"}`}>
+                          OS: ₹{fmt(inv.outstanding)}
+                        </span>
+                      </div>
+                    </div>
+                    {inv.invoice_number === value && (
+                      <CheckCircle2 className="w-4 h-4 text-violet-500 flex-shrink-0 mt-0.5" />
+                    )}
+                  </button>
+                ))
+              )}
+            </div>
+
+            <div className="px-4 py-2 bg-gray-50 border-t border-gray-100 text-[10px] text-gray-400">
+              {filtered.length} of {invoiceList.length} invoices
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+};
+
+// ─── Invoice Detail Card ──────────────────────────────────────────────────────
+// Uses net_* columns so CN-adjusted values show correctly
 const InvoiceCard = ({ d }) => (
   <motion.div
     initial={{ opacity: 0, y: -6 }}
     animate={{ opacity: 1, y: 0 }}
     className="mt-3 rounded-xl border border-blue-200 bg-white shadow-sm overflow-hidden"
   >
-    {/* top strip */}
     <div className="bg-blue-600 px-4 py-2 flex items-center justify-between">
-      <span className="text-white text-xs font-bold tracking-wide">
-        {d.invoiceNumber}
-      </span>
+      <span className="text-white text-xs font-bold tracking-wide">{d.invoiceNumber}</span>
       <div className="flex items-center gap-2">
         {d.bankName && (
           <span className="flex items-center gap-1 text-blue-100 text-[10px]">
@@ -35,32 +178,33 @@ const InvoiceCard = ({ d }) => (
       </div>
     </div>
 
-    {/* client + dept row */}
     <div className="px-4 py-2 bg-blue-50 border-b border-blue-100 flex items-center gap-4">
       <span className="text-xs font-semibold text-blue-900">{d.client}</span>
-      <span className="text-[10px] text-blue-500">·</span>
+      <span className="text-[10px] text-blue-400">·</span>
       <span className="text-xs text-blue-700">{d.department}</span>
-      <span className="text-[10px] text-blue-500">·</span>
+      <span className="text-[10px] text-blue-400">·</span>
       <span className="text-xs text-blue-500">{d.ledger}</span>
     </div>
 
-    {/* amounts grid */}
+    {/* Net amounts (CN-adjusted) */}
     <div className="grid grid-cols-5 divide-x divide-gray-100 text-center">
       {[
-        { label: "Pay", value: d.pay, color: "text-gray-800" },
-        { label: "Verto Fee", value: d.vertoFee, color: "text-violet-600" },
-        { label: "GST", value: d.gst, color: "text-amber-600" },
-        { label: "TDS", value: d.tds, color: "text-rose-600" },
-        { label: "Outstanding", value: d.amountPayable, color: "text-emerald-600" },
-      ].map(({ label, value, color }) => (
+        { label: "Net Pay",      value: d.netPay,      color: "text-gray-800",   orig: d.pay,      origLabel: "pay" },
+        { label: "Net Verto",    value: d.netVertoFee, color: "text-violet-600", orig: d.vertoFee, origLabel: "verto" },
+        { label: "Net GST",      value: d.netGst,      color: "text-amber-600",  orig: d.gst,      origLabel: "gst" },
+        { label: "Net TDS",      value: d.netTds,      color: "text-rose-600",   orig: d.tds,      origLabel: "tds" },
+        { label: "Outstanding",  value: d.amountPayable, color: "text-emerald-600", orig: null },
+      ].map(({ label, value, color, orig, origLabel }) => (
         <div key={label} className="py-2.5 px-1">
           <p className="text-[9px] uppercase tracking-wider text-gray-400 font-semibold">{label}</p>
           <p className={`text-xs font-bold mt-0.5 ${color}`}>₹{fmt(value)}</p>
+          {orig !== null && num(orig) !== num(value) && (
+            <p className="text-[8px] text-gray-400 line-through mt-0.5">₹{fmt(orig)}</p>
+          )}
         </div>
       ))}
     </div>
 
-    {/* existing CN row */}
     {d.cnAmount > 0 && (
       <div className="px-4 py-1.5 bg-violet-50 border-t border-violet-100 text-xs text-violet-700 font-medium">
         Existing CN/BD: ₹{fmt(d.cnAmount)} already applied
@@ -69,13 +213,20 @@ const InvoiceCard = ({ d }) => (
   </motion.div>
 );
 
-// ─── Records Panel ────────────────────────────────────────────────────────────
+// ─── CN Records Panel ─────────────────────────────────────────────────────────
 const CNRecordsPanel = ({ onClose }) => {
-  const [records, setRecords]       = useState([]);
-  const [loading, setLoading]       = useState(true);
+  const [records,    setRecords]    = useState([]);
+  const [loading,    setLoading]    = useState(true);
   const [deletingId, setDeletingId] = useState(null);
-  const [confirmId, setConfirmId]   = useState(null);
-  const [toast, setToast]           = useState(null);
+  const [confirmId,  setConfirmId]  = useState(null);
+  const [toast,      setToast]      = useState(null);
+
+  // Filters
+  const [search,      setSearch]      = useState("");
+  const [filterType,  setFilterType]  = useState("All");   // All | CN | Bad Debt
+  const [filterMonth, setFilterMonth] = useState("All");
+  const [sortField,   setSortField]   = useState("created_at");
+  const [sortDir,     setSortDir]     = useState("desc");
 
   const showToast = (msg, type = "success") => {
     setToast({ msg, type });
@@ -89,7 +240,7 @@ const CNRecordsPanel = ({ onClose }) => {
       .select(`
         id, reference_no, invoice_number, type, amount,
         pay_cn, verto_fee_cn, gst_cn, tds_cn,
-        issue_date, entity, bank_name, remarks, invoice_id,
+        issue_date, entity, bank_name, remarks, invoice_id, created_at,
         invoices ( invoice_number, client_id, clients_master ( client_name ) )
       `)
       .order("created_at", { ascending: false });
@@ -115,7 +266,86 @@ const CNRecordsPanel = ({ onClose }) => {
     }
   };
 
-  const totalAmount = records.reduce((s, r) => s + num(r.amount), 0);
+  // Unique months for filter
+  const allMonths = useMemo(() => {
+    const set = new Set();
+    records.forEach((r) => {
+      if (r.issue_date) {
+        const d = new Date(r.issue_date);
+        set.add(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`);
+      }
+    });
+    return Array.from(set).sort((a, b) => b.localeCompare(a));
+  }, [records]);
+
+  const formatMonth = (key) => {
+    const [yr, mo] = key.split("-");
+    const names = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+    return `${names[parseInt(mo) - 1]} ${yr}`;
+  };
+
+  // Sort toggle
+  const toggleSort = (field) => {
+    if (sortField === field) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    else { setSortField(field); setSortDir("desc"); }
+  };
+  const SortIcon = ({ field }) => {
+    if (sortField !== field) return <ArrowUpDown className="w-3 h-3 text-gray-400" />;
+    return sortDir === "asc"
+      ? <ArrowUp className="w-3 h-3 text-violet-500" />
+      : <ArrowDown className="w-3 h-3 text-violet-500" />;
+  };
+
+  // Filter + sort
+  const processed = useMemo(() => {
+    let list = [...records];
+
+    // search
+    if (search.trim()) {
+      const q = search.toLowerCase();
+      list = list.filter(
+        (r) =>
+          r.reference_no?.toLowerCase().includes(q) ||
+          r.invoice_number?.toLowerCase().includes(q) ||
+          r.invoices?.clients_master?.client_name?.toLowerCase().includes(q) ||
+          r.entity?.toLowerCase().includes(q) ||
+          r.bank_name?.toLowerCase().includes(q) ||
+          r.remarks?.toLowerCase().includes(q)
+      );
+    }
+    // type filter
+    if (filterType !== "All") list = list.filter((r) => r.type === filterType);
+    // month filter
+    if (filterMonth !== "All") {
+      list = list.filter((r) => {
+        if (!r.issue_date) return false;
+        const d = new Date(r.issue_date);
+        const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+        return key === filterMonth;
+      });
+    }
+
+    // sort
+    list.sort((a, b) => {
+      let av, bv;
+      if (sortField === "amount")     { av = num(a.amount);     bv = num(b.amount); }
+      else if (sortField === "issue_date") { av = a.issue_date || ""; bv = b.issue_date || ""; }
+      else if (sortField === "client") {
+        av = a.invoices?.clients_master?.client_name || "";
+        bv = b.invoices?.clients_master?.client_name || "";
+      }
+      else if (sortField === "invoice_number") { av = a.invoice_number || ""; bv = b.invoice_number || ""; }
+      else { av = a.created_at || ""; bv = b.created_at || ""; }
+
+      if (av < bv) return sortDir === "asc" ? -1 : 1;
+      if (av > bv) return sortDir === "asc" ? 1 : -1;
+      return 0;
+    });
+
+    return list;
+  }, [records, search, filterType, filterMonth, sortField, sortDir]);
+
+  const totalAmount = processed.reduce((s, r) => s + num(r.amount), 0);
 
   return (
     <motion.div
@@ -128,71 +358,156 @@ const CNRecordsPanel = ({ onClose }) => {
       {/* Header */}
       <div className="bg-gradient-to-r from-violet-600 to-purple-700 px-5 py-4 text-white flex items-center justify-between flex-shrink-0">
         <div className="flex items-center gap-3">
-          <button onClick={onClose} className="flex items-center gap-1 text-violet-100 hover:text-white transition-colors">
+          <button
+            onClick={onClose}
+            className="flex items-center gap-1 text-violet-100 hover:text-white transition-colors"
+          >
             <ChevronLeft className="w-4 h-4" />
             <span className="text-xs font-semibold">Back</span>
           </button>
           <div className="w-px h-4 bg-white/30" />
           <div>
             <h3 className="text-sm font-bold">CN / Bad Debt Records</h3>
-            <p className="text-violet-200 text-xs">{records.length} total · ₹{fmt(totalAmount)}</p>
+            <p className="text-violet-200 text-xs">
+              {processed.length} of {records.length} · ₹{fmt(totalAmount)}
+            </p>
           </div>
         </div>
-        <button onClick={onClose} className="text-violet-100 hover:text-white">
-          <X className="w-5 h-5" />
+        <button onClick={fetchRecords} className="text-violet-100 hover:text-white">
+          <RefreshCcw className="w-4 h-4" />
         </button>
       </div>
 
-      {/* List */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-2">
+      {/* ── Filters bar ── */}
+      <div className="flex-shrink-0 bg-violet-50/50 border-b border-violet-100 px-4 py-3 space-y-2.5">
+        {/* Search */}
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
+          <input
+            type="text"
+            placeholder="Search ref no., invoice, client, entity, bank…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="w-full pl-8 pr-3 py-2 text-xs bg-white border-2 border-gray-100 rounded-xl outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-500/10"
+          />
+        </div>
+
+        {/* Filter chips + sort */}
+        <div className="flex items-center gap-2 flex-wrap">
+          {/* Type */}
+          <div className="flex items-center gap-1 bg-white border border-gray-200 rounded-xl p-1">
+            {["All", "CN", "Bad Debt"].map((t) => (
+              <button
+                key={t}
+                onClick={() => setFilterType(t)}
+                className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition-all ${
+                  filterType === t
+                    ? t === "Bad Debt"
+                      ? "bg-red-500 text-white"
+                      : "bg-violet-600 text-white"
+                    : "text-gray-500 hover:text-gray-700"
+                }`}
+              >
+                {t}
+              </button>
+            ))}
+          </div>
+
+          {/* Month */}
+          <select
+            value={filterMonth}
+            onChange={(e) => setFilterMonth(e.target.value)}
+            className="text-[10px] font-bold border border-gray-200 rounded-xl px-2.5 py-1.5 bg-white text-gray-600 outline-none focus:border-violet-400"
+          >
+            <option value="All">All Months</option>
+            {allMonths.map((m) => (
+              <option key={m} value={m}>{formatMonth(m)}</option>
+            ))}
+          </select>
+
+          {/* Sort buttons */}
+          <div className="ml-auto flex items-center gap-1 bg-white border border-gray-200 rounded-xl p-1">
+            <SlidersHorizontal className="w-3 h-3 text-gray-400 ml-1" />
+            {[
+              { field: "created_at",    label: "Date" },
+              { field: "amount",        label: "Amt" },
+              { field: "client",        label: "Client" },
+              { field: "invoice_number",label: "Inv" },
+            ].map(({ field, label }) => (
+              <button
+                key={field}
+                onClick={() => toggleSort(field)}
+                className={`flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-bold transition-all ${
+                  sortField === field ? "bg-violet-100 text-violet-700" : "text-gray-400 hover:text-gray-600"
+                }`}
+              >
+                {label} <SortIcon field={field} />
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* ── List ── */}
+      <div className="flex-1 overflow-y-auto bg-gray-50/50">
         {loading ? (
           <div className="flex items-center justify-center py-16 text-gray-400">
             <Loader2 className="w-5 h-5 animate-spin mr-2" /> Loading...
           </div>
-        ) : records.length === 0 ? (
+        ) : processed.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-16 text-gray-400">
-            <RefreshCcw className="w-8 h-8 mb-2 opacity-30" />
-            <p className="text-sm">No CN / Bad Debt records yet</p>
+            <Filter className="w-8 h-8 mb-2 opacity-30" />
+            <p className="text-sm font-semibold">No records match filters</p>
+            <button
+              onClick={() => { setSearch(""); setFilterType("All"); setFilterMonth("All"); }}
+              className="mt-2 text-xs text-violet-500 hover:underline"
+            >
+              Clear filters
+            </button>
           </div>
         ) : (
-          records.map((row) => {
-            const clientName = row.invoices?.clients_master?.client_name || "—";
+          processed.map((row) => {
+            const clientName  = row.invoices?.clients_master?.client_name || "—";
             const hasBreakdown = num(row.pay_cn) + num(row.verto_fee_cn) + num(row.gst_cn) + num(row.tds_cn) > 0;
+            const isBadDebt   = row.type === "Bad Debt";
+
             return (
               <div
                 key={row.id}
-                className={`bg-white border border-gray-100 rounded-xl shadow-sm transition-opacity overflow-hidden ${
+                className={`bg-white border-b border-gray-100 transition-opacity overflow-hidden ${
                   deletingId === row.id ? "opacity-40 pointer-events-none" : ""
                 }`}
               >
                 {/* top bar */}
                 <div className={`px-3.5 py-2 flex items-center justify-between ${
-                  row.type === "Bad Debt" ? "bg-red-50 border-b border-red-100" : "bg-violet-50 border-b border-violet-100"
+                  isBadDebt ? "bg-red-50 border-b border-red-100" : "bg-violet-50 border-b border-violet-100"
                 }`}>
                   <div className="flex items-center gap-2 flex-wrap">
-                    {/* USER-ENTERED REF NO — prominent */}
                     <span className={`font-mono text-xs font-bold px-2.5 py-0.5 rounded-lg flex items-center gap-1 ${
-                      row.type === "Bad Debt"
-                        ? "bg-red-600 text-white"
-                        : "bg-violet-600 text-white"
+                      isBadDebt ? "bg-red-600 text-white" : "bg-violet-600 text-white"
                     }`}>
                       <Hash className="w-3 h-3" />
                       {row.reference_no || row.id?.slice(0, 8) || "—"}
                     </span>
                     <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
-                      row.type === "Bad Debt"
-                        ? "bg-red-50 text-red-600 border-red-200"
-                        : "bg-violet-50 text-violet-600 border-violet-200"
+                      isBadDebt ? "bg-red-50 text-red-600 border-red-200" : "bg-violet-50 text-violet-600 border-violet-200"
                     }`}>
                       {row.type}
                     </span>
+                    {row.issue_date && (
+                      <span className="text-[10px] text-gray-400 flex items-center gap-1">
+                        <Calendar className="w-2.5 h-2.5" />
+                        {new Date(row.issue_date).toLocaleDateString("en-IN", {
+                          day: "2-digit", month: "short", year: "numeric",
+                        })}
+                      </span>
+                    )}
                   </div>
                   <span className="font-bold text-gray-800 text-sm">₹{fmt(row.amount)}</span>
                 </div>
 
                 {/* body */}
                 <div className="px-3.5 py-2.5">
-                  {/* invoice + client */}
                   <div className="flex items-center gap-2 flex-wrap mb-1.5">
                     <span className="text-xs font-semibold text-gray-800">
                       {row.invoice_number || row.invoices?.invoice_number || "—"}
@@ -243,15 +558,8 @@ const CNRecordsPanel = ({ onClose }) => {
 
                   <div className="flex items-center justify-between gap-2">
                     <div className="flex items-center gap-2 flex-wrap">
-                      {row.issue_date && (
-                        <span className="text-[10px] text-gray-400">
-                          {new Date(row.issue_date).toLocaleDateString("en-IN", {
-                            day: "2-digit", month: "short", year: "numeric",
-                          })}
-                        </span>
-                      )}
                       {row.remarks && (
-                        <span className="text-[10px] text-gray-400 italic truncate max-w-[150px]">
+                        <span className="text-[10px] text-gray-400 italic truncate max-w-[200px]">
                           {row.remarks}
                         </span>
                       )}
@@ -265,13 +573,13 @@ const CNRecordsPanel = ({ onClose }) => {
                         <div className="flex items-center gap-1.5">
                           <button
                             onClick={() => handleDelete(row.id)}
-                            className="px-2.5 py-1 bg-red-600 text-white text-xs font-bold rounded-lg hover:bg-red-700 transition-colors"
+                            className="px-2.5 py-1 bg-red-600 text-white text-[11px] font-black rounded-lg hover:bg-red-700 transition-colors"
                           >
                             Confirm
                           </button>
                           <button
                             onClick={() => setConfirmId(null)}
-                            className="px-2 py-1 border border-gray-200 text-gray-500 text-xs rounded-lg hover:bg-gray-50 transition-colors"
+                            className="px-2 py-1 border border-gray-200 text-gray-500 text-[11px] rounded-lg hover:bg-gray-50 transition-colors"
                           >
                             Cancel
                           </button>
@@ -291,6 +599,16 @@ const CNRecordsPanel = ({ onClose }) => {
             );
           })
         )}
+      </div>
+
+      {/* Summary footer */}
+      <div className="flex-shrink-0 border-t border-violet-100 bg-violet-50 px-4 py-2.5 flex items-center justify-between">
+        <span className="text-xs text-violet-700 font-bold">
+          {processed.length} records shown
+        </span>
+        <span className="text-sm font-black text-violet-800">
+          Total: ₹{fmt(totalAmount)}
+        </span>
       </div>
 
       {/* Toast */}
@@ -317,7 +635,7 @@ const CNRecordsPanel = ({ onClose }) => {
 const AddCNBadDebtModal = ({
   isOpen,
   onClose,
-  invoices = [],
+  invoices = [],           // array of invoice_number strings (kept for legacy compat)
   paymentReferences = [],
   editData,
 }) => {
@@ -325,7 +643,7 @@ const AddCNBadDebtModal = ({
     invoiceOrRef:  "",
     optionType:    "CN",
     dateIssued:    "",
-    referenceNo:   "",          // ← user enters this
+    referenceNo:   "",
     payCN:         "",
     vertoFeeCN:    "",
     gstCN:         "",
@@ -334,14 +652,28 @@ const AddCNBadDebtModal = ({
     remarks:       "",
   };
 
-  const [formData, setFormData]               = useState(EMPTY);
-  const [errors, setErrors]                   = useState({});
-  const [showErrors, setShowErrors]           = useState(false);
+  const [formData,        setFormData]        = useState(EMPTY);
+  const [errors,          setErrors]          = useState({});
+  const [showErrors,      setShowErrors]      = useState(false);
   const [selectedDetails, setSelectedDetails] = useState(null);
-  const [loading, setLoading]                 = useState(false);
-  const [viewOpen, setViewOpen]               = useState(false);
-  const [refStatus, setRefStatus]             = useState(null); // null | 'checking' | 'ok' | 'taken'
+  const [loading,         setLoading]         = useState(false);
+  const [viewOpen,        setViewOpen]        = useState(false);
+  const [refStatus,       setRefStatus]       = useState(null);
+  const [invoiceList,     setInvoiceList]     = useState([]);   // full objects for dropdown
   const refCheckTimer                         = useRef(null);
+
+  // ── Fetch full invoice list for dropdown ────────────────────────────────────
+  useEffect(() => {
+    if (!isOpen) return;
+    const fetch = async () => {
+      const { data } = await supabase
+        .from("outstanding_invoice_view")
+        .select("id, invoice_number, client_name, ledger_name, entity_name, dept_name, outstanding")
+        .order("invoice_number", { ascending: false });
+      setInvoiceList(data || []);
+    };
+    fetch();
+  }, [isOpen]);
 
   // ── Populate from editData ──────────────────────────────────────────────────
   useEffect(() => {
@@ -370,9 +702,7 @@ const AddCNBadDebtModal = ({
   useEffect(() => {
     const val = formData.referenceNo.trim();
     if (!val) { setRefStatus(null); return; }
-    // If editing and ref hasn't changed, skip
     if (editData?.reference_no === val) { setRefStatus("ok"); return; }
-
     setRefStatus("checking");
     clearTimeout(refCheckTimer.current);
     refCheckTimer.current = setTimeout(async () => {
@@ -382,17 +712,17 @@ const AddCNBadDebtModal = ({
         .eq("reference_no", val);
       setRefStatus(count > 0 ? "taken" : "ok");
     }, 400);
-
     return () => clearTimeout(refCheckTimer.current);
   }, [formData.referenceNo]);
 
-  // ── Auto-populate invoice details ───────────────────────────────────────────
+  // ── Auto-populate invoice details from outstanding_invoice_view (net_*) ────
   useEffect(() => {
     const fetchDetails = async () => {
       if (!formData.invoiceOrRef) { setSelectedDetails(null); return; }
 
       let invoiceId = null;
 
+      // Try payment ref first
       const { data: pay } = await supabase
         .from("payments_received")
         .select("invoice_id")
@@ -400,6 +730,7 @@ const AddCNBadDebtModal = ({
         .maybeSingle();
       if (pay?.invoice_id) invoiceId = pay.invoice_id;
 
+      // Then invoice number
       if (!invoiceId) {
         const { data: inv } = await supabase
           .from("invoices")
@@ -419,61 +750,62 @@ const AddCNBadDebtModal = ({
 
       if (!data) { setSelectedDetails(null); return; }
 
-      // Also fetch bank_name from invoice
       const { data: invRow } = await supabase
         .from("invoices")
         .select("bank_id, bank_master(bank_name)")
         .eq("id", invoiceId)
         .maybeSingle();
 
-      const invoiceBase = num(data.pay) + num(data.verto_fee);
-      const gstRate = invoiceBase ? num(data.gst) / invoiceBase : 0;
-      const tdsRate = invoiceBase ? num(data.tds) / invoiceBase : 0;
+      // Use net_* for base rates (CN-adjusted)
+      const netBase = num(data.net_pay) + num(data.net_verto_fee);
+      const gstRate = netBase ? num(data.net_gst) / netBase : 0;
+      const tdsRate = netBase ? num(data.net_tds) / netBase : 0;
 
       setSelectedDetails({
-        invoice_id:    data.id,
-        invoiceNumber: data.invoice_number,
-        client:        data.client_name,
-        ledger:        data.ledger_name,
-        department:    data.dept_name,
-        dept_code:     data.dept_code,
-        entity:        data.entity_name,
-        pay:           data.pay || 0,
-        vertoFee:      data.verto_fee || 0,
-        gst:           data.gst || 0,
-        tds:           data.tds || 0,
+        invoice_id:     data.id,
+        invoiceNumber:  data.invoice_number,
+        client:         data.client_name,
+        ledger:         data.ledger_name,
+        department:     data.dept_name,
+        dept_code:      data.dept_code,
+        entity:         data.entity_name,
+        // raw (for display strikethrough)
+        pay:            data.pay      || 0,
+        vertoFee:       data.verto_fee|| 0,
+        gst:            data.gst      || 0,
+        tds:            data.tds      || 0,
+        // net (CN-adjusted — use these for limits & auto-calc)
+        netPay:         data.net_pay       || 0,
+        netVertoFee:    data.net_verto_fee || 0,
+        netGst:         data.net_gst       || 0,
+        netTds:         data.net_tds       || 0,
         gstRate,
         tdsRate,
         originalAmount: data.receivable_amount || 0,
-        amountPayable:  data.outstanding || 0,
-        amountReceived: data.amount_received || 0,
-        cnAmount:       data.cn_amount || 0,
-        employeeCount:  data.employee_count || null,
+        amountPayable:  data.outstanding       || 0,
+        amountReceived: data.amount_received   || 0,
+        cnAmount:       data.cn_amount         || 0,
+        employeeCount:  data.employee_count    || null,
         bankName:       invRow?.bank_master?.bank_name || null,
       });
     };
     fetchDetails();
   }, [formData.invoiceOrRef]);
 
-  // ── Derived: total CN = sum of entered breakdown fields ─────────────────────
-  const totalCN =
-    num(formData.payCN) + num(formData.vertoFeeCN) +
-    num(formData.gstCN) + num(formData.tdsCN);
+  // ── Derived totals ─────────────────────────────────────────────────────────
+  const totalCN = num(formData.payCN) + num(formData.vertoFeeCN) + num(formData.gstCN) + num(formData.tdsCN);
 
   const impactOutstanding = selectedDetails
     ? Math.max(0, selectedDetails.amountPayable - totalCN)
     : null;
 
-  // ── Validation ──────────────────────────────────────────────────────────────
+  // ── Auto-calc GST/TDS from net rates when pay or vertoFee changes ──────────
   useEffect(() => {
     if (!selectedDetails) return;
-
     const baseCN = num(formData.payCN) + num(formData.vertoFeeCN);
     if (baseCN <= 0) return;
-
     const gstCN = +(baseCN * (selectedDetails.gstRate || 0)).toFixed(2);
     const tdsCN = +(baseCN * (selectedDetails.tdsRate || 0)).toFixed(2);
-
     setFormData((prev) => ({
       ...prev,
       gstCN: gstCN ? gstCN.toString() : "",
@@ -481,30 +813,30 @@ const AddCNBadDebtModal = ({
     }));
   }, [formData.payCN, formData.vertoFeeCN, selectedDetails]);
 
+  // ── Max CN limit — use net values ─────────────────────────────────────────
+  const maxCN = selectedDetails
+    ? num(selectedDetails.netPay) + num(selectedDetails.netVertoFee) + num(selectedDetails.netGst)
+    : Infinity;
+  const overLimit = selectedDetails && totalCN > maxCN;
+
+  // ── Validation ─────────────────────────────────────────────────────────────
   const validateForm = () => {
     const e = {};
-    if (!formData.invoiceOrRef.trim())
-      e.invoiceOrRef = "Invoice number or payment reference is required";
-    if (!formData.referenceNo.trim())
-      e.referenceNo = "Reference number is required";
-    if (refStatus === "taken")
-      e.referenceNo = "This reference number already exists";
-    if (refStatus === "checking")
-      e.referenceNo = "Wait for reference check to complete";
-    if (!formData.dateIssued)
-      e.dateIssued = "Date is required";
-    if (totalCN <= 0)
-      e.payCN = "Enter at least one amount (Pay / Verto Fee / GST / TDS)";
-    // ── CHANGE 1: Max CN validation ──────────────────────────────────────
-    if (selectedDetails && totalCN > (selectedDetails.pay + selectedDetails.vertoFee + selectedDetails.gst))
-      e.payCN = `CN total ₹${fmt(totalCN)} cannot exceed invoice receivable ₹${fmt(selectedDetails.pay + selectedDetails.vertoFee + selectedDetails.gst)} (Pay + Verto Fee + GST — TDS is excluded)`;
+    if (!formData.invoiceOrRef.trim())    e.invoiceOrRef  = "Invoice number or payment reference is required";
+    if (!formData.referenceNo.trim())     e.referenceNo   = "Reference number is required";
+    if (refStatus === "taken")            e.referenceNo   = "This reference number already exists";
+    if (refStatus === "checking")         e.referenceNo   = "Wait for reference check to complete";
+    if (!formData.dateIssued)             e.dateIssued    = "Date is required";
+    if (totalCN <= 0)                     e.payCN         = "Enter at least one amount (Pay / Verto Fee / GST / TDS)";
+    if (overLimit)
+      e.payCN = `CN total ₹${fmt(totalCN)} exceeds net receivable ₹${fmt(maxCN)} (Net Pay + Net Verto + Net GST)`;
     if (selectedDetails?.dept_code === "OS" && !formData.employeeCount)
       e.employeeCount = "Employee count required for Operations";
     setErrors(e);
     return Object.keys(e).length === 0;
   };
 
-  // ── Submit ──────────────────────────────────────────────────────────────────
+  // ── Submit ─────────────────────────────────────────────────────────────────
   const handleSubmit = async (ev) => {
     ev.preventDefault();
     if (loading) return;
@@ -513,22 +845,20 @@ const AddCNBadDebtModal = ({
 
     setLoading(true);
     try {
-      const { data, error } = await supabase.rpc("save_cn_bad_debt", {
-        p_invoice_id:    selectedDetails.invoice_id,
+      const { error } = await supabase.rpc("save_cn_bad_debt", {
+        p_invoice_id:     selectedDetails.invoice_id,
         p_invoice_number: selectedDetails.invoiceNumber,
-        p_type:          formData.optionType,
-        p_issue_date:    formData.dateIssued,
-        p_total_amount:  totalCN,
-        p_reference_no:  formData.referenceNo.trim(),
-        p_pay_cn:        num(formData.payCN),
-        p_verto_fee_cn:  num(formData.vertoFeeCN),
-        p_gst_cn:        num(formData.gstCN),
-        p_tds_cn:        num(formData.tdsCN),
-        p_entity:        selectedDetails.entity,
+        p_type:           formData.optionType,
+        p_issue_date:     formData.dateIssued,
+        p_total_amount:   totalCN,
+        p_reference_no:   formData.referenceNo.trim(),
+        p_pay_cn:         num(formData.payCN),
+        p_verto_fee_cn:   num(formData.vertoFeeCN),
+        p_gst_cn:         num(formData.gstCN),
+        p_tds_cn:         num(formData.tdsCN),
+        p_entity:         selectedDetails.entity,
         p_employee_count:
-          selectedDetails.dept_code === "OS"
-            ? Number(formData.employeeCount)
-            : null,
+          selectedDetails.dept_code === "OS" ? Number(formData.employeeCount) : null,
         p_remarks:   formData.remarks || "",
         p_bank_name: selectedDetails.bankName || null,
       });
@@ -567,15 +897,11 @@ const AddCNBadDebtModal = ({
     );
   };
 
-  // ── Ref status icon ─────────────────────────────────────────────────────────
   const RefIcon = () => {
     if (!formData.referenceNo.trim()) return null;
-    if (refStatus === "checking")
-      return <Loader2 className="w-4 h-4 animate-spin text-gray-400" />;
-    if (refStatus === "ok")
-      return <BadgeCheck className="w-4 h-4 text-emerald-500" />;
-    if (refStatus === "taken")
-      return <XCircle className="w-4 h-4 text-red-500" />;
+    if (refStatus === "checking") return <Loader2 className="w-4 h-4 animate-spin text-gray-400" />;
+    if (refStatus === "ok")       return <BadgeCheck className="w-4 h-4 text-emerald-500" />;
+    if (refStatus === "taken")    return <XCircle className="w-4 h-4 text-red-500" />;
     return null;
   };
 
@@ -656,7 +982,7 @@ const AddCNBadDebtModal = ({
                     : "bg-violet-50 border-violet-200 text-violet-700"
                 }`}>
                   {formData.optionType === "Bad Debt"
-                    ? "⚠️ Bad Debt: Unrecoverable amount — permanently reduces outstanding. Cannot be reversed."
+                    ? "⚠️ Bad Debt: Unrecoverable amount — permanently reduces outstanding."
                     : "📄 Credit Note: Customer discount or adjustment — reduces amount payable."}
                 </div>
 
@@ -667,26 +993,17 @@ const AddCNBadDebtModal = ({
                   </h3>
 
                   <div className="grid grid-cols-2 gap-4">
-                    {/* Invoice / payment ref */}
+                    {/* Searchable Invoice Dropdown */}
                     <div>
                       <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-2">
                         Invoice No. or Payment Ref <span className="text-red-500">*</span>
                       </label>
-                      <input
-                        type="text"
-                        list="cn-ref-list"
-                        readOnly={!!editData}
+                      <SearchableInvoiceDropdown
+                        invoiceList={invoiceList}
                         value={formData.invoiceOrRef}
-                        onChange={(e) => handleChange("invoiceOrRef", e.target.value)}
-                        className={`w-full bg-white border text-gray-900 px-3 py-2.5 rounded-lg focus:outline-none focus:border-violet-500 focus:ring-2 focus:ring-violet-500/20 text-sm ${
-                          showErrors && errors.invoiceOrRef ? "border-red-500" : "border-gray-300"
-                        }`}
-                        placeholder="INV-2024001 or UI-120526-01"
+                        onChange={(val) => handleChange("invoiceOrRef", val)}
+                        disabled={!!editData}
                       />
-                      <datalist id="cn-ref-list">
-                        {invoices.map((v, i) => <option key={`inv-${i}`} value={v} />)}
-                        {paymentReferences.map((v, i) => <option key={`ref-${i}`} value={v} />)}
-                      </datalist>
                       <ErrorMsg field="invoiceOrRef" />
                       <p className="text-xs text-gray-500 mt-1">Auto-populates details below</p>
                     </div>
@@ -716,7 +1033,6 @@ const AddCNBadDebtModal = ({
                           <RefIcon />
                         </div>
                       </div>
-                      {/* Inline status text */}
                       {refStatus === "ok" && formData.referenceNo.trim() && (
                         <p className="text-xs text-emerald-600 mt-1 flex items-center gap-1">
                           <BadgeCheck className="w-3 h-3" /> Reference is available
@@ -731,7 +1047,6 @@ const AddCNBadDebtModal = ({
                     </div>
                   </div>
 
-                  {/* Auto-populated card */}
                   {selectedDetails && <InvoiceCard d={selectedDetails} />}
                 </div>
 
@@ -749,7 +1064,9 @@ const AddCNBadDebtModal = ({
                     </h3>
                     {totalCN > 0 && (
                       <span className={`text-sm font-bold px-3 py-1 rounded-lg ${
-                        formData.optionType === "Bad Debt"
+                        overLimit
+                          ? "bg-red-100 text-red-700"
+                          : formData.optionType === "Bad Debt"
                           ? "bg-red-100 text-red-700"
                           : "bg-violet-100 text-violet-700"
                       }`}>
@@ -783,7 +1100,7 @@ const AddCNBadDebtModal = ({
                         Pay
                         {selectedDetails && (
                           <span className="ml-1 text-gray-400 font-normal normal-case">
-                            (Invoice: ₹{fmt(selectedDetails.pay)})
+                            (Net: ₹{fmt(selectedDetails.netPay)})
                           </span>
                         )}
                       </label>
@@ -805,7 +1122,7 @@ const AddCNBadDebtModal = ({
                         Verto Fee
                         {selectedDetails && (
                           <span className="ml-1 text-gray-400 font-normal normal-case">
-                            (Invoice: ₹{fmt(selectedDetails.vertoFee)})
+                            (Net: ₹{fmt(selectedDetails.netVertoFee)})
                           </span>
                         )}
                       </label>
@@ -826,7 +1143,7 @@ const AddCNBadDebtModal = ({
                         GST
                         {selectedDetails && (
                           <span className="ml-1 text-gray-400 font-normal normal-case">
-                            (Invoice: ₹{fmt(selectedDetails.gst)})
+                            (Net: ₹{fmt(selectedDetails.netGst)})
                           </span>
                         )}
                       </label>
@@ -839,7 +1156,7 @@ const AddCNBadDebtModal = ({
                         placeholder="₹ 0"
                       />
                       <p className="text-[10px] text-amber-600 mt-1">
-                        Auto-calculated from invoice GST % on service fee + Verto Fee
+                        Auto-calculated · based on net GST rate
                       </p>
                     </div>
 
@@ -849,7 +1166,7 @@ const AddCNBadDebtModal = ({
                         TDS
                         {selectedDetails && (
                           <span className="ml-1 text-gray-400 font-normal normal-case">
-                            (Invoice: ₹{fmt(selectedDetails.tds)})
+                            (Net: ₹{fmt(selectedDetails.netTds)})
                           </span>
                         )}
                       </label>
@@ -862,7 +1179,7 @@ const AddCNBadDebtModal = ({
                         placeholder="₹ 0"
                       />
                       <p className="text-[10px] text-rose-600 mt-1">
-                        Auto-calculated from invoice TDS % on service fee + Verto Fee
+                        Auto-calculated · based on net TDS rate
                       </p>
                     </div>
                   </div>
@@ -876,7 +1193,8 @@ const AddCNBadDebtModal = ({
                       animate={{ opacity: 1, height: "auto" }}
                       className="mt-4"
                     >
-                      <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-2">
+                      <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-2 flex items-center gap-1">
+                        <Users className="w-3.5 h-3.5" />
                         Employee Count <span className="text-red-500">*</span>
                       </label>
                       <input
@@ -936,29 +1254,33 @@ const AddCNBadDebtModal = ({
                         )}
                       </div>
                     </div>
+
+                    {/* GST / TDS liability note */}
                     {(num(formData.gstCN) > 0 || num(formData.tdsCN) > 0) && (
                       <div className="mt-3 pt-3 border-t border-amber-200 flex items-center gap-4 text-xs">
                         {num(formData.gstCN) > 0 && (
                           <span className="text-amber-700 font-medium">
-                            📋 GST liability ↓ ₹{fmt(formData.gstCN)}
+                            📋 Net GST ↓ ₹{fmt(formData.gstCN)}
                           </span>
                         )}
                         {num(formData.tdsCN) > 0 && (
                           <span className="text-amber-700 font-medium">
-                            📋 TDS liability ↓ ₹{fmt(formData.tdsCN)}
+                            📋 Net TDS ↓ ₹{fmt(formData.tdsCN)}
                           </span>
                         )}
                       </div>
                     )}
-                    {/* ── CHANGE 2: Live warning when CN exceeds receivable (excl. TDS) ── */}
-                    {totalCN > (selectedDetails.pay + selectedDetails.vertoFee + selectedDetails.gst) && (
+
+                    {/* Over-limit warning */}
+                    {overLimit && (
                       <div className="mt-3 flex items-start gap-2 bg-red-50 border border-red-200 rounded-lg px-3 py-2.5">
                         <AlertCircle className="w-4 h-4 text-red-500 mt-0.5 shrink-0" />
                         <p className="text-xs text-red-700 font-semibold">
-                          CN total exceeds invoice receivable (Pay + Verto Fee + GST = ₹{fmt(selectedDetails.pay + selectedDetails.vertoFee + selectedDetails.gst)}). TDS cannot be credited — reduce the amounts.
+                          CN total exceeds net receivable (Net Pay + Net Verto + Net GST = ₹{fmt(maxCN)}). Reduce the amounts.
                         </p>
                       </div>
                     )}
+
                     <p className="text-xs text-gray-500 mt-2 italic">
                       ℹ️ CN / Bad Debt is a non-cash adjustment — affects software balance only, not bank balance.
                     </p>
@@ -974,23 +1296,20 @@ const AddCNBadDebtModal = ({
                   >
                     Cancel
                   </button>
-                  {/* ── CHANGE 3: Disable submit when over limit ── */}
                   <button
                     type="submit"
-                    disabled={
-                      loading ||
-                      refStatus === "taken" ||
-                      refStatus === "checking" ||
-                      (selectedDetails != null && totalCN > (selectedDetails.pay + selectedDetails.vertoFee + selectedDetails.gst))
-                    }
+                    disabled={loading || refStatus === "taken" || refStatus === "checking" || overLimit}
                     className={`px-8 py-2.5 disabled:opacity-60 disabled:cursor-not-allowed text-white rounded-lg transition-colors font-medium shadow-lg flex items-center gap-2 ${
                       formData.optionType === "Bad Debt"
                         ? "bg-red-600 hover:bg-red-700 shadow-red-200"
                         : "bg-violet-600 hover:bg-violet-700 shadow-violet-200"
                     }`}
                   >
-                    <span>{loading ? "Saving..." : `Save ${formData.optionType}`}</span>
-                    <ArrowRight className="w-4 h-4" />
+                    {loading ? (
+                      <><Loader2 className="w-4 h-4 animate-spin" /> Saving…</>
+                    ) : (
+                      <><span>Save {formData.optionType}</span><ArrowRight className="w-4 h-4" /></>
+                    )}
                   </button>
                 </div>
               </form>

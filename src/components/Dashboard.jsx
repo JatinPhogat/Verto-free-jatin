@@ -480,6 +480,17 @@ const Dashboard = ({
   const [currentPage, setCurrentPage] = useState(1);
   const ITEMS_PER_PAGE = 12;
 
+  // ✅ CHANGE 1: Financial year state (after existing useState declarations)
+  const getCurrentFY = () => {
+    const now = new Date();
+    return now.getMonth() >= 3 ? now.getFullYear() : now.getFullYear() - 1;
+  };
+  const [selectedFY, setSelectedFY] = useState(getCurrentFY);
+
+  const fyStart = (fy) => new Date(fy, 3, 1);        // Apr 1
+  const fyEnd   = (fy) => new Date(fy + 1, 2, 31, 23, 59, 59); // Mar 31
+  const fyLabel = (fy) => `FY ${String(fy).slice(2)}-${String(fy + 1).slice(2)}`; // FY 25-26
+
   // ✅ FIX 1: fetchInvoices defined at component scope with useCallback
   const fetchInvoices = useCallback(async () => {
     console.log("🔥 FETCH RUNNING...");
@@ -512,7 +523,10 @@ const Dashboard = ({
         impact_month: row.impact_month ?? "",
         invDate: row.invoice_date ?? "",
         invDateObj: row.invoice_date ? new Date(row.invoice_date) : new Date(),
-        impactMonth: row.impact_month ?? "",
+        // ✅ CHANGE 4: Fix impact month display format
+        impactMonth: row.impact_month
+          ? new Date(row.impact_month).toLocaleDateString("en-GB", { month: "short", year: "2-digit" })
+          : "",
         pay: Number(row.pay ?? 0),
         pay_head: row.pay_head ?? "",
         verto_fee: Number(row.verto_fee ?? 0),
@@ -629,6 +643,7 @@ const Dashboard = ({
   const clients = [...new Set(source.map((d) => d.client))];
   const entities = [...new Set(source.map((d) => d.entity).filter(Boolean))];
 
+  // ✅ CHANGE 2: Add FY filter inside filteredData useMemo
   const filteredData = useMemo(() => {
     let sourceData = dbData.length > 0 ? dbData : data;
 
@@ -645,7 +660,9 @@ const Dashboard = ({
       const from = dateFrom ? new Date(dateFrom + "T00:00:00") : null;
       const to = dateTo ? new Date(dateTo + "T23:59:59") : null;
       const matchesDateFrom = !from || row.invDateObj >= from;
-      const matchesDateTo = !to || row.invDateObj <= to;
+      const matchesDateTo   = !to   || row.invDateObj <= to;
+      const matchesFY       = row.invDateObj >= fyStart(selectedFY) &&
+                              row.invDateObj <= fyEnd(selectedFY);
 
       const matchesDept =
         selectedDepartments.length === 0 ||
@@ -663,6 +680,7 @@ const Dashboard = ({
 
       return (
         matchesSearch &&
+        matchesFY &&
         matchesDateFrom &&
         matchesDateTo &&
         matchesDept &&
@@ -709,8 +727,10 @@ const Dashboard = ({
     maxInvoiceValue,
     sortConfig,
     showCompleted,
+    selectedFY,   // ✅ ADDED: selectedFY to dependency array
   ]);
 
+  // ✅ ADDED: selectedFY to the useEffect that resets currentPage
   React.useEffect(() => {
     setCurrentPage(1);
   }, [
@@ -724,6 +744,7 @@ const Dashboard = ({
     minInvoiceValue,
     maxInvoiceValue,
     showCompleted,
+    selectedFY,   // ✅ ADDED
   ]);
 
   const totalPages = Math.ceil(filteredData.length / ITEMS_PER_PAGE);
@@ -741,8 +762,19 @@ const Dashboard = ({
           vertoFee: acc.vertoFee + row.vertoFee,
           notRecvd: acc.notRecvd + row.notRecvd,
           cnBadDebt: acc.cnBadDebt + row.cnBadDebt,
+          gst: acc.gst + (row.gst || 0),
+          tds: acc.tds + (row.tds || 0),
+          osDiff: acc.osDiff + (row.osDiff || 0),
         }),
-        { invValue: 0, vertoFee: 0, notRecvd: 0, cnBadDebt: 0 }
+        {
+          invValue: 0,
+          vertoFee: 0,
+          notRecvd: 0,
+          cnBadDebt: 0,
+          gst: 0,
+          tds: 0,
+          osDiff: 0,
+        }
       ),
     [filteredData]
   );
@@ -1096,20 +1128,29 @@ const Dashboard = ({
             </button>
           </div>
 
+          {/* ✅ CHANGE 3: FY navigation buttons in the filter bar */}
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <button
-              onClick={() => setShowCompleted(false)}
-              className={`chip ${!showCompleted ? "active-emerald" : ""}`}
-            >
+            <button onClick={() => setShowCompleted(false)} className={`chip ${!showCompleted ? "active-emerald" : ""}`}>
               Active Invoices
             </button>
-
-            <button
-              onClick={() => setShowCompleted(true)}
-              className={`chip ${showCompleted ? "active-purple" : ""}`}
-            >
+            <button onClick={() => setShowCompleted(true)} className={`chip ${showCompleted ? "active-purple" : ""}`}>
               Completed Invoices
             </button>
+
+            {/* FY Navigator */}
+            <div style={{ display: "flex", alignItems: "center", gap: 4, marginLeft: 8, background: "#f3f4f6", borderRadius: 20, padding: "3px 4px" }}>
+              <button
+                onClick={() => setSelectedFY(y => y - 1)}
+                style={{ width: 26, height: 26, borderRadius: 16, border: "none", background: "transparent", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", color: "#6b7280", fontSize: 14, fontWeight: 700 }}
+              >‹</button>
+              <span style={{ fontSize: 12, fontWeight: 700, color: "#374151", padding: "0 6px", whiteSpace: "nowrap" }}>
+                {fyLabel(selectedFY)}
+              </span>
+              <button
+                onClick={() => setSelectedFY(y => y + 1)}
+                style={{ width: 26, height: 26, borderRadius: 16, border: "none", background: "transparent", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", color: "#6b7280", fontSize: 14, fontWeight: 700 }}
+              >›</button>
+            </div>
           </div>
 
           <button
@@ -1748,58 +1789,85 @@ const Dashboard = ({
               ))}
             </tbody>
 
-            <tfoot>
-              <tr className="align-bottom">
-                <td
-                  colSpan="4"
-                  style={{
-                    textAlign: "right",
-                    color: "#9ca3af",
-                    fontSize: 11,
-                    fontWeight: 700,
-                    textTransform: "uppercase",
-                    letterSpacing: "0.06em",
-                    verticalAlign: "bottom",
-                  }}
-                >
-                  TOTALS
-                </td>
-                <td className="mono" style={{ verticalAlign: "bottom" }}>
-                  ₹{formatCurrency(totals.invValue)}
-                </td>
-                <td className="mono" style={{ verticalAlign: "bottom" }}>
-                  ₹{formatCurrency(totals.vertoFee)}
-                </td>
-                <td
-                  className="mono"
-                  style={{ color: "#e11d48", verticalAlign: "bottom" }}
-                >
-                  ₹{formatCurrency(totals.notRecvd)}
-                </td>
-                <td
-                  style={{
-                    textAlign: "center",
-                    color: "#d1d5db",
-                    verticalAlign: "bottom",
-                  }}
-                >
-                  —
-                </td>
-                <td
-                  style={{
-                    textAlign: "center",
-                    color: "#d1d5db",
-                    verticalAlign: "bottom",
-                  }}
-                >
-                  —
-                </td>
-                <td className="mono" style={{ verticalAlign: "bottom" }}>
-                  ₹{formatCurrency(totals.cnBadDebt)}
-                </td>
-                <td colSpan="6" />
-              </tr>
-            </tfoot>
+            <tr className="align-bottom">
+              <td
+                colSpan="4"
+                style={{
+                  textAlign: "right",
+                  color: "#9ca3af",
+                  fontSize: 11,
+                  fontWeight: 700,
+                  textTransform: "uppercase",
+                  letterSpacing: "0.06em",
+                  verticalAlign: "bottom",
+                }}
+              >
+                TOTALS
+              </td>
+              <td className="mono" style={{ verticalAlign: "bottom" }}>
+                ₹{formatCurrency(totals.invValue)}
+              </td>
+              <td className="mono" style={{ verticalAlign: "bottom" }}>
+                ₹{formatCurrency(totals.vertoFee)}
+              </td>
+              <td
+                className="mono"
+                style={{ color: "#e11d48", verticalAlign: "bottom" }}
+              >
+                ₹{formatCurrency(totals.notRecvd)}
+              </td>
+              <td
+                style={{
+                  textAlign: "center",
+                  color: "#d1d5db",
+                  verticalAlign: "bottom",
+                }}
+              >
+                —
+              </td>
+              <td
+                className="mono"
+                style={{
+                  textAlign: "right",
+                  color: "#e11d48",
+                  verticalAlign: "bottom",
+                }}
+              >
+                {totals.osDiff > 0 ? (
+                  `₹${formatCurrency(totals.osDiff)}`
+                ) : (
+                  <span style={{ color: "#d1d5db" }}>—</span>
+                )}
+              </td>
+              <td className="mono" style={{ verticalAlign: "bottom" }}>
+                ₹{formatCurrency(totals.cnBadDebt)}
+              </td>
+              <td style={{ verticalAlign: "bottom" }} />
+              <td
+                className="mono"
+                style={{
+                  textAlign: "center",
+                  color: "#059669",
+                  verticalAlign: "bottom",
+                  fontSize: 12,
+                }}
+              >
+                ₹{formatCurrency(totals.gst)}
+              </td>
+              <td style={{ verticalAlign: "bottom" }} />
+              <td
+                className="mono"
+                style={{
+                  textAlign: "center",
+                  color: "#059669",
+                  verticalAlign: "bottom",
+                  fontSize: 12,
+                }}
+              >
+                ₹{formatCurrency(totals.tds)}
+              </td>
+              <td colSpan="3" />
+            </tr>
           </table>
         </div>
 
