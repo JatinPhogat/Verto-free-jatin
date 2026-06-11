@@ -127,6 +127,14 @@ const AddPaymentReceivedModal = ({
 
   // ── Field change handler ─────────────────────────────────────
   const handleChange = (field, value) => {
+    if (
+      field === "amountReceived" &&
+      formData.invoiceAvailable === "Yes" &&
+      invoiceDetails
+    ) {
+      const outstanding = Number(invoiceDetails.outstanding || 0);
+      if (Number(value) > outstanding) return; // block entry silently
+    }
     setFormData((prev) => ({ ...prev, [field]: value }));
     if (errors[field]) setErrors((prev) => ({ ...prev, [field]: "" }));
   };
@@ -507,7 +515,8 @@ const AddPaymentReceivedModal = ({
                           {/* Invoice Number — Searchable Dropdown */}
                           <div>
                             <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-2">
-                              Invoice Number <span className="text-rose-600">*</span>
+                              Invoice Number{" "}
+                              <span className="text-rose-600">*</span>
                             </label>
                             <input
                               type="text"
@@ -517,9 +526,16 @@ const AddPaymentReceivedModal = ({
                                 setShowInvoiceDropdown(true);
                               }}
                               onFocus={() => setShowInvoiceDropdown(true)}
-                              onBlur={() => setTimeout(() => setShowInvoiceDropdown(false), 200)}
+                              onBlur={() =>
+                                setTimeout(
+                                  () => setShowInvoiceDropdown(false),
+                                  200
+                                )
+                              }
                               className={`w-full bg-white border text-gray-900 px-4 py-2.5 rounded-lg focus:outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 ${
-                                showErrors && errors.invoiceNumber ? "border-rose-500" : "border-gray-300"
+                                showErrors && errors.invoiceNumber
+                                  ? "border-rose-500"
+                                  : "border-gray-300"
                               }`}
                               placeholder="Search invoice number..."
                               autoComplete="off"
@@ -533,10 +549,14 @@ const AddPaymentReceivedModal = ({
                                       ? true
                                       : (inv.invoice_number || "")
                                           .toLowerCase()
-                                          .includes(formData.invoiceNumber.toLowerCase()) ||
+                                          .includes(
+                                            formData.invoiceNumber.toLowerCase()
+                                          ) ||
                                         (inv.client_name || "")
                                           .toLowerCase()
-                                          .includes(formData.invoiceNumber.toLowerCase())
+                                          .includes(
+                                            formData.invoiceNumber.toLowerCase()
+                                          )
                                   )
                                   .slice(0, 20)
                                   .map((inv) => (
@@ -545,17 +565,30 @@ const AddPaymentReceivedModal = ({
                                       type="button"
                                       onMouseDown={(e) => e.preventDefault()}
                                       onClick={() => {
-                                        handleChange("invoiceNumber", inv.invoice_number);
+                                        handleChange(
+                                          "invoiceNumber",
+                                          inv.invoice_number
+                                        );
                                         setShowInvoiceDropdown(false);
                                       }}
                                       className="w-full text-left px-4 py-2.5 hover:bg-emerald-50 border-b border-gray-100 last:border-0 transition-colors"
                                     >
                                       <div className="flex items-start justify-between">
                                         <div>
-                                          <div className="font-medium">{inv.invoice_number}</div>
-                                          <div className="text-xs text-gray-500">{inv.client_name}</div>
+                                          <div className="font-medium">
+                                            {inv.invoice_number}
+                                          </div>
+                                          <div className="text-xs text-gray-500">
+                                            {inv.client_name}
+                                          </div>
                                         </div>
-                                        <div className="text-xs text-gray-500">₹{Number(inv.outstanding || 0).toLocaleString("en-IN")} OS</div>
+                                        <div className="text-xs text-gray-500">
+                                          ₹
+                                          {Number(
+                                            inv.outstanding || 0
+                                          ).toLocaleString("en-IN")}{" "}
+                                          OS
+                                        </div>
                                       </div>
                                     </button>
                                   ))}
@@ -565,12 +598,18 @@ const AddPaymentReceivedModal = ({
                                     ? true
                                     : (inv.invoice_number || "")
                                         .toLowerCase()
-                                        .includes(formData.invoiceNumber.toLowerCase()) ||
+                                        .includes(
+                                          formData.invoiceNumber.toLowerCase()
+                                        ) ||
                                       (inv.client_name || "")
                                         .toLowerCase()
-                                        .includes(formData.invoiceNumber.toLowerCase())
+                                        .includes(
+                                          formData.invoiceNumber.toLowerCase()
+                                        )
                                 ).length === 0 && (
-                                  <div className="p-3 text-xs text-gray-500">No invoices found</div>
+                                  <div className="p-3 text-xs text-gray-500">
+                                    No invoices found
+                                  </div>
                                 )}
                               </div>
                             )}
@@ -584,7 +623,10 @@ const AddPaymentReceivedModal = ({
                                   <b>Ledger:</b> {invoiceDetails.ledger_name}
                                 </p>
                                 <p>
-                                  <b>Outstanding:</b> ₹{Number(invoiceDetails.outstanding || 0).toLocaleString("en-IN")}
+                                  <b>Outstanding:</b> ₹
+                                  {Number(
+                                    invoiceDetails.outstanding || 0
+                                  ).toLocaleString("en-IN")}
                                 </p>
                                 {invoiceDetails.bank_id && (
                                   <p className="text-amber-600">
@@ -636,6 +678,11 @@ const AddPaymentReceivedModal = ({
                             <input
                               type="number"
                               min="1"
+                              max={
+                                invoiceDetails
+                                  ? invoiceDetails.outstanding
+                                  : undefined
+                              }
                               value={formData.amountReceived}
                               onChange={(e) =>
                                 handleChange("amountReceived", e.target.value)
@@ -770,7 +817,12 @@ const AddPaymentReceivedModal = ({
                                   setShowClientDropdown(true);
                                 }}
                                 onFocus={() => setShowClientDropdown(true)}
-                                onBlur={() => setTimeout(() => setShowClientDropdown(false), 200)}
+                                onBlur={() =>
+                                  setTimeout(
+                                    () => setShowClientDropdown(false),
+                                    200
+                                  )
+                                }
                                 className={`w-full bg-white border text-gray-900 px-4 py-2.5 rounded-lg focus:outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 ${
                                   showErrors && errors.client
                                     ? "border-rose-500"
@@ -784,7 +836,11 @@ const AddPaymentReceivedModal = ({
                                     .filter((c) =>
                                       formData.client.length === 0
                                         ? true
-                                        : c.client_name.toLowerCase().includes(formData.client.toLowerCase())
+                                        : c.client_name
+                                            .toLowerCase()
+                                            .includes(
+                                              formData.client.toLowerCase()
+                                            )
                                     )
                                     .map((c) => (
                                       <button
