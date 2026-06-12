@@ -280,9 +280,6 @@ const AddPaymentReceivedModal = ({
   };
 
   // ── FIXED: handleEdit ────────────────────────────────────────
-  // Just UPDATE the record — DB triggers handle everything else:
-  //   trg_payment_received_update_bank  → syncs bank_entry amount/date
-  //   trg_recalculate_invoice_update    → recalculates outstanding on invoice
   const handleEdit = async (payment) => {
     try {
       if (payment._type === "invoice") {
@@ -310,7 +307,6 @@ const AddPaymentReceivedModal = ({
         if (error) throw error;
       }
 
-      // Refresh dashboard — outstanding_invoice_view recomputes automatically
       if (onPaymentSaved) onPaymentSaved();
     } catch (err) {
       console.error("Edit payment error:", err);
@@ -319,13 +315,6 @@ const AddPaymentReceivedModal = ({
   };
 
   // ── FIXED: handleDelete ──────────────────────────────────────
-  // Just DELETE the record — DB triggers handle everything:
-  //   trg_payment_received_delete       → deletes linked bank_entry
-  //   trg_recalculate_invoice_delete    → recalculates outstanding on invoice
-  //
-  // REMOVED: manual receivable_amount recalculation (was wrong —
-  //   it overwrote the DB trigger result with a stale value)
-  // REMOVED: window.location.reload() (destructive, unnecessary)
   const handleDelete = async (payment) => {
     const confirmed = window.confirm(
       `Delete payment of ₹${Number(payment.amount).toLocaleString(
@@ -352,7 +341,6 @@ const AddPaymentReceivedModal = ({
         if (error) throw error;
       }
 
-      // Refresh dashboard — triggers already updated outstanding_invoice_view
       if (onPaymentSaved) onPaymentSaved();
     } catch (err) {
       console.error("Delete payment error:", err);
@@ -431,18 +419,37 @@ const AddPaymentReceivedModal = ({
               animate={{ scale: 1, y: 0 }}
               exit={{ scale: 0.95, y: 20 }}
               onClick={(e) => e.stopPropagation()}
-              className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl max-h-[90vh] overflow-hidden"
+              className="relative bg-white/90 backdrop-blur-xl rounded-3xl shadow-[0_20px_80px_rgba(0,0,0,0.25)] border border-white/20 w-full max-w-3xl max-h-[90vh] overflow-hidden"
             >
+              {/* Floating orbs + particles */}
+              <div className="absolute -top-24 -right-24 w-72 h-72 bg-emerald-400/10 rounded-full blur-3xl pointer-events-none" />
+              <div className="absolute -bottom-24 -left-24 w-72 h-72 bg-cyan-400/10 rounded-full blur-3xl pointer-events-none" />
+
+              <div className="absolute inset-0 pointer-events-none overflow-hidden">
+                {[...Array(15)].map((_, i) => (
+                  <motion.div
+                    key={`particle-${i}`}
+                    className="absolute w-1 h-1 bg-emerald-400 rounded-full"
+                    style={{ left: `${Math.random() * 100}%`, top: `${Math.random() * 100}%` }}
+                    animate={{ y: [0, -20, 0], opacity: [0.2, 1, 0.2] }}
+                    transition={{ duration: 3 + Math.random() * 4, repeat: Infinity }}
+                  />
+                ))}
+              </div>
+
               {/* ── Header ── */}
               <div
-                className="relative p-6 text-white"
+                className="relative p-6 text-white overflow-hidden"
                 style={{
                   background:
-                    "linear-gradient(135deg, #022c22 0%, #065f46 50%, #059669 100%)",
+                    "linear-gradient(135deg,#022c22 0%,#065f46 35%,#059669 70%,#10b981 100%)",
                 }}
               >
                 <div className="absolute top-0 right-0 w-32 h-32 bg-white/5 rounded-full -translate-y-8 translate-x-8" />
                 <div className="absolute bottom-0 left-10 w-16 h-16 bg-emerald-400/10 rounded-full translate-y-6" />
+                <div className="absolute inset-0 opacity-20">
+                  <div className="absolute top-0 left-0 w-full h-full bg-[radial-gradient(circle_at_top_right,white_0%,transparent_50%)]" />
+                </div>
 
                 <div className="relative flex items-center justify-between">
                   <div>
@@ -452,6 +459,10 @@ const AddPaymentReceivedModal = ({
                     <p className="text-emerald-300 text-xs mt-0.5">
                       Record incoming payment details
                     </p>
+                    <div className="flex items-center gap-2 mt-2">
+                      <div className="w-2 h-2 bg-emerald-300 rounded-full animate-pulse" />
+                      <span className="text-xs text-emerald-200">Live transaction entry</span>
+                    </div>
                   </div>
 
                   <div className="flex items-center gap-2">
@@ -477,7 +488,7 @@ const AddPaymentReceivedModal = ({
               <div className="p-6 overflow-y-auto max-h-[calc(90vh-140px)]">
                 <form onSubmit={handleSubmit} className="space-y-6">
                   {/* Invoice Available toggle */}
-                  <div className="bg-blue-50 border-2 border-blue-200 rounded-xl p-4">
+                  <div className="bg-white border border-slate-200 rounded-2xl shadow-sm hover:shadow-lg transition-all duration-300 p-4">
                     <div className="flex items-center justify-between mb-4">
                       <label className="text-sm font-semibold text-gray-900 uppercase tracking-wider">
                         Invoice Number Available
@@ -509,7 +520,7 @@ const AddPaymentReceivedModal = ({
                       <motion.div
                         initial={{ opacity: 0, height: 0 }}
                         animate={{ opacity: 1, height: "auto" }}
-                        className="space-y-4 pt-4 border-t border-blue-200"
+                        className="space-y-4 pt-4 border-t border-slate-200"
                       >
                         <div className="grid grid-cols-2 gap-4">
                           {/* Invoice Number — Searchable Dropdown */}
@@ -532,10 +543,10 @@ const AddPaymentReceivedModal = ({
                                   200
                                 )
                               }
-                              className={`w-full bg-white border text-gray-900 px-4 py-2.5 rounded-lg focus:outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 ${
+                              className={`w-full bg-white border text-gray-900 px-4 py-2.5 rounded-lg focus:outline-none focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 transition-all shadow-sm hover:border-emerald-300 ${
                                 showErrors && errors.invoiceNumber
                                   ? "border-rose-500"
-                                  : "border-gray-300"
+                                  : "border-slate-200"
                               }`}
                               placeholder="Search invoice number..."
                               autoComplete="off"
@@ -615,7 +626,11 @@ const AddPaymentReceivedModal = ({
                             )}
 
                             {invoiceDetails && (
-                              <div className="mt-2 p-2 bg-green-50 border border-green-200 rounded text-xs space-y-0.5">
+                              <motion.div
+                                initial={{ opacity: 0, y: 10 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                className="mt-3 p-4 rounded-2xl bg-gradient-to-r from-emerald-50 to-cyan-50 border border-emerald-200 text-xs space-y-0.5"
+                              >
                                 <p>
                                   <b>Client:</b> {invoiceDetails.client_name}
                                 </p>
@@ -633,7 +648,7 @@ const AddPaymentReceivedModal = ({
                                     <b>Invoice Bank:</b> pre-filled below
                                   </p>
                                 )}
-                              </div>
+                              </motion.div>
                             )}
 
                             <ErrorMessage error={errors.invoiceNumber} />
@@ -650,10 +665,10 @@ const AddPaymentReceivedModal = ({
                               onChange={(e) =>
                                 handleChange("bankId", e.target.value)
                               }
-                              className={`w-full border text-gray-900 px-3 py-2.5 rounded-lg focus:outline-none focus:border-emerald-500 ${
+                              className={`w-full border text-gray-900 px-3 py-2.5 rounded-lg focus:outline-none focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 transition-all shadow-sm hover:border-emerald-300 ${
                                 showErrors && errors.bankId
                                   ? "border-rose-500"
-                                  : "border-gray-300"
+                                  : "border-slate-200"
                               }`}
                             >
                               <option value="">Select Bank</option>
@@ -687,10 +702,10 @@ const AddPaymentReceivedModal = ({
                               onChange={(e) =>
                                 handleChange("amountReceived", e.target.value)
                               }
-                              className={`w-full bg-white border text-gray-900 px-4 py-2.5 rounded-lg focus:outline-none focus:border-emerald-500 ${
+                              className={`w-full bg-white border text-gray-900 px-4 py-2.5 rounded-lg focus:outline-none focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 transition-all shadow-sm hover:border-emerald-300 ${
                                 showErrors && errors.amountReceived
                                   ? "border-rose-500"
-                                  : "border-gray-300"
+                                  : "border-slate-200"
                               }`}
                               placeholder="₹ 0"
                             />
@@ -732,10 +747,10 @@ const AddPaymentReceivedModal = ({
                               onChange={(e) =>
                                 handleChange("dateReceived", e.target.value)
                               }
-                              className={`w-full bg-white border text-gray-900 px-4 py-2.5 rounded-lg focus:outline-none focus:border-emerald-500 ${
+                              className={`w-full bg-white border text-gray-900 px-4 py-2.5 rounded-lg focus:outline-none focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 transition-all shadow-sm hover:border-emerald-300 ${
                                 showErrors && errors.dateReceived
                                   ? "border-rose-500"
-                                  : "border-gray-300"
+                                  : "border-slate-200"
                               }`}
                             />
                             <ErrorMessage error={errors.dateReceived} />
@@ -749,7 +764,7 @@ const AddPaymentReceivedModal = ({
                       <motion.div
                         initial={{ opacity: 0, height: 0 }}
                         animate={{ opacity: 1, height: "auto" }}
-                        className="space-y-4 pt-4 border-t border-blue-200"
+                        className="space-y-4 pt-4 border-t border-slate-200"
                       >
                         <div className="grid grid-cols-2 gap-4">
                           {/* Entity */}
@@ -762,10 +777,10 @@ const AddPaymentReceivedModal = ({
                               onChange={(e) =>
                                 handleChange("entity", e.target.value)
                               }
-                              className={`w-full bg-white border text-gray-900 px-4 py-2.5 rounded-lg focus:outline-none focus:border-emerald-500 ${
+                              className={`w-full bg-white border text-gray-900 px-4 py-2.5 rounded-lg focus:outline-none focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 transition-all shadow-sm hover:border-emerald-300 ${
                                 showErrors && errors.entity
                                   ? "border-rose-500"
-                                  : "border-gray-300"
+                                  : "border-slate-200"
                               }`}
                             >
                               <option value="">Select Entity</option>
@@ -787,10 +802,10 @@ const AddPaymentReceivedModal = ({
                               onChange={(e) =>
                                 handleChange("department", e.target.value)
                               }
-                              className={`w-full bg-white border text-gray-900 px-4 py-2.5 rounded-lg focus:outline-none focus:border-emerald-500 ${
+                              className={`w-full bg-white border text-gray-900 px-4 py-2.5 rounded-lg focus:outline-none focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 transition-all shadow-sm hover:border-emerald-300 ${
                                 showErrors && errors.department
                                   ? "border-rose-500"
-                                  : "border-gray-300"
+                                  : "border-slate-200"
                               }`}
                             >
                               <option value="">Select Department</option>
@@ -823,10 +838,10 @@ const AddPaymentReceivedModal = ({
                                     200
                                   )
                                 }
-                                className={`w-full bg-white border text-gray-900 px-4 py-2.5 rounded-lg focus:outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 ${
+                                className={`w-full bg-white border text-gray-900 px-4 py-2.5 rounded-lg focus:outline-none focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 transition-all shadow-sm hover:border-emerald-300 ${
                                   showErrors && errors.client
                                     ? "border-rose-500"
-                                    : "border-gray-300"
+                                    : "border-slate-200"
                                 }`}
                                 placeholder="Type or select client"
                               />
@@ -873,10 +888,10 @@ const AddPaymentReceivedModal = ({
                               onChange={(e) =>
                                 handleChange("ledgerName", e.target.value)
                               }
-                              className={`w-full bg-white border text-gray-900 px-4 py-2.5 rounded-lg focus:outline-none focus:border-emerald-500 ${
+                              className={`w-full bg-white border text-gray-900 px-4 py-2.5 rounded-lg focus:outline-none focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 transition-all shadow-sm hover:border-emerald-300 ${
                                 showErrors && errors.ledgerName
                                   ? "border-rose-500"
-                                  : "border-gray-300"
+                                  : "border-slate-200"
                               }`}
                               placeholder="Ledger name"
                             />
@@ -895,10 +910,10 @@ const AddPaymentReceivedModal = ({
                               handleChange("paymentDescription", e.target.value)
                             }
                             rows={3}
-                            className={`w-full bg-white border text-gray-900 px-4 py-2.5 rounded-lg focus:outline-none focus:border-emerald-500 ${
+                            className={`w-full bg-white border text-gray-900 px-4 py-2.5 rounded-lg focus:outline-none focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 transition-all shadow-sm hover:border-emerald-300 ${
                               showErrors && errors.paymentDescription
                                 ? "border-rose-500"
-                                : "border-gray-300"
+                                : "border-slate-200"
                             }`}
                             placeholder="Enter payment description"
                           />
@@ -919,10 +934,10 @@ const AddPaymentReceivedModal = ({
                               onChange={(e) =>
                                 handleChange("amountReceived", e.target.value)
                               }
-                              className={`w-full bg-white border text-gray-900 px-4 py-2.5 rounded-lg focus:outline-none focus:border-emerald-500 ${
+                              className={`w-full bg-white border text-gray-900 px-4 py-2.5 rounded-lg focus:outline-none focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 transition-all shadow-sm hover:border-emerald-300 ${
                                 showErrors && errors.amountReceived
                                   ? "border-rose-500"
-                                  : "border-gray-300"
+                                  : "border-slate-200"
                               }`}
                               placeholder="₹ 0"
                             />
@@ -941,10 +956,10 @@ const AddPaymentReceivedModal = ({
                               onChange={(e) =>
                                 handleChange("payoutMonth", e.target.value)
                               }
-                              className={`w-full bg-white border text-gray-900 px-4 py-2.5 rounded-lg focus:outline-none focus:border-emerald-500 ${
+                              className={`w-full bg-white border text-gray-900 px-4 py-2.5 rounded-lg focus:outline-none focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 transition-all shadow-sm hover:border-emerald-300 ${
                                 showErrors && errors.payoutMonth
                                   ? "border-rose-500"
-                                  : "border-gray-300"
+                                  : "border-slate-200"
                               }`}
                               placeholder="e.g., Jan 2026"
                             />
@@ -963,10 +978,10 @@ const AddPaymentReceivedModal = ({
                               onChange={(e) =>
                                 handleChange("dateReceived", e.target.value)
                               }
-                              className={`w-full bg-white border text-gray-900 px-4 py-2.5 rounded-lg focus:outline-none focus:border-emerald-500 ${
+                              className={`w-full bg-white border text-gray-900 px-4 py-2.5 rounded-lg focus:outline-none focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 transition-all shadow-sm hover:border-emerald-300 ${
                                 showErrors && errors.dateReceived
                                   ? "border-rose-500"
-                                  : "border-gray-300"
+                                  : "border-slate-200"
                               }`}
                             />
                             <ErrorMessage error={errors.dateReceived} />
@@ -983,10 +998,10 @@ const AddPaymentReceivedModal = ({
                               onChange={(e) =>
                                 handleChange("bankId", e.target.value)
                               }
-                              className={`w-full bg-white border text-gray-900 px-4 py-2.5 rounded-lg focus:outline-none focus:border-emerald-500 ${
+                              className={`w-full bg-white border text-gray-900 px-4 py-2.5 rounded-lg focus:outline-none focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 transition-all shadow-sm hover:border-emerald-300 ${
                                 showErrors && errors.bankId
                                   ? "border-rose-500"
-                                  : "border-gray-300"
+                                  : "border-slate-200"
                               }`}
                             >
                               <option value="">Select Bank</option>
@@ -1004,7 +1019,7 @@ const AddPaymentReceivedModal = ({
                   </div>
 
                   {/* Remarks */}
-                  <div className="bg-gray-50 border border-gray-200 rounded-xl p-4">
+                  <div className="bg-white border border-slate-200 rounded-2xl shadow-sm hover:shadow-lg transition-all duration-300 p-4">
                     <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-2">
                       Remarks
                     </label>
@@ -1017,7 +1032,7 @@ const AddPaymentReceivedModal = ({
                       value={formData.remarks}
                       onChange={(e) => handleChange("remarks", e.target.value)}
                       rows={2}
-                      className="w-full bg-white border border-gray-300 text-gray-900 px-4 py-2.5 rounded-lg focus:outline-none focus:border-emerald-500 text-sm"
+                      className="w-full bg-white border border-slate-200 text-gray-900 px-4 py-2.5 rounded-lg focus:outline-none focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 transition-all shadow-sm hover:border-emerald-300 text-sm"
                       placeholder="Additional remarks..."
                     />
                   </div>
@@ -1035,7 +1050,7 @@ const AddPaymentReceivedModal = ({
                     <button
                       type="submit"
                       disabled={saving}
-                      className="px-8 py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 text-white rounded-xl transition-colors font-medium shadow-lg shadow-emerald-500/30 flex items-center space-x-2"
+                      className="px-8 py-2.5 bg-gradient-to-r from-emerald-600 via-green-500 to-emerald-600 hover:scale-[1.02] active:scale-[0.98] disabled:opacity-60 disabled:hover:scale-100 text-white rounded-xl transition-all font-medium shadow-lg shadow-emerald-500/30 flex items-center space-x-2"
                     >
                       <span>{saving ? "Saving..." : "Save Payment"}</span>
                       {!saving && <ArrowRight className="w-4 h-4" />}
@@ -1062,9 +1077,13 @@ const AddPaymentReceivedModal = ({
               exit={{ scale: 0.85, y: 30 }}
               className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-8 text-center"
             >
-              <div className="w-16 h-16 bg-emerald-100 rounded-full flex items-center justify-center mx-auto mb-5">
+              <motion.div
+                animate={{ scale: [1, 1.08, 1], rotate: [0, 5, -5, 0] }}
+                transition={{ repeat: Infinity, duration: 3 }}
+                className="w-16 h-16 bg-emerald-100 rounded-full flex items-center justify-center mx-auto mb-5"
+              >
                 <CheckCircle className="w-9 h-9 text-emerald-600" />
-              </div>
+              </motion.div>
 
               <h3 className="text-xl font-bold text-gray-900 mb-1">
                 Payment Saved!

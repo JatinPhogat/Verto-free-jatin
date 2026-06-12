@@ -19,7 +19,7 @@ const Login = () => {
       setError("Please enter email and password");
       return;
     }
-    
+
     setLoading(true);
     setError("");
     const { error: err } = await supabase.auth.signInWithPassword({
@@ -76,19 +76,88 @@ const Login = () => {
 
   return (
     <div className="flex h-screen items-center justify-center px-4 overflow-hidden relative">
-      {/* Enhanced Bluish Translucent Blurry Background */}
-      <div className="absolute inset-0 bg-blue-950/80 backdrop-blur-3xl">
-        {/* Primary Blue Glow */}
-        <div className="absolute top-0 left-1/4 w-[600px] h-[600px] bg-blue-500/30 rounded-full blur-[120px] animate-pulse" />
-        
-        {/* Secondary Indigo Glow */}
-        <div className="absolute bottom-0 right-1/4 w-[600px] h-[600px] bg-indigo-500/25 rounded-full blur-[120px] animate-pulse" style={{ animationDelay: "1s" }} />
-        
-        {/* Tertiary Cyan Glow */}
-        <div className="absolute top-1/2 right-0 w-[500px] h-[500px] bg-cyan-500/20 rounded-full blur-[100px] animate-pulse" style={{ animationDelay: "2s" }} />
-        
-        {/* Additional Blue Haze Layer */}
-        <div className="absolute inset-0 bg-linear-to-br from-blue-500/10 via-transparent to-indigo-500/10 backdrop-blur-2xl" />
+      {/* Galaxy Background */}
+      <div className="absolute inset-0 bg-[#05060f]">
+        {/* Nebula glows */}
+        <div
+          className="absolute inset-0"
+          style={{
+            background:
+              "radial-gradient(circle at 30% 20%, rgba(124,58,237,0.35), transparent 50%), radial-gradient(circle at 75% 75%, rgba(34,211,238,0.25), transparent 50%), radial-gradient(circle at 50% 50%, rgba(59,130,246,0.2), transparent 60%)",
+          }}
+        />
+
+        {/* Stars - varied sizes */}
+        <div className="absolute inset-0 overflow-hidden">
+          {[...Array(150)].map((_, i) => {
+            const size = Math.random() * 2.5 + 0.5;
+            return (
+              <motion.div
+                key={`star-${i}`}
+                className="absolute bg-white rounded-full"
+                style={{
+                  width: size,
+                  height: size,
+                  left: `${Math.random() * 100}%`,
+                  top: `${Math.random() * 100}%`,
+                }}
+                animate={{ opacity: [0.2, 1, 0.2] }}
+                transition={{
+                  duration: 2 + Math.random() * 3,
+                  repeat: Infinity,
+                  delay: Math.random() * 3,
+                }}
+              />
+            );
+          })}
+        </div>
+
+        {/* Shooting Stars - brighter trails */}
+        <div className="absolute inset-0 overflow-hidden">
+          {[...Array(5)].map((_, i) => (
+            <motion.div
+              key={`shoot-${i}`}
+              className="absolute h-[2px] w-40 rounded-full"
+              style={{
+                background:
+                  i % 2 === 0
+                    ? "linear-gradient(90deg, transparent, #fff, #67e8f9)"
+                    : "linear-gradient(90deg, transparent, #fff, #c4b5fd)",
+                top: `${10 + Math.random() * 70}%`,
+                left: "-15%",
+              }}
+              initial={{ x: 0, opacity: 0, rotate: -20 }}
+              animate={{ x: 1500, opacity: [0, 1, 1, 0] }}
+              transition={{
+                duration: 2.5,
+                delay: i * 2.5,
+                repeat: Infinity,
+                repeatDelay: 6,
+                ease: "linear",
+              }}
+            />
+          ))}
+        </div>
+
+        {/* Glowing planets */}
+        <motion.div
+          className="absolute top-[18%] left-[12%] w-16 h-16 rounded-full"
+          style={{
+            background: "radial-gradient(circle at 35% 35%, #67e8f9, #1d4ed8 70%)",
+            opacity: 0.5,
+          }}
+          animate={{ y: [0, -20, 0] }}
+          transition={{ duration: 6, repeat: Infinity }}
+        />
+        <motion.div
+          className="absolute bottom-[14%] right-[10%] w-24 h-24 rounded-full"
+          style={{
+            background: "radial-gradient(circle at 35% 35%, #f0abfc, #7c3aed 70%)",
+            opacity: 0.4,
+          }}
+          animate={{ y: [0, 20, 0] }}
+          transition={{ duration: 8, repeat: Infinity }}
+        />
       </div>
 
       {/* Main Card with BorderGlow */}
@@ -101,7 +170,7 @@ const Login = () => {
         <BorderGlow
           edgeSensitivity={35}
           glowColor="210 100 60"
-          backgroundColor="#0f1419"
+          backgroundColor="#070a12"
           borderRadius={24}
           glowRadius={50}
           glowIntensity={1.2}
@@ -121,11 +190,11 @@ const Login = () => {
                 <motion.div
                   animate={{ y: [0, -5, 0] }}
                   transition={{ duration: 3, repeat: Infinity }}
-                  className="w-14 h-14 mx-auto mb-4 bg-gradient-to-br from-blue-400 to-indigo-600 rounded-2xl flex items-center justify-center shadow-lg shadow-blue-500/30"
+                  className="w-14 h-14 mx-auto mb-4 bg-gradient-to-br from-cyan-400 via-blue-500 to-purple-600 rounded-2xl flex items-center justify-center shadow-[0_0_40px_rgba(59,130,246,0.8)]"
                 >
                   <LogIn className="w-7 h-7 text-white" />
                 </motion.div>
-                
+
                 <h1 className="text-3xl font-bold text-white mb-2">
                   Welcome Back
                 </h1>
@@ -232,7 +301,7 @@ const Login = () => {
                 whileTap={{ scale: 0.98 }}
                 onClick={handleLogin}
                 disabled={loading}
-                className="w-full rounded-xl bg-linear-to-r from-blue-500 to-indigo-600 text-white px-4 py-3 font-semibold transition duration-300 hover:from-blue-600 hover:to-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-blue-500/30 flex items-center justify-center gap-2"
+                className="w-full rounded-xl bg-gradient-to-r from-blue-500 to-indigo-600 text-white px-4 py-3 font-semibold transition duration-300 hover:from-blue-600 hover:to-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-blue-500/30 flex items-center justify-center gap-2"
               >
                 {loading ? (
                   <>
