@@ -18,6 +18,7 @@ import {
   X,
   Save,
   Shield,
+  Trash2,
 } from "lucide-react";
 
 // ── Role config ──────────────────────────────────────────────────────────────
@@ -200,6 +201,37 @@ const UserRow = ({ user, idx, onRoleUpdated }) => {
     }
   };
 
+  const handleDelete = async () => {
+    if (!window.confirm(`Delete ${user.email}? This cannot be undone.`)) return;
+    setSaving(true);
+    setErr(null);
+    try {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      if (!session) throw new Error("Not logged in.");
+
+      const res = await fetch(
+        "https://exykcukcvjdkrlbmxzdx.supabase.co/functions/v1/delete-user",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${session.access_token}`,
+          },
+          body: JSON.stringify({ id: user.id }),
+        }
+      );
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || `Server error ${res.status}`);
+      onRoleUpdated(user.id, null); // signals parent to remove row
+    } catch (e) {
+      setErr(e.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const joined = user.created_at
     ? new Date(user.created_at).toLocaleDateString("en-IN", {
         day: "2-digit",
@@ -289,13 +321,27 @@ const UserRow = ({ user, idx, onRoleUpdated }) => {
               </button>
             </>
           ) : (
-            <button
-              onClick={() => setEditing(true)}
-              title="Edit role"
-              className="w-7 h-7 flex items-center justify-center rounded-lg text-gray-300 hover:text-indigo-600 hover:bg-indigo-50 transition-colors opacity-0 group-hover:opacity-100"
-            >
-              <Pencil className="w-3.5 h-3.5" />
-            </button>
+            <div className="flex items-center justify-end gap-1">
+              <button
+                onClick={() => setEditing(true)}
+                title="Edit role"
+                className="w-7 h-7 flex items-center justify-center rounded-lg text-gray-300 hover:text-indigo-600 hover:bg-indigo-50 transition-colors opacity-0 group-hover:opacity-100"
+              >
+                <Pencil className="w-3.5 h-3.5" />
+              </button>
+              <button
+                onClick={handleDelete}
+                disabled={saving}
+                title="Delete user"
+                className="w-7 h-7 flex items-center justify-center rounded-lg text-gray-300 hover:text-rose-600 hover:bg-rose-50 transition-colors opacity-0 group-hover:opacity-100 disabled:opacity-50"
+              >
+                {saving ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <Trash2 className="w-3.5 h-3.5" />
+                )}
+              </button>
+            </div>
           )}
         </div>
       </td>
@@ -336,9 +382,13 @@ const UserManagement = () => {
   };
 
   const handleRoleUpdated = (id, newRole) => {
-    setUsers((prev) =>
-      prev.map((u) => (u.id === id ? { ...u, role: newRole } : u))
-    );
+    if (newRole === null) {
+      setUsers((prev) => prev.filter((u) => u.id !== id)); // remove deleted user
+    } else {
+      setUsers((prev) =>
+        prev.map((u) => (u.id === id ? { ...u, role: newRole } : u))
+      );
+    }
   };
 
   const handleCreateUser = async () => {
