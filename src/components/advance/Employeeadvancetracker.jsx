@@ -340,12 +340,6 @@ export default function EmployeeAdvanceTracker() {
         )}
       </div>
 
-      {/* Excel format hint */}
-      <div className="bg-blue-50 border border-blue-200 rounded-xl px-4 py-2.5 mb-4 text-xs text-blue-700">
-        <strong>Excel Import:</strong> Rows with <code className="bg-blue-100 px-1 rounded">Payment Head = "Loan-Advance"</code> are auto-imported.
-        Expected columns: <em>Name, Department, Date of Loan=Adv (LA), Amount (LA), Interest, Paid back, Status, Remarks</em>
-      </div>
-
       {/* Table */}
       <div className="bg-white rounded-2xl shadow-sm border border-blue-100 overflow-hidden">
         <div className="overflow-x-auto">
