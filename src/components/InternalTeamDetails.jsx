@@ -289,7 +289,15 @@ const InternalTeamDetails = () => {
     );
   };
 
-  const formatCurrency = (val) => `₹ ${((val || 0) / 1000).toFixed(0)}K`;
+  const formatCurrency = (val) => {
+    const num = Number(val || 0);
+  
+    if (num >= 100000) {
+      return `₹ ${(num / 1000).toFixed(0)}K`;
+    }
+  
+    return `₹ ${(num / 1000).toFixed(1)}K`;
+  };
   const formatCurrencyFull = (val) => `₹ ${(val || 0).toLocaleString("en-IN")}`;
   const formatDate = (d) => {
     if (!d) return "—";
