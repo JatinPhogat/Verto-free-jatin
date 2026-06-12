@@ -612,6 +612,27 @@ const AddInternalTeamModal = ({
     "Others",
   ];
 
+  const parseExcelDate = (val) => {
+    if (!val) return null;
+    const s = String(val).trim();
+    if (!s || s.toLowerCase() === "nulls" || s.toLowerCase() === "null") return null;
+
+    if (/^\d+$/.test(s)) {
+      const excelEpoch = new Date(Date.UTC(1899, 11, 30));
+      const date = new Date(excelEpoch.getTime() + Number(s) * 86400000);
+      return date.toISOString().split("T")[0];
+    }
+
+    const m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/);
+    if (m) {
+      let [, d, mo, y] = m;
+      if (y.length === 2) y = (Number(y) > 50 ? "19" : "20") + y;
+      return `${y}-${mo.padStart(2, "0")}-${d.padStart(2, "0")}`;
+    }
+
+    return null;
+  };
+
   const parseRows = (rawRows) => {
     const valid = [];
     const errors = [];
@@ -631,6 +652,8 @@ const AddInternalTeamModal = ({
       REQUIRED_BULK.forEach((f) => {
         if (!str(f)) rowErrors.push(`"${f}" is required`);
       });
+      if (str("doj") && !parseExcelDate(raw.doj))
+        rowErrors.push(`Invalid "doj" date: "${str("doj")}"`);
       if (str("entity") && !ENTITY_OPTIONS.includes(str("entity")))
         rowErrors.push(`Invalid entity: "${str("entity")}"`);
       if (str("department") && !DEPT_OPTIONS.includes(str("department")))
@@ -653,9 +676,9 @@ const AddInternalTeamModal = ({
         designation: str("designation"),
         location: str("location") || null,
         email: str("email") || null,
-        dob: str("dob") || null,
-        doj: str("doj") || null,
-        last_working_day: str("last_working_day") || null,
+        dob: parseExcelDate(raw.dob),
+        doj: parseExcelDate(raw.doj),
+        last_working_day: parseExcelDate(raw.last_working_day),
         status: str("status") || "Active",
         ctc: num("ctc"),
         pf: num("pf"),
