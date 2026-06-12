@@ -428,7 +428,7 @@ function App() {
     "PI-SO-250123-01",
   ];
 
-  const { user, role, loading, showLivePopup, setShowLivePopup } = useAuth();
+  const { user, role, loading, showLivePopup, setShowLivePopup, sessionKicked } = useAuth();
 
   useEffect(() => {
     const checkMidnightLogout = async () => {
@@ -473,6 +473,29 @@ function App() {
       .maybeSingle();
     if (data) setLoggedInEmployee(data);
   };
+
+  if (sessionKicked) {
+    return (
+      <div className="flex h-screen items-center justify-center bg-[#05060f] px-4">
+        <div className="text-center max-w-sm">
+          <div className="w-16 h-16 mx-auto mb-6 bg-rose-500/20 border border-rose-500/40 rounded-2xl flex items-center justify-center">
+            <LogOut className="w-7 h-7 text-rose-400" />
+          </div>
+          <h2 className="text-xl font-bold text-white mb-2">Signed Out</h2>
+          <p className="text-sm text-white/60 mb-6">
+            Your account was signed in from another device or browser.
+            Only one active session is allowed at a time.
+          </p>
+          <button
+            onClick={() => window.location.reload()}
+            className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-blue-500 to-indigo-600 text-white text-sm font-semibold hover:from-blue-600 hover:to-indigo-700 transition-all"
+          >
+            Back to Login
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   if (loading)
     return (
@@ -898,10 +921,18 @@ function App() {
                   </div>
                   <div className="border-t border-gray-100 pt-1">
                     <button
-                      onClick={async () => {
-                        await supabase.auth.signOut();
-                        window.location.reload();
-                      }}
+                     onClick={async () => {
+                      // ── NEW: clear single-session token before signing out
+                      const email = localStorage.getItem("verto_user_email");
+                      if (email) {
+                        await supabase.rpc("logout_session", { p_email: email });
+                      }
+                      localStorage.removeItem("verto_session_token");
+                      localStorage.removeItem("verto_user_email");
+                      localStorage.removeItem("loginDate");
+                      await supabase.auth.signOut();
+                      window.location.reload();
+                    }}
                       className="w-full flex items-center space-x-3 px-4 py-2.5 text-sm text-rose-600 hover:bg-rose-50 transition-colors"
                     >
                       <LogOut className="w-4 h-4" />

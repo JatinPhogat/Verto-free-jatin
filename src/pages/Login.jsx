@@ -31,7 +31,20 @@ const Login = () => {
       setError("Invalid email or password");
       setLoading(false);
     } else {
+      // ── SINGLE SESSION: register this login, kicks any existing session ──
+      const sessionToken = crypto.randomUUID();
       localStorage.setItem("loginDate", new Date().toDateString());
+      localStorage.setItem("verto_session_token", sessionToken);
+      localStorage.setItem("verto_user_email", email.toLowerCase().trim());
+    
+      await supabase.rpc("register_session", {
+        p_email: email.toLowerCase().trim(),
+        p_token: sessionToken,
+        p_uid: null,         // optional, just for audit
+        p_user_agent: navigator.userAgent,
+        p_ip: null,
+      });
+    
       setSuccess("Login successful! Redirecting...");
       triggerLoginConfetti();
       setLoading(false);
