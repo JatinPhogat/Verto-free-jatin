@@ -2080,11 +2080,14 @@ const AddExpenseDetailsManModal = ({ isOpen, onClose, onSaved }) => {
       (e) => e.emp_code?.toUpperCase() === intForm.empCode?.toUpperCase()
     );
     if (it) {
+      const matchedDept = departments.find(
+        (d) => d.dept_code?.toLowerCase().trim() === it.department?.toLowerCase().trim()
+      );
       setIntForm((prev) => ({
         ...prev,
         name: it.name || "",
         designation: it.designation || "",
-        department: it.department || "",
+        department: matchedDept?.dept_name || it.department || "",
       }));
     }
   }, [intForm.empCode, employees, internalTeam]);
@@ -2298,6 +2301,7 @@ const AddExpenseDetailsManModal = ({ isOpen, onClose, onSaved }) => {
       const deptMap = {};
       departments.forEach((d) => {
         deptMap[d.dept_name?.toLowerCase().trim()] = d.id;
+        deptMap[d.dept_code?.toLowerCase().trim()] = d.id;
       });
       const bankMap = {};
       banks.forEach((b) => {
