@@ -147,45 +147,224 @@ const BulkResultModal = ({ result, onClose }) => {
   );
 };
 
+// ─── Inline Edit Row Form (inside BulkDetailModal) ────────────────────────────
+const InlineEditRow = ({ row, onSave, onCancel }) => {
+  const [f, setF] = useState({
+    client_name: row.client_name || "",
+    ledger_name: row.ledger_name || "",
+    date: row.date || "",
+    amount: row.amount || "",
+    interest: row.interest || "",
+    paid_back: row.paid_back || "",
+    status: row.status || "Pending",
+    remarks: row.remarks || "",
+  });
+  const [saving, setSaving] = useState(false);
+  const livePending = calcPendingDue(f.amount, f.interest, f.paid_back);
+
+  const handleSave = async () => {
+    if (!f.client_name || !f.amount) return;
+    setSaving(true);
+    const pending_due = calcPendingDue(f.amount, f.interest, f.paid_back);
+    const payload = {
+      client_name: f.client_name,
+      ledger_name: f.ledger_name || null,
+      date: f.date || null,
+      amount: parseFloat(f.amount) || 0,
+      interest: parseFloat(f.interest) || 0,
+      paid_back: parseFloat(f.paid_back) || 0,
+      pending_due,
+      status: f.status,
+      remarks: f.remarks || null,
+    };
+    const { error } = await supabase
+      .from("client_advance_tracker")
+      .update(payload)
+      .eq("id", row.id);
+    setSaving(false);
+    if (!error) onSave({ ...row, ...payload });
+  };
+
+  const inp = "px-2 py-1.5 border border-orange-300 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-orange-500 w-full bg-white";
+
+  return (
+    <tr className="bg-orange-50/60 border-b-2 border-orange-300">
+      {/* # */}
+      <td className="px-4 py-2 text-gray-400 text-xs align-top pt-3">✏️</td>
+      {/* Client Name */}
+      <td className="px-2 py-2 align-top">
+        <input className={inp} value={f.client_name}
+          onChange={(e) => setF((p) => ({ ...p, client_name: e.target.value }))} placeholder="Client name *" />
+      </td>
+      {/* Ledger */}
+      <td className="px-2 py-2 align-top">
+        <input className={inp} value={f.ledger_name}
+          onChange={(e) => setF((p) => ({ ...p, ledger_name: e.target.value }))} placeholder="Ledger" />
+      </td>
+      {/* Date */}
+      <td className="px-2 py-2 align-top">
+        <input type="date" className={inp} value={f.date}
+          onChange={(e) => setF((p) => ({ ...p, date: e.target.value }))} />
+      </td>
+      {/* Amount */}
+      <td className="px-2 py-2 align-top">
+        <input type="number" className={inp} value={f.amount}
+          onChange={(e) => setF((p) => ({ ...p, amount: e.target.value }))} placeholder="0" />
+      </td>
+      {/* Interest */}
+      <td className="px-2 py-2 align-top">
+        <input type="number" className={inp} value={f.interest}
+          onChange={(e) => setF((p) => ({ ...p, interest: e.target.value }))} placeholder="0" />
+      </td>
+      {/* Paid Back */}
+      <td className="px-2 py-2 align-top">
+        <input type="number" className={inp} value={f.paid_back}
+          onChange={(e) => setF((p) => ({ ...p, paid_back: e.target.value }))} placeholder="0" />
+      </td>
+      {/* Pending Due (auto) */}
+      <td className="px-2 py-2 align-top">
+        <div className="px-2 py-1.5 bg-red-50 border border-red-200 rounded-lg text-xs font-bold text-red-600 text-center whitespace-nowrap">
+          {fmt(livePending)}
+        </div>
+      </td>
+      {/* Status */}
+      <td className="px-2 py-2 align-top">
+        <select className={inp} value={f.status}
+          onChange={(e) => setF((p) => ({ ...p, status: e.target.value }))}>
+          {STATUS_OPTIONS.map((s) => <option key={s}>{s}</option>)}
+        </select>
+      </td>
+      {/* Remarks */}
+      <td className="px-2 py-2 align-top">
+        <input className={inp} value={f.remarks}
+          onChange={(e) => setF((p) => ({ ...p, remarks: e.target.value }))} placeholder="Remarks" />
+      </td>
+      {/* Actions */}
+      <td className="px-2 py-2 align-top">
+        <div className="flex gap-1.5">
+          <button onClick={handleSave} disabled={saving}
+            className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold transition disabled:opacity-60">
+            {saving ? <Loader2 className="w-3 h-3 animate-spin" /> : <Save className="w-3 h-3" />}
+            {saving ? "…" : "Save"}
+          </button>
+          <button onClick={onCancel}
+            className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-gray-200 hover:bg-gray-300 text-gray-700 text-xs font-semibold transition">
+            <X className="w-3 h-3" /> Cancel
+          </button>
+        </div>
+      </td>
+    </tr>
+  );
+};
+
 // ─── Bulk Upload Row Modal (drill-down) ───────────────────────────────────────
-const BulkDetailModal = ({ upload, onClose }) => {
+const BulkDetailModal = ({ upload, onClose, onDataChanged }) => {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [editingRowId, setEditingRowId] = useState(null);
+  const [confirmDeleteId, setConfirmDeleteId] = useState(null);
+  const [deleting, setDeleting] = useState(false);
 
-  useEffect(() => {
-    const fetch = async () => {
-      setLoading(true);
-      const { data } = await supabase
-        .from("client_advance_tracker")
-        .select("*")
-        .eq("bulk_upload_id", upload.id)
-        .order("created_at", { ascending: true });
-      setRows(data || []);
-      setLoading(false);
-    };
-    fetch();
-  }, [upload.id]);
+  const loadRows = async () => {
+    setLoading(true);
+    const { data } = await supabase
+      .from("client_advance_tracker")
+      .select("*")
+      .eq("bulk_upload_id", upload.id)
+      .order("created_at", { ascending: true });
+    setRows(data || []);
+    setLoading(false);
+  };
+
+  useEffect(() => { loadRows(); }, [upload.id]);
+
+  // ── Live totals computed from current rows state (always up-to-date) ─────────
+  const liveTotals = rows.reduce(
+    (acc, r) => ({
+      amount:      acc.amount      + (parseFloat(r.amount)      || 0),
+      interest:    acc.interest    + (parseFloat(r.interest)    || 0),
+      paid_back:   acc.paid_back   + (parseFloat(r.paid_back)   || 0),
+      pending_due: acc.pending_due + (parseFloat(r.pending_due) || 0),
+    }),
+    { amount: 0, interest: 0, paid_back: 0, pending_due: 0 }
+  );
+
+  const handleRowSaved = async (updatedRow) => {
+    const newRows = rows.map((r) => (r.id === updatedRow.id ? updatedRow : r));
+    setRows(newRows);
+    setEditingRowId(null);
+
+    // Recompute and persist updated totals to the bulk upload session row
+    const totals = newRows.reduce(
+      (acc, r) => ({
+        amount:      acc.amount      + (parseFloat(r.amount)      || 0),
+        interest:    acc.interest    + (parseFloat(r.interest)    || 0),
+        paid_back:   acc.paid_back   + (parseFloat(r.paid_back)   || 0),
+        pending_due: acc.pending_due + (parseFloat(r.pending_due) || 0),
+      }),
+      { amount: 0, interest: 0, paid_back: 0, pending_due: 0 }
+    );
+    await supabase.from("client_advance_bulk_uploads").update({
+      total_amount:      totals.amount,
+      total_interest:    totals.interest,
+      total_paid_back:   totals.paid_back,
+      total_pending_due: totals.pending_due,
+    }).eq("id", upload.id);
+
+    // Refresh parent (stats cards + bulk upload history row)
+    if (onDataChanged) onDataChanged();
+  };
+
+  // ── Delete a single row from the bulk upload ──────────────────────────────
+  const handleRowDeleted = async (rowId) => {
+    setDeleting(true);
+    await supabase.from("client_advance_tracker").delete().eq("id", rowId);
+    const newRows = rows.filter((r) => r.id !== rowId);
+    setRows(newRows);
+    setConfirmDeleteId(null);
+    setDeleting(false);
+
+    // Recompute totals and persist
+    const totals = newRows.reduce(
+      (acc, r) => ({
+        amount:      acc.amount      + (parseFloat(r.amount)      || 0),
+        interest:    acc.interest    + (parseFloat(r.interest)    || 0),
+        paid_back:   acc.paid_back   + (parseFloat(r.paid_back)   || 0),
+        pending_due: acc.pending_due + (parseFloat(r.pending_due) || 0),
+      }),
+      { amount: 0, interest: 0, paid_back: 0, pending_due: 0 }
+    );
+    await supabase.from("client_advance_bulk_uploads").update({
+      row_count:         newRows.length,
+      total_amount:      totals.amount,
+      total_interest:    totals.interest,
+      total_paid_back:   totals.paid_back,
+      total_pending_due: totals.pending_due,
+    }).eq("id", upload.id);
+
+    if (onDataChanged) onDataChanged();
+  };
 
   return (
     <div className="fixed inset-0 z-[99999] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-5xl flex flex-col overflow-hidden" style={{ maxHeight: "90vh" }}>
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-6xl flex flex-col overflow-hidden" style={{ maxHeight: "90vh" }}>
         <div className="bg-gradient-to-r from-[#7c2d12] to-[#ea580c] px-6 py-4 flex items-center justify-between flex-shrink-0">
           <div>
             <h3 className="text-white font-bold text-lg">{upload.upload_label}</h3>
             <p className="text-orange-200 text-xs mt-0.5">
-              {upload.row_count} rows · {fmtDate(upload.uploaded_at)} · Total Advanced: {fmt(upload.total_amount)}
+              {rows.length} rows · {fmtDate(upload.uploaded_at)} · Total Advanced: {fmt(liveTotals.amount)}
             </p>
           </div>
           <button onClick={onClose} className="text-white/70 hover:text-white"><X className="w-5 h-5" /></button>
         </div>
 
-        {/* Summary bar */}
+        {/* Summary bar — uses live totals, never stale */}
         <div className="grid grid-cols-4 gap-3 p-4 bg-orange-50 border-b border-orange-100 flex-shrink-0">
           {[
-            { label: "Total Amount", value: fmt(upload.total_amount), color: "text-orange-800" },
-            { label: "Total Interest", value: fmt(upload.total_interest), color: "text-orange-600" },
-            { label: "Total Paid Back", value: fmt(upload.total_paid_back), color: "text-green-700" },
-            { label: "Total Pending Due", value: fmt(upload.total_pending_due), color: "text-red-600" },
+            { label: "Total Amount",      value: fmt(liveTotals.amount),      color: "text-orange-800" },
+            { label: "Total Interest",    value: fmt(liveTotals.interest),    color: "text-orange-600" },
+            { label: "Total Paid Back",   value: fmt(liveTotals.paid_back),   color: "text-green-700" },
+            { label: "Total Pending Due", value: fmt(liveTotals.pending_due), color: "text-red-600"   },
           ].map(({ label, value, color }) => (
             <div key={label} className="bg-white rounded-xl p-3 border border-orange-100 text-center">
               <p className="text-xs text-gray-500 font-semibold uppercase tracking-wide">{label}</p>
@@ -200,39 +379,94 @@ const BulkDetailModal = ({ upload, onClose }) => {
               <Loader2 className="w-6 h-6 animate-spin" /><span>Loading rows…</span>
             </div>
           ) : (
-            <table className="w-full text-sm min-w-[900px]">
+            <table className="w-full text-sm min-w-[1000px]">
               <thead className="bg-gray-50 border-b border-gray-200 sticky top-0 z-10">
                 <tr>
-                  {["#", "Client Name", "Ledger", "Date", "Amount", "Interest", "Paid Back", "Pending Due", "Status", "Remarks"].map((h) => (
+                  {["#", "Client Name", "Ledger", "Date", "Amount", "Interest", "Paid Back", "Pending Due", "Status", "Remarks", "Actions"].map((h) => (
                     <th key={h} className="px-4 py-3 text-left text-xs font-bold text-gray-600 uppercase tracking-wider whitespace-nowrap">{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
-                {rows.map((r, i) => (
-                  <tr key={r.id} className="hover:bg-orange-50/30 transition-colors">
-                    <td className="px-4 py-3 text-gray-400 text-xs">{i + 1}</td>
-                    <td className="px-4 py-3 font-semibold text-orange-900">{r.client_name}</td>
-                    <td className="px-4 py-3 text-gray-600">{r.ledger_name || "—"}</td>
-                    <td className="px-4 py-3 text-gray-600 whitespace-nowrap">{fmtDate(r.date)}</td>
-                    <td className="px-4 py-3 font-mono font-semibold text-orange-800">{fmt(r.amount)}</td>
-                    <td className="px-4 py-3 font-mono text-orange-600">{fmt(r.interest)}</td>
-                    <td className="px-4 py-3 font-mono text-green-700">{fmt(r.paid_back)}</td>
-                    <td className="px-4 py-3 font-mono font-bold text-red-600">{fmt(r.pending_due)}</td>
-                    <td className="px-4 py-3">
-                      <span className={`px-2.5 py-1 rounded-full text-xs font-semibold ${
-                        r.status === "Closed" ? "bg-green-100 text-green-700" :
-                        r.status === "Partially Paid" ? "bg-yellow-100 text-yellow-700" :
-                        "bg-red-100 text-red-600"
-                      }`}>{r.status}</span>
-                    </td>
-                    <td className="px-4 py-3 text-gray-500 max-w-[140px] truncate">{r.remarks || "—"}</td>
-                  </tr>
-                ))}
+                {rows.map((r, i) =>
+                  editingRowId === r.id ? (
+                    <InlineEditRow
+                      key={r.id}
+                      row={r}
+                      onSave={handleRowSaved}
+                      onCancel={() => setEditingRowId(null)}
+                    />
+                  ) : (
+                    <tr key={r.id} className="hover:bg-orange-50/30 transition-colors">
+                      <td className="px-4 py-3 text-gray-400 text-xs">{i + 1}</td>
+                      <td className="px-4 py-3 font-semibold text-orange-900">{r.client_name}</td>
+                      <td className="px-4 py-3 text-gray-600">{r.ledger_name || "—"}</td>
+                      <td className="px-4 py-3 text-gray-600 whitespace-nowrap">{fmtDate(r.date)}</td>
+                      <td className="px-4 py-3 font-mono font-semibold text-orange-800">{fmt(r.amount)}</td>
+                      <td className="px-4 py-3 font-mono text-orange-600">{fmt(r.interest)}</td>
+                      <td className="px-4 py-3 font-mono text-green-700">{fmt(r.paid_back)}</td>
+                      <td className="px-4 py-3 font-mono font-bold text-red-600">{fmt(r.pending_due)}</td>
+                      <td className="px-4 py-3">
+                        <span className={`px-2.5 py-1 rounded-full text-xs font-semibold ${
+                          r.status === "Closed"         ? "bg-green-100 text-green-700" :
+                          r.status === "Partially Paid" ? "bg-yellow-100 text-yellow-700" :
+                                                          "bg-red-100 text-red-600"
+                        }`}>{r.status}</span>
+                      </td>
+                      <td className="px-4 py-3 text-gray-500 max-w-[120px] truncate">{r.remarks || "—"}</td>
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            onClick={() => setEditingRowId(r.id)}
+                            className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-orange-100 hover:bg-orange-200 text-orange-700 text-xs font-semibold transition"
+                          >
+                            <Edit2 className="w-3.5 h-3.5" /> Edit
+                          </button>
+                          <button
+                            onClick={() => setConfirmDeleteId(r.id)}
+                            className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-red-100 hover:bg-red-200 text-red-600 text-xs font-semibold transition"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" /> Delete
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  )
+                )}
               </tbody>
             </table>
           )}
         </div>
+
+        {/* ── Inline delete confirmation ─────────────────────────────────────── */}
+        {confirmDeleteId && (
+          <div className="flex-shrink-0 border-t-2 border-red-200 bg-red-50 px-5 py-4 flex items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <div className="w-8 h-8 rounded-full bg-red-100 flex items-center justify-center flex-shrink-0">
+                <Trash2 className="w-4 h-4 text-red-600" />
+              </div>
+              <p className="text-sm font-semibold text-red-800">
+                Delete this record? <span className="font-normal text-red-600">This cannot be undone.</span>
+              </p>
+            </div>
+            <div className="flex gap-2 flex-shrink-0">
+              <button
+                onClick={() => setConfirmDeleteId(null)}
+                className="px-4 py-2 rounded-lg border border-gray-300 bg-white text-gray-700 text-xs font-semibold hover:bg-gray-50 transition"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => handleRowDeleted(confirmDeleteId)}
+                disabled={deleting}
+                className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-red-600 hover:bg-red-700 text-white text-xs font-semibold transition disabled:opacity-60"
+              >
+                {deleting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+                {deleting ? "Deleting…" : "Yes, Delete"}
+              </button>
+            </div>
+          </div>
+        )}
 
         <div className="flex-shrink-0 px-5 py-3 border-t border-gray-100 flex justify-end">
           <button onClick={onClose} className="px-5 py-2 rounded-xl bg-gray-800 text-white text-sm font-semibold hover:bg-gray-900 transition">Close</button>
@@ -254,6 +488,8 @@ export default function ClientAdvanceTracker() {
   const [form, setForm]               = useState(emptyForm);
   const [saving, setSaving]           = useState(false);
   const [deleteId, setDeleteId]       = useState(null);
+  const [confirmBulkDelete, setConfirmBulkDelete] = useState(null);
+  const [bulkDeleting, setBulkDeleting] = useState(false);
 
   // Bulk upload state
   const [bulkLoading, setBulkLoading]     = useState(false);
@@ -308,6 +544,15 @@ export default function ClientAdvanceTracker() {
     fetchAll();
   }
 
+  async function handleDeleteBulkUpload(bulkId) {
+    setBulkDeleting(true);
+    await supabase.from("client_advance_tracker").delete().eq("bulk_upload_id", bulkId);
+    await supabase.from("client_advance_bulk_uploads").delete().eq("id", bulkId);
+    setBulkDeleting(false);
+    setConfirmBulkDelete(null);
+    fetchAll();
+  }
+
   // ── BULK UPLOAD ──────────────────────────────────────────────────────────────
   const handleExcelFileSelected = async (e) => {
     const file = e.target.files[0];
@@ -321,7 +566,6 @@ export default function ClientAdvanceTracker() {
       const rawRows = XLSX.utils.sheet_to_json(ws, { raw: true, defval: "" });
       if (!rawRows.length) { alert("Excel file is empty."); setBulkLoading(false); return; }
 
-      // Normalize headers
       const normalizedRows = rawRows.map((row, idx) => {
         const n = { _rowNum: idx + 2 };
         Object.entries(row).forEach(([key, val]) => {
@@ -331,14 +575,12 @@ export default function ClientAdvanceTracker() {
         return n;
       });
 
-      // Validate: must have client_name
       if (!normalizedRows[0].hasOwnProperty("client_name")) {
         alert('Column "Client Name" not found. Please use the template.');
         setBulkLoading(false);
         return;
       }
 
-      // Create bulk upload session record first
       const uploadLabel = `Bulk_Upload_${new Date().toISOString().slice(0, 10)}`;
       const { data: uploadSession, error: sessionErr } = await supabase
         .from("client_advance_bulk_uploads")
@@ -346,7 +588,6 @@ export default function ClientAdvanceTracker() {
         .select().single();
       if (sessionErr) throw sessionErr;
 
-      // Insert rows
       let added = 0;
       let totalAmount = 0, totalInterest = 0, totalPaidBack = 0, totalPendingDue = 0;
       const failedDetails = [];
@@ -381,7 +622,6 @@ export default function ClientAdvanceTracker() {
         }
       }
 
-      // Update session totals
       await supabase.from("client_advance_bulk_uploads").update({
         row_count:         added,
         total_amount:      totalAmount,
@@ -408,7 +648,6 @@ export default function ClientAdvanceTracker() {
     return matchSearch && matchStatus;
   });
 
-  // Stats across ALL records (individual + bulk)
   const totalAdvanced = records.reduce((s, r) => s + (parseFloat(r.amount)      || 0), 0);
   const totalPending  = records.reduce((s, r) => s + (parseFloat(r.pending_due) || 0), 0);
   const openCount     = records.filter((r) => r.status !== "Closed").length;
@@ -447,17 +686,14 @@ export default function ClientAdvanceTracker() {
             </select>
           </div>
           <div className="flex items-center gap-2">
-            {/* Download Template */}
             <button onClick={downloadTemplate}
               className="flex items-center gap-2 px-4 py-2.5 border border-orange-300 bg-orange-50 text-orange-700 rounded-xl text-sm font-semibold hover:bg-orange-100 transition">
               <Download className="w-4 h-4" /> Template
             </button>
-            {/* Bulk Upload */}
             <label className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold cursor-pointer transition ${bulkLoading ? "bg-gray-200 text-gray-500 cursor-not-allowed" : "bg-emerald-600 hover:bg-emerald-700 text-white"}`}>
               {bulkLoading ? <><Loader2 className="w-4 h-4 animate-spin" /> Processing…</> : <><Upload className="w-4 h-4" /> Bulk Upload</>}
               <input ref={excelFileRef} type="file" accept=".xlsx,.xls" onChange={handleExcelFileSelected} disabled={bulkLoading} className="hidden" />
             </label>
-            {/* Add Single */}
             <button onClick={openAdd}
               className="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-[#7c2d12] to-[#ea580c] text-white rounded-xl text-sm font-semibold shadow hover:shadow-md transition-all">
               <Plus className="w-4 h-4" /> Add Client Advance
@@ -524,12 +760,18 @@ export default function ClientAdvanceTracker() {
                           <td className="px-4 py-3 font-mono text-orange-600">{fmt(u.total_interest)}</td>
                           <td className="px-4 py-3 font-mono text-green-700">{fmt(u.total_paid_back)}</td>
                           <td className="px-4 py-3 font-mono font-bold text-red-600">{fmt(u.total_pending_due)}</td>
-                          <td className="px-4 py-3">
+                          <td className="px-4 py-3 flex gap-2">
                             <button
                               onClick={() => setViewUpload(u)}
                               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-orange-100 hover:bg-orange-200 text-orange-700 text-xs font-semibold transition"
                             >
                               <Eye className="w-3.5 h-3.5" /> View Rows
+                            </button>
+                            <button
+                              onClick={() => setConfirmBulkDelete(u)}
+                              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-red-100 hover:bg-red-200 text-red-600 text-xs font-semibold transition"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" /> Delete
                             </button>
                           </td>
                         </motion.tr>
@@ -540,6 +782,35 @@ export default function ClientAdvanceTracker() {
               </motion.div>
             )}
           </AnimatePresence>
+          {confirmBulkDelete && (
+            <div className="border-t border-orange-100 bg-red-50 px-5 py-4 flex flex-col gap-3">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-full bg-red-100 flex items-center justify-center">
+                  <Trash2 className="w-4 h-4 text-red-600" />
+                </div>
+                <div>
+                  <p className="text-sm font-semibold text-red-800">Delete entire bulk upload?</p>
+                  <p className="text-xs text-red-600">This will remove all {confirmBulkDelete.row_count} rows and the upload history entry.</p>
+                </div>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  onClick={() => setConfirmBulkDelete(null)}
+                  className="px-4 py-2 rounded-xl border border-gray-300 bg-white text-gray-700 text-xs font-semibold hover:bg-gray-50 transition"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => handleDeleteBulkUpload(confirmBulkDelete.id)}
+                  disabled={bulkDeleting}
+                  className="flex items-center gap-2 px-4 py-2 rounded-xl bg-red-600 hover:bg-red-700 text-white text-xs font-semibold transition disabled:opacity-60"
+                >
+                  {bulkDeleting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                  {bulkDeleting ? "Deleting…" : "Delete Bulk Upload"}
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -696,7 +967,11 @@ export default function ClientAdvanceTracker() {
 
       {/* Bulk Detail Drill-down Modal */}
       {viewUpload && (
-        <BulkDetailModal upload={viewUpload} onClose={() => setViewUpload(null)} />
+        <BulkDetailModal
+          upload={viewUpload}
+          onClose={() => setViewUpload(null)}
+          onDataChanged={fetchAll}
+        />
       )}
     </div>
   );

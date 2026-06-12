@@ -565,6 +565,7 @@ const MismatchConfirmModal = ({ matched, mismatches, onProceed, onCancel }) => (
 );
 
 // ─── OS PAYOUT RECORDS VIEW (INLINE — Edit/View/Delete) ───────────────────────
+// ─── OS PAYOUT RECORDS VIEW (INLINE — Edit/View/Delete) ───────────────────────
 const OsPayoutRecordsView = ({
   banks,
   entities,
@@ -581,6 +582,15 @@ const OsPayoutRecordsView = ({
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(null);
   const [viewRow, setViewRow] = useState(null);
+
+  // ── ADVANCED SEARCH STATE ──
+  const [searchQuery, setSearchQuery] = useState("");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
+  const [filterBank, setFilterBank] = useState("");
+  const [filterClient, setFilterClient] = useState("");
+  const [filterPayHead, setFilterPayHead] = useState("");
+  const [showFilters, setShowFilters] = useState(false);
 
   // BB states
   const [bbRow, setBbRow] = useState(null); // payout row for BB modal
@@ -654,6 +664,40 @@ const OsPayoutRecordsView = ({
     const bbEmp = bbMap[row.id]?.total_bb_emp || 0;
     return Math.max((parseInt(row.employee_count) || 0) - bbEmp, 0);
   };
+
+  // ── FILTERED RECORDS ──
+  const filteredRecords = records.filter((row) => {
+    const q = searchQuery.trim().toLowerCase();
+    const matchesQ =
+      !q ||
+      (row.payout_ref_no || "").toLowerCase().includes(q) ||
+      (row.clients_master?.client_name || "").toLowerCase().includes(q) ||
+      (row.pay_head || "").toLowerCase().includes(q) ||
+      (row.bank_master?.bank_name || "").toLowerCase().includes(q) ||
+      (row.remarks || "").toLowerCase().includes(q) ||
+      (row.payment_details || "").toLowerCase().includes(q);
+
+    const matchesDate =
+      (!dateFrom || (row.payment_date && row.payment_date >= dateFrom)) &&
+      (!dateTo || (row.payment_date && row.payment_date <= dateTo));
+
+    const matchesBank = !filterBank || row.bank_id === filterBank;
+    const matchesClient = !filterClient || row.client_id === filterClient;
+    const matchesPayHead = !filterPayHead || row.pay_head === filterPayHead;
+
+    return (
+      matchesQ && matchesDate && matchesBank && matchesClient && matchesPayHead
+    );
+  });
+
+  const activeFilterCount = [
+    searchQuery,
+    dateFrom,
+    dateTo,
+    filterBank,
+    filterClient,
+    filterPayHead,
+  ].filter(Boolean).length;
 
   // ── EDIT ──
   const startEdit = (row) => {
@@ -924,35 +968,280 @@ const OsPayoutRecordsView = ({
         style={{ maxHeight: "90vh" }}
       >
         {/* ── Header ── */}
-        <div className="bg-gradient-to-r from-purple-600 to-pink-700 px-6 py-4 flex-shrink-0 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-white/20 rounded-xl">
-              <FileText className="w-5 h-5 text-white" />
+        <div className="bg-gradient-to-r from-purple-600 to-pink-700 px-6 py-4 flex-shrink-0 space-y-3">
+          {/* Top bar */}
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-white/20 rounded-xl">
+                <FileText className="w-5 h-5 text-white" />
+              </div>
+              <div>
+                <h3 className="font-bold text-lg text-white">
+                  OS Payout Records
+                </h3>
+                <p className="text-white/70 text-xs">
+                  Net Approved = OS Amt − BB − TDS &nbsp;|&nbsp; Net Emp = Emp
+                  Count − BB Emp Count
+                </p>
+              </div>
             </div>
-            <div>
-              <h3 className="font-bold text-lg text-white">
-                OS Payout Records
-              </h3>
-              <p className="text-white/70 text-xs">
-                Net Approved = OS Amt − BB − TDS &nbsp;|&nbsp; Net Emp = Emp
-                Count − BB Emp Count
-              </p>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setShowFilters((s) => !s)}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition ${
+                  showFilters || activeFilterCount > 0
+                    ? "bg-white text-purple-700"
+                    : "bg-white/10 hover:bg-white/20 text-white"
+                }`}
+              >
+                <Search className="w-3.5 h-3.5" />
+                {showFilters ? "Hide Filters" : "Advanced Search"}
+                {activeFilterCount > 0 && (
+                  <span className="ml-1 bg-purple-600 text-white w-4 h-4 rounded-full flex items-center justify-center text-[10px]">
+                    {activeFilterCount}
+                  </span>
+                )}
+              </button>
+              <button
+                onClick={fetchRecords}
+                className="p-2 rounded-xl bg-white/10 hover:bg-white/20 text-white transition"
+                title="Refresh"
+              >
+                <RefreshCw className="w-4 h-4" />
+              </button>
+              <button
+                onClick={onClose}
+                className="p-2 rounded-xl bg-white/10 hover:bg-white/20 text-white transition"
+              >
+                <X className="w-5 h-5" />
+              </button>
             </div>
           </div>
-          <div className="flex items-center gap-2">
+
+          {/* Quick chips */}
+          <div className="flex items-center gap-2 overflow-x-auto no-scrollbar">
             <button
-              onClick={fetchRecords}
-              className="p-2 rounded-xl bg-white/10 hover:bg-white/20 text-white transition"
+              onClick={() => {
+                setSearchQuery("");
+                setDateFrom("");
+                setDateTo("");
+                setFilterBank("");
+                setFilterClient("");
+                setFilterPayHead("");
+              }}
+              className={`px-3 py-1 rounded-lg text-xs font-bold transition whitespace-nowrap ${
+                activeFilterCount === 0
+                  ? "bg-white text-purple-700"
+                  : "bg-white/10 text-white hover:bg-white/20"
+              }`}
             >
-              <RefreshCw className="w-4 h-4" />
+              All Payments
             </button>
-            <button
-              onClick={onClose}
-              className="p-2 rounded-xl bg-white/10 hover:bg-white/20 text-white transition"
-            >
-              <X className="w-5 h-5" />
-            </button>
+            {dateFrom || dateTo ? (
+              <span className="px-2.5 py-1 rounded-lg bg-white/20 text-white text-xs font-medium flex items-center gap-1">
+                📅 {dateFrom || "…"} → {dateTo || "…"}
+                <button
+                  onClick={() => {
+                    setDateFrom("");
+                    setDateTo("");
+                  }}
+                  className="hover:text-white/70"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              </span>
+            ) : null}
+            {filterBank && (
+              <span className="px-2.5 py-1 rounded-lg bg-white/20 text-white text-xs font-medium flex items-center gap-1">
+                🏦{" "}
+                {banks.find((b) => b.id === filterBank)?.bank_name ||
+                  filterBank}
+                <button
+                  onClick={() => setFilterBank("")}
+                  className="hover:text-white/70"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              </span>
+            )}
+            {filterClient && (
+              <span className="px-2.5 py-1 rounded-lg bg-white/20 text-white text-xs font-medium flex items-center gap-1">
+                🏢{" "}
+                {clients.find((c) => c.id === filterClient)?.client_name ||
+                  filterClient}
+                <button
+                  onClick={() => setFilterClient("")}
+                  className="hover:text-white/70"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              </span>
+            )}
+            {filterPayHead && (
+              <span className="px-2.5 py-1 rounded-lg bg-white/20 text-white text-xs font-medium flex items-center gap-1">
+                📂 {filterPayHead}
+                <button
+                  onClick={() => setFilterPayHead("")}
+                  className="hover:text-white/70"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              </span>
+            )}
+            {searchQuery && (
+              <span className="px-2.5 py-1 rounded-lg bg-white/20 text-white text-xs font-medium flex items-center gap-1">
+                🔍 "{searchQuery}"
+                <button
+                  onClick={() => setSearchQuery("")}
+                  className="hover:text-white/70"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              </span>
+            )}
           </div>
+
+          {/* Expandable filter panel */}
+          <AnimatePresence>
+            {showFilters && (
+              <motion.div
+                initial={{ height: 0, opacity: 0 }}
+                animate={{ height: "auto", opacity: 1 }}
+                exit={{ height: 0, opacity: 0 }}
+                transition={{ duration: 0.2 }}
+                className="overflow-hidden"
+              >
+                <div className="bg-white/10 backdrop-blur-sm rounded-xl p-3 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                  {/* Search */}
+                  <div className="relative lg:col-span-2">
+                    <Search className="absolute left-3 top-2.5 w-4 h-4 text-white/60 pointer-events-none" />
+                    <input
+                      type="text"
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      placeholder="Search Ref, Client, Ledger, Bank, Remarks..."
+                      className="w-full bg-white/10 border border-white/20 rounded-lg pl-9 pr-3 py-2 text-sm text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-white/40"
+                    />
+                  </div>
+
+                  {/* Date From */}
+                  <div>
+                    <label className="text-[10px] font-bold text-white/70 uppercase tracking-wider block mb-1">
+                      From Date
+                    </label>
+                    <input
+                      type="date"
+                      value={dateFrom}
+                      onChange={(e) => setDateFrom(e.target.value)}
+                      className="w-full bg-white/10 border border-white/20 rounded-lg px-3 py-2 text-sm text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-white/40 [color-scheme:dark]"
+                    />
+                  </div>
+
+                  {/* Date To */}
+                  <div>
+                    <label className="text-[10px] font-bold text-white/70 uppercase tracking-wider block mb-1">
+                      To Date
+                    </label>
+                    <input
+                      type="date"
+                      value={dateTo}
+                      onChange={(e) => setDateTo(e.target.value)}
+                      className="w-full bg-white/10 border border-white/20 rounded-lg px-3 py-2 text-sm text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-white/40 [color-scheme:dark]"
+                    />
+                  </div>
+
+                  {/* Bank Filter */}
+                  <div>
+                    <label className="text-[10px] font-bold text-white/70 uppercase tracking-wider block mb-1">
+                      Bank
+                    </label>
+                    <select
+                      value={filterBank}
+                      onChange={(e) => setFilterBank(e.target.value)}
+                      className="w-full bg-white/10 border border-white/20 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-white/40 appearance-none"
+                    >
+                      <option value="" className="text-gray-800">
+                        All Banks
+                      </option>
+                      {banks.map((b) => (
+                        <option
+                          key={b.id}
+                          value={b.id}
+                          className="text-gray-800"
+                        >
+                          {b.bank_name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Client Filter */}
+                  <div>
+                    <label className="text-[10px] font-bold text-white/70 uppercase tracking-wider block mb-1">
+                      Client
+                    </label>
+                    <select
+                      value={filterClient}
+                      onChange={(e) => setFilterClient(e.target.value)}
+                      className="w-full bg-white/10 border border-white/20 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-white/40 appearance-none"
+                    >
+                      <option value="" className="text-gray-800">
+                        All Clients
+                      </option>
+                      {clients.map((c) => (
+                        <option
+                          key={c.id}
+                          value={c.id}
+                          className="text-gray-800"
+                        >
+                          {c.client_name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Pay Head / Ledger Filter */}
+                  <div>
+                    <label className="text-[10px] font-bold text-white/70 uppercase tracking-wider block mb-1">
+                      Ledger (Pay Head)
+                    </label>
+                    <select
+                      value={filterPayHead}
+                      onChange={(e) => setFilterPayHead(e.target.value)}
+                      className="w-full bg-white/10 border border-white/20 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-white/40 appearance-none"
+                    >
+                      <option value="" className="text-gray-800">
+                        All Pay Heads
+                      </option>
+                      {OS_PAY_HEADS.map((ph) => (
+                        <option key={ph} value={ph} className="text-gray-800">
+                          {ph}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Clear All */}
+                  <div className="flex items-end">
+                    <button
+                      onClick={() => {
+                        setSearchQuery("");
+                        setDateFrom("");
+                        setDateTo("");
+                        setFilterBank("");
+                        setFilterClient("");
+                        setFilterPayHead("");
+                      }}
+                      className="w-full py-2 rounded-lg border border-white/30 text-white text-xs font-bold hover:bg-white/10 transition flex items-center justify-center gap-1"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                      Clear All Filters
+                    </button>
+                  </div>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
         </div>
 
         {/* ── Table ── */}
@@ -961,6 +1250,26 @@ const OsPayoutRecordsView = ({
             <div className="flex items-center justify-center py-20 gap-3 text-gray-500">
               <Loader2 className="w-6 h-6 animate-spin" />
               <span>Loading records…</span>
+            </div>
+          ) : filteredRecords.length === 0 && records.length > 0 ? (
+            <div className="flex flex-col items-center justify-center py-20 text-gray-400">
+              <Search className="w-12 h-12 mb-3 opacity-30" />
+              <p className="text-sm font-medium">
+                No records match your filters
+              </p>
+              <button
+                onClick={() => {
+                  setSearchQuery("");
+                  setDateFrom("");
+                  setDateTo("");
+                  setFilterBank("");
+                  setFilterClient("");
+                  setFilterPayHead("");
+                }}
+                className="mt-2 px-4 py-2 rounded-lg bg-purple-600 text-white text-sm font-semibold hover:bg-purple-700 transition"
+              >
+                Clear Filters
+              </button>
             </div>
           ) : records.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-20 text-gray-400">
@@ -997,7 +1306,7 @@ const OsPayoutRecordsView = ({
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
-                {records.map((row) => {
+                {filteredRecords.map((row) => {
                   const bb = bbMap[row.id] || {
                     total_bb: 0,
                     total_bb_emp: 0,
@@ -1356,8 +1665,9 @@ const OsPayoutRecordsView = ({
 
         <div className="flex-shrink-0 px-5 py-3 border-t border-gray-100 flex items-center justify-between">
           <p className="text-xs text-gray-500">
-            {records.length} record{records.length !== 1 ? "s" : ""} (latest
-            100)
+            Showing {filteredRecords.length} of {records.length} record
+            {records.length !== 1 ? "s" : ""}
+            {activeFilterCount > 0 && " (filtered)"}
           </p>
           <button
             onClick={onClose}
@@ -1909,12 +2219,7 @@ const INTERNAL_PAY_HEADS = [
   "Others",
   "Loan-Advance",
 ];
-const OS_PAY_HEADS = [
-  "Salary",
-  "Claim",
-  "Incentive",
-  "Other",
-];
+const OS_PAY_HEADS = ["Salary", "Claim", "Incentive", "Other"];
 
 // ─── MAIN COMPONENT ───────────────────────────────────────────────────────────
 const AddExpenseDetailsManModal = ({ isOpen, onClose, onSaved }) => {
@@ -1925,6 +2230,8 @@ const AddExpenseDetailsManModal = ({ isOpen, onClose, onSaved }) => {
 
   const [showViewPage, setShowViewPage] = useState(false);
   const [showOsRecords, setShowOsRecords] = useState(false);
+  const [osOutstanding, setOsOutstanding] = useState(null); // { net_in_hand, already_paid, remaining }
+  const [osOutstandingLoading, setOsOutstandingLoading] = useState(false);
 
   const [entities, setEntities] = useState([]);
   const [departments, setDepartments] = useState([]);
@@ -2081,7 +2388,9 @@ const AddExpenseDetailsManModal = ({ isOpen, onClose, onSaved }) => {
     );
     if (it) {
       const matchedDept = departments.find(
-        (d) => d.dept_code?.toLowerCase().trim() === it.department?.toLowerCase().trim()
+        (d) =>
+          d.dept_code?.toLowerCase().trim() ===
+          it.department?.toLowerCase().trim()
       );
       setIntForm((prev) => ({
         ...prev,
@@ -2101,6 +2410,7 @@ const AddExpenseDetailsManModal = ({ isOpen, onClose, onSaved }) => {
       setBulkResult(null);
       setShowViewPage(false);
       setShowOsRecords(false);
+      setOsOutstanding(null);
       setIntForm({
         entity: "",
         department: "",
@@ -2143,6 +2453,47 @@ const AddExpenseDetailsManModal = ({ isOpen, onClose, onSaved }) => {
       });
     }
   }, [isOpen]);
+
+  // ─── Fetch OS Outstanding ─────────────────────────────────────────────────
+  const fetchOsOutstanding = async (invoiceId) => {
+    if (!invoiceId) {
+      setOsOutstanding(null);
+      return;
+    }
+    setOsOutstandingLoading(true);
+    try {
+      const { data: inv } = await supabase
+        .from("invoices")
+        .select("net_in_hand")
+        .eq("id", invoiceId)
+        .single();
+
+      const { data: payouts } = await supabase
+        .from("os_payouts")
+        .select("amount_paid, bounce_back_amount, income_tax_deducted")
+        .eq("invoice_id", invoiceId);
+
+      const netInHand = parseFloat(inv?.net_in_hand) || 0;
+      const alreadyPaid = (payouts || []).reduce(
+        (s, p) =>
+          s +
+          Math.max(
+            (parseFloat(p.amount_paid) || 0) -
+              (parseFloat(p.bounce_back_amount) || 0) -
+              (parseFloat(p.income_tax_deducted) || 0),
+            0
+          ),
+        0
+      );
+      const remaining = netInHand - alreadyPaid;
+
+      setOsOutstanding({ netInHand, alreadyPaid, remaining });
+    } catch (e) {
+      setOsOutstanding(null);
+    } finally {
+      setOsOutstandingLoading(false);
+    }
+  };
 
   const setInt = (field, value) => {
     setIntForm((p) => ({ ...p, [field]: value }));
@@ -2446,12 +2797,20 @@ const AddExpenseDetailsManModal = ({ isOpen, onClose, onSaved }) => {
         const opening = Number(bank?.opening_balance || 0);
         const movement = (entries || []).reduce((sum, e) => {
           const amt = Number(e.amount || 0);
-          return String(e.type).toLowerCase() === "debit" ? sum - amt : sum + amt;
+          return String(e.type).toLowerCase() === "debit"
+            ? sum - amt
+            : sum + amt;
         }, 0);
         const currentBalance = opening + movement;
         if (totalPayment > currentBalance) {
           alert(
-            `⚠️ Bulk upload for ${bank?.bank_name || "Bank"}: Total payment (₹${totalPayment.toLocaleString("en-IN")}) exceeds current bank balance (₹${Number(currentBalance).toLocaleString("en-IN")}). Proceeding anyway.`
+            `⚠️ Bulk upload for ${
+              bank?.bank_name || "Bank"
+            }: Total payment (₹${totalPayment.toLocaleString(
+              "en-IN"
+            )}) exceeds current bank balance (₹${Number(
+              currentBalance
+            ).toLocaleString("en-IN")}). Proceeding anyway.`
           );
         }
       } catch (err) {
@@ -2580,13 +2939,19 @@ const AddExpenseDetailsManModal = ({ isOpen, onClose, onSaved }) => {
           const opening = Number(bank?.opening_balance || 0);
           const movement = (entries || []).reduce((sum, e) => {
             const amt = Number(e.amount || 0);
-            return String(e.type).toLowerCase() === "debit" ? sum - amt : sum + amt;
+            return String(e.type).toLowerCase() === "debit"
+              ? sum - amt
+              : sum + amt;
           }, 0);
           const currentBalance = opening + movement;
           const payAmt = Number(parseFloat(intForm.paymentAmount) || 0);
           if (payAmt > currentBalance) {
             alert(
-              `⚠️ Entered bank payment (₹${payAmt.toLocaleString("en-IN")}) is greater than current bank balance (₹${Number(currentBalance).toLocaleString("en-IN")}). Proceeding anyway.`
+              `⚠️ Entered bank payment (₹${payAmt.toLocaleString(
+                "en-IN"
+              )}) is greater than current bank balance (₹${Number(
+                currentBalance
+              ).toLocaleString("en-IN")}). Proceeding anyway.`
             );
           }
         } catch (err) {
@@ -2654,36 +3019,44 @@ const AddExpenseDetailsManModal = ({ isOpen, onClose, onSaved }) => {
     setLoading(true);
     try {
       let payload;
-  
+
       if (osForm.invoiceAvailable === "Yes") {
         const inv = invoices.find((i) => i.id === osForm.invoiceId);
-  
-        // ── Validate against net_in_hand ──
+
+        // ── Hard block: Amount Paid cannot exceed OS Amt Difference ──
         if (inv?.net_in_hand > 0) {
           const { data: existingPayouts } = await supabase
             .from("os_payouts")
             .select("amount_paid, bounce_back_amount, income_tax_deducted")
             .eq("invoice_id", osForm.invoiceId);
-  
-          const alreadyPaid = (existingPayouts || []).reduce((s, p) =>
-            s + Math.max(
-              Number(p.amount_paid || 0) - Number(p.bounce_back_amount || 0) - Number(p.income_tax_deducted || 0),
-              0
-            ), 0);
-  
+
+          const alreadyPaid = (existingPayouts || []).reduce(
+            (s, p) =>
+              s +
+              Math.max(
+                (Number(p.amount_paid) || 0) -
+                  (Number(p.bounce_back_amount) || 0) -
+                  (Number(p.income_tax_deducted) || 0),
+                0
+              ),
+            0
+          );
+
           const thisAmount = parseFloat(osForm.amountPaid) || 0;
           const remaining = Number(inv.net_in_hand) - alreadyPaid;
-  
+
           if (thisAmount > remaining) {
             setErrors((p) => ({
               ...p,
-              amountPaid: `Exceeds remaining Net-in-Hand. Available: ₹${remaining.toLocaleString("en-IN")}, You entered: ₹${thisAmount.toLocaleString("en-IN")}`,
+              amountPaid: `⛔ Exceeds OS Amt Difference. Max allowed: ₹${remaining.toLocaleString(
+                "en-IN"
+              )} — You entered: ₹${thisAmount.toLocaleString("en-IN")}`,
             }));
             setLoading(false);
-            return;
+            return; // ← BLOCKS save, no alert, no proceed
           }
         }
-  
+
         payload = {
           invoice_id: osForm.invoiceId || null,
           entity_id: inv?.entity_id || null,
@@ -2730,36 +3103,42 @@ const AddExpenseDetailsManModal = ({ isOpen, onClose, onSaved }) => {
         };
       }
 
-        // Non-blocking bank balance warning for OS payout
-        try {
-          const bankIdForOs = payload.bank_id;
-          const osAmt = Number(payload.amount_paid || 0);
-          if (bankIdForOs && osAmt > 0) {
-            const { data: bank } = await supabase
-              .from("bank_master")
-              .select("id,opening_balance,bank_name")
-              .eq("id", bankIdForOs)
-              .maybeSingle();
-            const { data: entries } = await supabase
-              .from("bank_entries")
-              .select("amount,type,is_deleted")
-              .eq("bank_id", bankIdForOs)
-              .eq("is_deleted", false);
-            const opening = Number(bank?.opening_balance || 0);
-            const movement = (entries || []).reduce((sum, e) => {
-              const amt = Number(e.amount || 0);
-              return String(e.type).toLowerCase() === "debit" ? sum - amt : sum + amt;
-            }, 0);
-            const currentBalance = opening + movement;
-            if (osAmt > currentBalance) {
-              alert(
-                `⚠️ Entered bank payment (₹${osAmt.toLocaleString("en-IN")}) is greater than current bank balance (₹${Number(currentBalance).toLocaleString("en-IN")}). Proceeding anyway.`
-              );
-            }
+      // Non-blocking bank balance warning for OS payout
+      try {
+        const bankIdForOs = payload.bank_id;
+        const osAmt = Number(payload.amount_paid || 0);
+        if (bankIdForOs && osAmt > 0) {
+          const { data: bank } = await supabase
+            .from("bank_master")
+            .select("id,opening_balance,bank_name")
+            .eq("id", bankIdForOs)
+            .maybeSingle();
+          const { data: entries } = await supabase
+            .from("bank_entries")
+            .select("amount,type,is_deleted")
+            .eq("bank_id", bankIdForOs)
+            .eq("is_deleted", false);
+          const opening = Number(bank?.opening_balance || 0);
+          const movement = (entries || []).reduce((sum, e) => {
+            const amt = Number(e.amount || 0);
+            return String(e.type).toLowerCase() === "debit"
+              ? sum - amt
+              : sum + amt;
+          }, 0);
+          const currentBalance = opening + movement;
+          if (osAmt > currentBalance) {
+            alert(
+              `⚠️ Entered bank payment (₹${osAmt.toLocaleString(
+                "en-IN"
+              )}) is greater than current bank balance (₹${Number(
+                currentBalance
+              ).toLocaleString("en-IN")}). Proceeding anyway.`
+            );
           }
-        } catch (err) {
-          console.debug("Bank balance check failed:", err.message || err);
         }
+      } catch (err) {
+        console.debug("Bank balance check failed:", err.message || err);
+      }
 
       const { data: savedPayout, error: payoutErr } = await supabase
         .from("os_payouts")
@@ -3246,7 +3625,10 @@ const AddExpenseDetailsManModal = ({ isOpen, onClose, onSaved }) => {
                 <FieldLabel>Invoice *</FieldLabel>
                 <SearchableSelect
                   value={osForm.invoiceId}
-                  onChange={(v) => setOs("invoiceId", v)}
+                  onChange={(v) => {
+                    setOs("invoiceId", v);
+                    fetchOsOutstanding(v);
+                  }}
                   options={invoices.map((i) => ({
                     value: i.id,
                     label: `${i.invoice_number}${
@@ -3282,6 +3664,58 @@ const AddExpenseDetailsManModal = ({ isOpen, onClose, onSaved }) => {
                 className="w-full border border-gray-200 bg-white text-gray-800 placeholder-gray-400 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
               />
             </div>
+
+            {/* ── OS Outstanding Banner ── */}
+            {osOutstandingLoading && (
+              <div className="flex items-center gap-2 bg-blue-50 border border-blue-100 rounded-xl px-4 py-2.5 text-xs text-blue-600">
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                Fetching OS outstanding…
+              </div>
+            )}
+            {osOutstanding && !osOutstandingLoading && (
+              <div
+                className={`rounded-xl border px-4 py-3 text-xs space-y-1.5 ${
+                  osOutstanding.remaining <= 0
+                    ? "bg-red-50 border-red-200"
+                    : "bg-emerald-50 border-emerald-200"
+                }`}
+              >
+                <p className="font-bold text-gray-700 uppercase tracking-wider text-[10px]">
+                  OS Amt Difference
+                </p>
+                <div className="flex justify-between">
+                  <span className="text-gray-500">Net in Hand</span>
+                  <span className="font-semibold text-gray-800">
+                    ₹{osOutstanding.netInHand.toLocaleString("en-IN")}
+                  </span>
+                </div>
+                <div className="flex justify-between text-rose-600">
+                  <span>Already Paid (net of BB+TDS)</span>
+                  <span className="font-semibold">
+                    −₹{osOutstanding.alreadyPaid.toLocaleString("en-IN")}
+                  </span>
+                </div>
+                <div
+                  className={`flex justify-between border-t pt-1.5 font-bold text-sm ${
+                    osOutstanding.remaining <= 0
+                      ? "border-red-200 text-red-600"
+                      : "border-emerald-200 text-emerald-700"
+                  }`}
+                >
+                  <span>Remaining (Max you can enter)</span>
+                  <span>
+                    ₹{osOutstanding.remaining.toLocaleString("en-IN")}
+                  </span>
+                </div>
+                {osOutstanding.remaining <= 0 && (
+                  <p className="text-red-600 font-semibold text-[11px] pt-0.5">
+                    ⛔ This invoice has no OS amount remaining. You cannot add
+                    more payouts.
+                  </p>
+                )}
+              </div>
+            )}
+
             <div className="grid grid-cols-3 gap-3">
               <div>
                 <FieldLabel>Amount Paid *</FieldLabel>

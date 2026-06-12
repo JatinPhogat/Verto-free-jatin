@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { useAuth } from "./context/AuthContext";
 import Login from "./pages/Login";
 import UserManagement from "./pages/UserManagement";
+import SessionMonitor from "./components/SessionMonitor";
 import LivePopup from "./components/LivePopup";
 import supabase from "./lib/supabaseClient";
 import {
@@ -24,6 +25,7 @@ import {
   AlertCircle,
   ChevronDown,
   Wallet,
+  Monitor,
 } from "lucide-react";
 
 // Import Components
@@ -106,6 +108,7 @@ const ManageTeamModal = ({ onClose, role }) => {
   const tabs = [
     { id: "team", label: "Team Members", icon: UserCog },
     { id: "reset", label: "Reset Password", icon: KeyRound },
+    { id: "sessions", label: "Active Sessions", icon: Monitor },
   ];
 
   return (
@@ -331,6 +334,18 @@ const ManageTeamModal = ({ onClose, role }) => {
                     )}
                   </AnimatePresence>
                 </div>
+              </motion.div>
+            )}
+            {activeSection === "sessions" && (
+              <motion.div
+                key="sessions"
+                initial={{ opacity: 0, x: 12 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -12 }}
+                transition={{ duration: 0.2 }}
+                className="p-6"
+              >
+                <SessionMonitor />
               </motion.div>
             )}
           </AnimatePresence>

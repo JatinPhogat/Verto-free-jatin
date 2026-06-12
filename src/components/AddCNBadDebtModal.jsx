@@ -959,8 +959,8 @@ const AddCNBadDebtModal = ({
         vertoFeeCN: editData.verto_fee_cn || "",
         gstCN: editData.gst_cn || "",
         tdsCN: editData.tds_cn || "",
-        coPf: editData.er_pf || "",
-        coEsi: editData.er_esic || "",
+        coPf: (num(editData.er_pf) + num(editData.ee_pf)).toString() || "",
+        coEsi: (num(editData.er_esic) + num(editData.ee_esic)).toString() || "",
         lwfCN: editData.lwf_cn || "",
         ptCN: editData.pt_cn || "",
         otherDedCN: editData.other_ded_cn || "",
@@ -1249,33 +1249,58 @@ const AddCNBadDebtModal = ({
 
     setLoading(true);
     try {
-      const { error } = await supabase.rpc("save_cn_bad_debt", {
-        p_invoice_id: selectedDetails.invoice_id,
-        p_invoice_number: selectedDetails.invoiceNumber,
-        p_type: formData.optionType,
-        p_issue_date: formData.dateIssued,
-        p_total_amount: totalCN,
-        p_reference_no: formData.referenceNo.trim(),
-        p_pay_cn: num(formData.payCN),
-        p_verto_fee_cn: num(formData.vertoFeeCN),
-        p_gst_cn: num(formData.gstCN),
-        p_tds_cn: num(formData.tdsCN),
-        p_entity: selectedDetails.entity,
-        p_employee_count:
-          selectedDetails.dept_code === "OS"
-            ? Number(formData.employeeCount)
-            : null,
-        p_remarks: formData.remarks || "",
-        p_bank_name: selectedDetails.bankName || null,
-        // Statutory params
-        p_er_pf: num(formData.coPf),
-        p_ee_pf: 0,
-        p_er_esic: num(formData.coEsi),
-        p_ee_esic: 0,
-        p_lwf_cn: num(formData.lwfCN),
-        p_pt_cn: num(formData.ptCN),
-        p_other_ded_cn: num(formData.otherDedCN),
-      });
+      const isEdit = !!editData?.id;
+
+      const { error } = isEdit
+        ? await supabase.rpc("update_cn_bad_debt", {
+            p_cn_id: editData.id,
+            p_type: formData.optionType,
+            p_issue_date: formData.dateIssued,
+            p_reference_no: formData.referenceNo.trim(),
+            p_pay_cn: num(formData.payCN),
+            p_verto_fee_cn: num(formData.vertoFeeCN),
+            p_gst_cn: num(formData.gstCN),
+            p_tds_cn: num(formData.tdsCN),
+            p_er_pf: +(num(formData.coPf) / 2).toFixed(2),
+            p_ee_pf: +(num(formData.coPf) / 2).toFixed(2),
+            p_er_esic: +(num(formData.coEsi) / 2).toFixed(2),
+            p_ee_esic: +(num(formData.coEsi) / 2).toFixed(2),
+            p_lwf_cn: num(formData.lwfCN),
+            p_pt_cn: num(formData.ptCN),
+            p_other_ded_cn: num(formData.otherDedCN),
+            p_employee_count:
+              selectedDetails?.dept_code === "OS"
+                ? Number(formData.employeeCount)
+                : null,
+            p_remarks: formData.remarks || "",
+          })
+        : await supabase.rpc("save_cn_bad_debt", {
+            p_invoice_id: selectedDetails.invoice_id,
+            p_invoice_number: selectedDetails.invoiceNumber,
+            p_type: formData.optionType,
+            p_issue_date: formData.dateIssued,
+            p_total_amount: totalCN,
+            p_reference_no: formData.referenceNo.trim(),
+            p_pay_cn: num(formData.payCN),
+            p_verto_fee_cn: num(formData.vertoFeeCN),
+            p_gst_cn: num(formData.gstCN),
+            p_tds_cn: num(formData.tdsCN),
+            p_entity: selectedDetails.entity,
+            p_employee_count:
+              selectedDetails?.dept_code === "OS"
+                ? Number(formData.employeeCount)
+                : null,
+            p_remarks: formData.remarks || "",
+            p_bank_name: selectedDetails.bankName || null,
+            p_er_pf: +(num(formData.coPf) / 2).toFixed(2),
+            p_ee_pf: +(num(formData.coPf) / 2).toFixed(2),
+            p_er_esic: +(num(formData.coEsi) / 2).toFixed(2),
+            p_ee_esic: +(num(formData.coEsi) / 2).toFixed(2),
+            p_lwf_cn: num(formData.lwfCN),
+            p_pt_cn: num(formData.ptCN),
+            p_other_ded_cn: num(formData.otherDedCN),
+          });
+
       if (error) throw error;
 
       window.refreshDashboard?.();
