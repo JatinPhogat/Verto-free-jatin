@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import supabase from "../lib/supabaseClient";
 import { motion, AnimatePresence } from "framer-motion";
+import { usePerms } from "../context/PermissionsContext";
 import {
   X,
   ArrowRight,
@@ -129,6 +130,7 @@ const AddInvoiceModal = ({
   selectedInvoice,
 }) => {
   const { role } = useAuth();
+  const { canSave, isIntern } = usePerms();
   const [formData, setFormData] = useState({
     invoiceEntity: "",
     department: "",
@@ -858,6 +860,13 @@ const AddInvoiceModal = ({
             {/* Form */}
             <div className="p-6 overflow-y-auto max-h-[calc(90vh-82px)] bg-gray-50/60">
               <form onSubmit={handleSubmit} className="space-y-4">
+                {isIntern && (
+                  <div style={{background: '#f3e8ff', border: '1px solid #a855f7', borderRadius: '0.75rem', padding: '0.75rem 1rem'}}>
+                    <p style={{fontSize: '0.875rem', color: '#6b21a8', margin: 0}}>
+                      <strong>Training Mode</strong> — You can explore this form but cannot save changes.
+                    </p>
+                  </div>
+                )}
                 {isOS && (
                   <motion.div
                     initial={{ opacity: 0, y: -6 }}
@@ -1573,18 +1582,20 @@ const AddInvoiceModal = ({
                   >
                     Cancel
                   </button>
-                  <button
-                    type="submit"
-                    className="px-8 py-2.5 text-white rounded-lg text-sm font-semibold flex items-center gap-2 transition-all hover:brightness-110"
-                    style={{
-                      background:
-                        "linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)",
-                      boxShadow: "0 4px 14px rgba(37,99,235,0.4)",
-                    }}
-                  >
-                    <span>Save Invoice</span>
-                    <ArrowRight className="w-4 h-4" />
-                  </button>
+                  {canSave && (
+                    <button
+                      type="submit"
+                      className="px-8 py-2.5 text-white rounded-lg text-sm font-semibold flex items-center gap-2 transition-all hover:brightness-110"
+                      style={{
+                        background:
+                          "linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)",
+                        boxShadow: "0 4px 14px rgba(37,99,235,0.4)",
+                      }}
+                    >
+                      <span>Save Invoice</span>
+                      <ArrowRight className="w-4 h-4" />
+                    </button>
+                  )}
                 </div>
               </form>
             </div>

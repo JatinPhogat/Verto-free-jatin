@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import ReactDOM from "react-dom";
 import supabase from "../lib/supabaseClient";
 import { motion, AnimatePresence } from "framer-motion";
+import { usePerms } from "../context/PermissionsContext";
 import {
   X,
   ArrowRight,
@@ -19,6 +20,7 @@ const AddPaymentReceivedModal = ({
   clients = [],
   onPaymentSaved,
 }) => {
+  const { canSave, isIntern } = usePerms();
   const [formData, setFormData] = useState({
     bankId: "",
     invoiceAvailable: "Yes",
@@ -487,6 +489,13 @@ const AddPaymentReceivedModal = ({
               {/* ── Form ── */}
               <div className="p-6 overflow-y-auto max-h-[calc(90vh-140px)]">
                 <form onSubmit={handleSubmit} className="space-y-6">
+                  {isIntern && (
+                    <div style={{background: '#f3e8ff', border: '1px solid #a855f7', borderRadius: '0.75rem', padding: '0.75rem 1rem'}}>
+                      <p style={{fontSize: '0.875rem', color: '#6b21a8', margin: 0}}>
+                        <strong>Training Mode</strong> — You can explore this form but cannot save changes.
+                      </p>
+                    </div>
+                  )}
                   {/* Invoice Available toggle */}
                   <div className="bg-white border border-slate-200 rounded-2xl shadow-sm hover:shadow-lg transition-all duration-300 p-4">
                     <div className="flex items-center justify-between mb-4">
@@ -1047,14 +1056,16 @@ const AddPaymentReceivedModal = ({
                       Cancel
                     </button>
 
-                    <button
-                      type="submit"
-                      disabled={saving}
-                      className="px-8 py-2.5 bg-gradient-to-r from-emerald-600 via-green-500 to-emerald-600 hover:scale-[1.02] active:scale-[0.98] disabled:opacity-60 disabled:hover:scale-100 text-white rounded-xl transition-all font-medium shadow-lg shadow-emerald-500/30 flex items-center space-x-2"
-                    >
-                      <span>{saving ? "Saving..." : "Save Payment"}</span>
-                      {!saving && <ArrowRight className="w-4 h-4" />}
-                    </button>
+                    {canSave && (
+                      <button
+                        type="submit"
+                        disabled={saving}
+                        className="px-8 py-2.5 bg-gradient-to-r from-emerald-600 via-green-500 to-emerald-600 hover:scale-[1.02] active:scale-[0.98] disabled:opacity-60 disabled:hover:scale-100 text-white rounded-xl transition-all font-medium shadow-lg shadow-emerald-500/30 flex items-center space-x-2"
+                      >
+                        <span>{saving ? "Saving..." : "Save Payment"}</span>
+                        {!saving && <ArrowRight className="w-4 h-4" />}
+                      </button>
+                    )}
                   </div>
                 </form>
               </div>

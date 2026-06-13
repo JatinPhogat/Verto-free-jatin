@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from "react";
 import supabase from "../lib/supabaseClient";
 import * as XLSX from "xlsx";
+import { usePerms } from "../context/PermissionsContext";
 import {
   X,
   Download,
@@ -234,6 +235,7 @@ const exportToExcel = (rows) => {
    Main Component
 ───────────────────────────────────────────── */
 const ViewPaymentModal = ({ isOpen, onClose, invoice }) => {
+  const { canEdit, canDelete, canExport } = usePerms();
   const [payments, setPayments]     = useState([]);
   const [loading, setLoading]       = useState(false);
   const [search, setSearch]         = useState("");
@@ -570,20 +572,24 @@ const ViewPaymentModal = ({ isOpen, onClose, invoice }) => {
                         </td>
                         <td className="px-4 py-3">
                           <div className="flex items-center gap-1.5">
-                            <button
-                              onClick={() => { setEditingId(p.id); setDeleteTarget(null); }}
-                              title="Edit"
-                              className="w-7 h-7 flex items-center justify-center rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-600 transition-colors"
-                            >
-                              <Pencil size={13} />
-                            </button>
-                            <button
-                              onClick={() => { setDeleteTarget(p); setEditingId(null); }}
-                              title="Delete"
-                              className="w-7 h-7 flex items-center justify-center rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-600 transition-colors"
-                            >
-                              <Trash2 size={13} />
-                            </button>
+                            {canEdit && (
+                              <button
+                                onClick={() => { setEditingId(p.id); setDeleteTarget(null); }}
+                                title="Edit"
+                                className="w-7 h-7 flex items-center justify-center rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-600 transition-colors"
+                              >
+                                <Pencil size={13} />
+                              </button>
+                            )}
+                            {canDelete && (
+                              <button
+                                onClick={() => { setDeleteTarget(p); setEditingId(null); }}
+                                title="Delete"
+                                className="w-7 h-7 flex items-center justify-center rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-600 transition-colors"
+                              >
+                                <Trash2 size={13} />
+                              </button>
+                            )}
                           </div>
                         </td>
                       </tr>
@@ -616,14 +622,16 @@ const ViewPaymentModal = ({ isOpen, onClose, invoice }) => {
             >
               <RefreshCw size={13} /> Refresh
             </button>
-            <button
-              onClick={handleExport}
-              disabled={exporting || filtered.length === 0}
-              className="flex items-center gap-2 px-4 py-2.5 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-bold transition-all disabled:opacity-50 shadow-lg shadow-emerald-600/20"
-            >
-              {exporting ? <RefreshCw size={13} className="animate-spin" /> : <Download size={13} />}
-              Download Excel
-            </button>
+            {canExport && (
+              <button
+                onClick={handleExport}
+                disabled={exporting || filtered.length === 0}
+                className="flex items-center gap-2 px-4 py-2.5 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-bold transition-all disabled:opacity-50 shadow-lg shadow-emerald-600/20"
+              >
+                {exporting ? <RefreshCw size={13} className="animate-spin" /> : <Download size={13} />}
+                Download Excel
+              </button>
+            )}
             <button
               onClick={onClose}
               className="ml-auto flex-1 max-w-[120px] py-2.5 rounded-2xl border-2 border-slate-200 text-black text-sm font-semibold hover:bg-slate-50 transition-colors text-center"

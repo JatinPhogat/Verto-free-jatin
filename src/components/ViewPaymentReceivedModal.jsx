@@ -2,6 +2,7 @@ import React, { useEffect, useState, useCallback, useMemo, useRef } from "react"
 import ReactDOM from "react-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import * as XLSX from "xlsx";
+import { usePerms } from "../context/PermissionsContext";
 import {
   X,
   Eye,
@@ -884,6 +885,7 @@ const MonthlyReportTab = ({ rows, invoices }) => {
    Main Component
 ───────────────────────────────────────────── */
 const ViewPaymentReceivedModal = ({ isOpen, onClose, invoice, onRefresh }) => {
+  const { canEdit, canDelete, canExport } = usePerms();
   const [rows, setRows] = useState([]);
   const [invoices, setInvoices] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -1548,36 +1550,40 @@ const ViewPaymentReceivedModal = ({ isOpen, onClose, invoice, onRefresh }) => {
                               </td>
                               <td className="px-4 py-3 whitespace-nowrap">
                                 <div className="flex items-center gap-1.5">
-                                  <button
-                                    onClick={() =>
-                                      isEditing
-                                        ? setEditingRow(null)
-                                        : startEdit(r)
-                                    }
-                                    className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                                      isEditing
-                                        ? "bg-slate-100 text-slate-700"
-                                        : "bg-emerald-100 text-emerald-800 hover:bg-emerald-200"
-                                    }`}
-                                  >
-                                    <Edit3 size={11} />
-                                    {isEditing ? "Cancel" : "Edit"}
-                                  </button>
-                                  <button
-                                    onClick={() =>
-                                      isDeleting
-                                        ? setDeletingRow(null)
-                                        : setDeletingRow(r)
-                                    }
-                                    className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                                      isDeleting
-                                        ? "bg-slate-100 text-slate-700"
-                                        : "bg-rose-100 text-rose-800 hover:bg-rose-200"
-                                    }`}
-                                  >
-                                    <Trash2 size={11} />
-                                    {isDeleting ? "Cancel" : "Delete"}
-                                  </button>
+                                  {canEdit && (
+                                    <button
+                                      onClick={() =>
+                                        isEditing
+                                          ? setEditingRow(null)
+                                          : startEdit(r)
+                                      }
+                                      className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                                        isEditing
+                                          ? "bg-slate-100 text-slate-700"
+                                          : "bg-emerald-100 text-emerald-800 hover:bg-emerald-200"
+                                      }`}
+                                    >
+                                      <Edit3 size={11} />
+                                      {isEditing ? "Cancel" : "Edit"}
+                                    </button>
+                                  )}
+                                  {canDelete && (
+                                    <button
+                                      onClick={() =>
+                                        isDeleting
+                                          ? setDeletingRow(null)
+                                          : setDeletingRow(r)
+                                      }
+                                      className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                                        isDeleting
+                                          ? "bg-slate-100 text-slate-700"
+                                          : "bg-rose-100 text-rose-800 hover:bg-rose-200"
+                                      }`}
+                                    >
+                                      <Trash2 size={11} />
+                                      {isDeleting ? "Cancel" : "Delete"}
+                                    </button>
+                                  )}
                                 </div>
                               </td>
                             </tr>
@@ -1748,22 +1754,24 @@ const ViewPaymentReceivedModal = ({ isOpen, onClose, invoice, onRefresh }) => {
             >
               <RefreshCw size={13} /> Refresh
             </button>
-            <button
-              onClick={handleExport}
-              disabled={exporting || filtered.length === 0}
-              className="flex items-center gap-2 px-4 py-2.5 rounded-2xl text-white text-sm font-bold transition-all disabled:opacity-50 shadow-lg"
-              style={{
-                background: "linear-gradient(135deg, #065f46, #059669)",
-                boxShadow: "0 4px 14px rgba(5,150,105,0.3)",
-              }}
-            >
-              {exporting ? (
-                <RefreshCw size={13} className="animate-spin" />
-              ) : (
-                <Download size={13} />
-              )}
-              Download Excel
-            </button>
+            {canExport && (
+              <button
+                onClick={handleExport}
+                disabled={exporting || filtered.length === 0}
+                className="flex items-center gap-2 px-4 py-2.5 rounded-2xl text-white text-sm font-bold transition-all disabled:opacity-50 shadow-lg"
+                style={{
+                  background: "linear-gradient(135deg, #065f46, #059669)",
+                  boxShadow: "0 4px 14px rgba(5,150,105,0.3)",
+                }}
+              >
+                {exporting ? (
+                  <RefreshCw size={13} className="animate-spin" />
+                ) : (
+                  <Download size={13} />
+                )}
+                Download Excel
+              </button>
+            )}
             <button
               onClick={onClose}
               className="ml-auto px-6 py-2.5 rounded-2xl border-2 border-slate-200 text-black text-sm font-semibold hover:bg-slate-50 transition-colors"
