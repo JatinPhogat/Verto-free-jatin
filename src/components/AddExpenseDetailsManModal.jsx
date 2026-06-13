@@ -3046,14 +3046,24 @@ const AddExpenseDetailsManModal = ({ isOpen, onClose, onSaved }) => {
           const remaining = Number(inv.net_in_hand) - alreadyPaid;
 
           if (thisAmount > remaining) {
-            setErrors((p) => ({
-              ...p,
-              amountPaid: `⛔ Exceeds OS Amt Difference. Max allowed: ₹${remaining.toLocaleString(
+            const proceed = window.confirm(
+              `⚠️ Amount Paid (₹${thisAmount.toLocaleString(
                 "en-IN"
-              )} — You entered: ₹${thisAmount.toLocaleString("en-IN")}`,
-            }));
-            setLoading(false);
-            return; // ← BLOCKS save, no alert, no proceed
+              )}) exceeds the OS Amt Difference remaining (₹${remaining.toLocaleString(
+                "en-IN"
+              )}).\n\nClick OK to proceed anyway, or Cancel to go back and fix the amount.`
+            );
+            if (!proceed) {
+              setErrors((p) => ({
+                ...p,
+                amountPaid: `⛔ Exceeds OS Amt Difference. Max allowed: ₹${remaining.toLocaleString(
+                  "en-IN"
+                )} — You entered: ₹${thisAmount.toLocaleString("en-IN")}`,
+              }));
+              setLoading(false);
+              return; // Cancel → stop save
+            }
+            setErrors((p) => ({ ...p, amountPaid: "" }));
           }
         }
 
