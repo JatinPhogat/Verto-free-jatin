@@ -110,7 +110,7 @@ const ManageTeamModal = ({ onClose, role }) => {
     { id: "team", label: "Team Members", icon: UserCog },
     { id: "reset", label: "Reset Password", icon: KeyRound },
     { id: "sessions", label: "Active Sessions", icon: Monitor },
-    { id: "audit", label: "Audit Log", icon: Activity }, // ← ADD THIS LINE
+    { id: "audit", label: "Activity Log", icon: Activity }, // ← ADD THIS LINE
   ];
 
   return (
@@ -948,10 +948,6 @@ function App() {
                         <span>Manage Team</span>
                       </button>
                     )}
-                    <button className="w-full flex items-center space-x-3 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors">
-                      <Activity className="w-4 h-4 text-gray-400" />
-                      <span>Activity Log</span>
-                    </button>
                   </div>
                   <div className="border-t border-gray-100 pt-1">
                     <button
