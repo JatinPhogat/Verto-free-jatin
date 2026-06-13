@@ -1,3 +1,4 @@
+import { useKeyboardShortcuts } from "./hooks/useKeyboardShortcuts";
 import React, { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useAuth } from "./context/AuthContext";
@@ -520,6 +521,43 @@ function App() {
       .maybeSingle();
     if (data) setLoggedInEmployee(data);
   };
+
+  // ── KEYBOARD SHORTCUTS ─────────────────────────────────────────────────
+  useKeyboardShortcuts(); // Initialize keyboard shortcut listeners
+  
+  // Listen for shortcut events
+  useEffect(() => {
+    const handlers = {
+      "verto:shortcut:add-invoice": () => setShowInvoiceModal(true),
+      "verto:shortcut:payment-received": () => setShowPaymentModal(true),
+      "verto:shortcut:payment-made": () => setShowPaymentMadeModal(true),
+      "verto:shortcut:cn-bad-debt": () => setShowCNBadDebtModal(true),
+      "verto:shortcut:bounce-back": () => setShowBounceBackModal(true),
+      "verto:shortcut:statutory-payout": () => setShowStatutoryModal(true),
+      "verto:shortcut:expense-material": () => setShowExpenseDetailsModal(true),
+      "verto:shortcut:expense-man": () => setShowExpenseDetailsManModal(true),
+      "verto:shortcut:interest-penalty": () => setShowPenaltyModal(true),
+      "verto:shortcut:internal-team": () => {
+        setEditingEmployee(null);
+        setShowInternalTeamModal(true);
+      },
+      "verto:shortcut:advance-loan": () => setShowAdvanceLoanModal(true),
+      "verto:shortcut:credit-card": () => setShowCreditCardModal(true),
+      "verto:shortcut:settings": () => setActiveTab("settings"),
+    };
+
+    // Register all event handlers
+    Object.entries(handlers).forEach(([event, handler]) => {
+      window.addEventListener(event, handler);
+    });
+
+    // Cleanup
+    return () => {
+      Object.entries(handlers).forEach(([event, handler]) => {
+        window.removeEventListener(event, handler);
+      });
+    };
+  }, []);
 
   if (sessionKicked) {
     return (
