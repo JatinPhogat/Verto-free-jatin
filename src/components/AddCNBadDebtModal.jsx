@@ -26,6 +26,7 @@ import {
   SlidersHorizontal,
   Users,
   ShieldCheck,
+  Pencil,
 } from "lucide-react";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -346,7 +347,7 @@ const InvoiceCard = ({ d }) => (
 );
 
 // ─── CN Records Panel ─────────────────────────────────────────────────────────
-const CNRecordsPanel = ({ onClose }) => {
+const CNRecordsPanel = ({ onClose, onEdit }) => {
   const [records, setRecords] = useState([]);
   const [loading, setLoading] = useState(true);
   const [deletingId, setDeletingId] = useState(null);
@@ -372,7 +373,7 @@ const CNRecordsPanel = ({ onClose }) => {
         id, reference_no, invoice_number, type, amount,
         pay_cn, verto_fee_cn, gst_cn, tds_cn,
         er_pf, ee_pf, er_esic, ee_esic, lwf_cn, pt_cn, other_ded_cn,
-        issue_date, entity, bank_name, remarks, invoice_id, created_at,
+        issue_date, entity, bank_name, remarks, invoice_id, created_at, employee_count,
         invoices ( invoice_number, client_id, clients_master ( client_name ) )
       `
       )
@@ -818,12 +819,20 @@ const CNRecordsPanel = ({ onClose }) => {
                           </button>
                         </div>
                       ) : (
-                        <button
-                          onClick={() => setConfirmId(row.id)}
-                          className="flex items-center gap-1 px-2.5 py-1.5 bg-red-50 hover:bg-red-100 text-red-600 rounded-lg text-xs font-semibold border border-red-100 transition-colors"
-                        >
-                          <Trash2 className="w-3 h-3" /> Delete
-                        </button>
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            onClick={() => onEdit?.(row)}
+                            className="flex items-center gap-1 px-2.5 py-1.5 bg-amber-50 hover:bg-amber-100 text-amber-700 rounded-lg text-xs font-semibold border border-amber-200 transition-colors"
+                          >
+                            <Pencil className="w-3 h-3" /> Edit
+                          </button>
+                          <button
+                            onClick={() => setConfirmId(row.id)}
+                            className="flex items-center gap-1 px-2.5 py-1.5 bg-red-50 hover:bg-red-100 text-red-600 rounded-lg text-xs font-semibold border border-red-100 transition-colors"
+                          >
+                            <Trash2 className="w-3 h-3" /> Delete
+                          </button>
+                        </div>
                       )}
                     </div>
                   </div>
@@ -928,6 +937,7 @@ const AddCNBadDebtModal = ({
   const [selectedDetails, setSelectedDetails] = useState(null);
   const [loading, setLoading] = useState(false);
   const [viewOpen, setViewOpen] = useState(false);
+  const [editingEntry, setEditingEntry] = useState(null); // { id, ...full row }
   const [refStatus, setRefStatus] = useState(null);
   const [invoiceList, setInvoiceList] = useState([]);
   const refCheckTimer = useRef(null);
@@ -982,7 +992,7 @@ const AddCNBadDebtModal = ({
       setRefStatus(null);
       return;
     }
-    if (editData?.reference_no === val) {
+    if (editData?.reference_no === val || editingEntry?.reference_no === val) {
       setRefStatus("ok");
       return;
     }
@@ -1194,13 +1204,13 @@ const AddCNBadDebtModal = ({
 
     // Validate co_pf does not exceed net_co_pf
     if (selectedDetails && co_pf_cn > num(selectedDetails.net_co_pf)) {
-      e.erPf = `CO PF (ER+EE) ₹${fmt(co_pf_cn)} exceeds net remaining ₹${fmt(
+      e.coPf = `CO PF (ER+EE) ₹${fmt(co_pf_cn)} exceeds net remaining ₹${fmt(
         selectedDetails.net_co_pf
       )}`;
     }
     // Validate co_esi does not exceed net_co_esi
     if (selectedDetails && co_esi_cn > num(selectedDetails.net_co_esi)) {
-      e.erEsic = `CO ESI (ER+EE) ₹${fmt(
+      e.coEsi = `CO ESI (ER+EE) ₹${fmt(
         co_esi_cn
       )} exceeds net remaining ₹${fmt(selectedDetails.net_co_esi)}`;
     }
@@ -1240,6 +1250,33 @@ const AddCNBadDebtModal = ({
     return Object.keys(e).length === 0;
   };
 
+  // ── Handle Edit Entry ──────────────────────────────────────────────────────
+  const handleEditEntry = (row) => {
+    // Pre-fill every form field from the record row
+    setFormData({
+      invoiceOrRef:  row.invoice_number || row.invoices?.invoice_number || "",
+      optionType:    row.type || "CN",
+      dateIssued:    row.issue_date || "",
+      referenceNo:   row.reference_no || "",
+      payCN:         row.pay_cn?.toString() || "",
+      vertoFeeCN:    row.verto_fee_cn?.toString() || "",
+      gstCN:         row.gst_cn?.toString() || "",
+      tdsCN:         row.tds_cn?.toString() || "",
+      coPf:          ((num(row.er_pf) + num(row.ee_pf))).toString() || "",
+      coEsi:         ((num(row.er_esic) + num(row.ee_esic))).toString() || "",
+      lwfCN:         row.lwf_cn?.toString() || "",
+      ptCN:          row.pt_cn?.toString() || "",
+      otherDedCN:    row.other_ded_cn?.toString() || "",
+      employeeCount: row.employee_count?.toString() || "",
+      remarks:       row.remarks || "",
+    });
+    setEditingEntry(row);   // store old row so we know its id on submit
+    setViewOpen(false);     // close records panel
+    setErrors({});
+    setShowErrors(false);
+    setRefStatus("ok");     // ref is already known good (it's the existing one)
+  };
+
   // ── Submit ─────────────────────────────────────────────────────────────────
   const handleSubmit = async (ev) => {
     ev.preventDefault();
@@ -1249,30 +1286,30 @@ const AddCNBadDebtModal = ({
 
     setLoading(true);
     try {
-      const isEdit = !!editData?.id;
-
-      const { error } = isEdit
-        ? await supabase.rpc("update_cn_bad_debt", {
-            p_cn_id: editData.id,
-            p_type: formData.optionType,
-            p_issue_date: formData.dateIssued,
-            p_reference_no: formData.referenceNo.trim(),
-            p_pay_cn: num(formData.payCN),
-            p_verto_fee_cn: num(formData.vertoFeeCN),
-            p_gst_cn: num(formData.gstCN),
-            p_tds_cn: num(formData.tdsCN),
-            p_er_pf: +(num(formData.coPf) / 2).toFixed(2),
-            p_ee_pf: +(num(formData.coPf) / 2).toFixed(2),
-            p_er_esic: +(num(formData.coEsi) / 2).toFixed(2),
-            p_ee_esic: +(num(formData.coEsi) / 2).toFixed(2),
-            p_lwf_cn: num(formData.lwfCN),
-            p_pt_cn: num(formData.ptCN),
-            p_other_ded_cn: num(formData.otherDedCN),
-            p_employee_count:
-              selectedDetails?.dept_code === "OS"
-                ? Number(formData.employeeCount)
-                : null,
-            p_remarks: formData.remarks || "",
+      const { error } = editingEntry
+        ? await supabase.rpc("edit_cn_bad_debt_atomic", {
+            p_old_cn_id:      editingEntry.id,
+            p_invoice_id:     selectedDetails.invoice_id,
+            p_invoice_number: selectedDetails.invoiceNumber,
+            p_type:           formData.optionType,
+            p_issue_date:     formData.dateIssued,
+            p_total_amount:   totalCN,
+            p_reference_no:   formData.referenceNo.trim(),
+            p_pay_cn:         num(formData.payCN),
+            p_verto_fee_cn:   num(formData.vertoFeeCN),
+            p_gst_cn:         num(formData.gstCN),
+            p_tds_cn:         num(formData.tdsCN),
+            p_entity:         selectedDetails.entity,
+            p_employee_count: selectedDetails?.dept_code === "OS" ? Number(formData.employeeCount) : null,
+            p_remarks:        formData.remarks || "",
+            p_bank_name:      selectedDetails.bankName || null,
+            p_er_pf:          +(num(formData.coPf)  / 2).toFixed(2),
+            p_ee_pf:          +(num(formData.coPf)  / 2).toFixed(2),
+            p_er_esic:        +(num(formData.coEsi) / 2).toFixed(2),
+            p_ee_esic:        +(num(formData.coEsi) / 2).toFixed(2),
+            p_lwf_cn:         num(formData.lwfCN),
+            p_pt_cn:          num(formData.ptCN),
+            p_other_ded_cn:   num(formData.otherDedCN),
           })
         : await supabase.rpc("save_cn_bad_debt", {
             p_invoice_id: selectedDetails.invoice_id,
@@ -1321,6 +1358,7 @@ const AddCNBadDebtModal = ({
     setShowErrors(false);
     setViewOpen(false);
     setRefStatus(null);
+    setEditingEntry(null);
   };
 
   const handleClose = () => {
@@ -1371,7 +1409,10 @@ const AddCNBadDebtModal = ({
           >
             <AnimatePresence>
               {viewOpen && (
-                <CNRecordsPanel onClose={() => setViewOpen(false)} />
+                <CNRecordsPanel
+                  onClose={() => setViewOpen(false)}
+                  onEdit={handleEditEntry}
+                />
               )}
             </AnimatePresence>
 
@@ -1381,7 +1422,9 @@ const AddCNBadDebtModal = ({
                 <div>
                   <h2 className="text-2xl font-bold">+ ADD CN / BAD DEBT</h2>
                   <p className="text-violet-100 text-sm mt-1">
-                    Record credit note or bad debt write-off
+                    {editingEntry
+                      ? `✏️ Editing ${editingEntry.reference_no || "entry"} — old record will be replaced`
+                      : "Record credit note or bad debt write-off"}
                   </p>
                 </div>
                 <div className="flex items-center gap-3">
@@ -1425,6 +1468,28 @@ const AddCNBadDebtModal = ({
                   ))}
                 </div>
 
+                {/* ── Editing mode banner ── */}
+                {editingEntry && (
+                  <div className="flex items-center gap-3 bg-amber-50 border-2 border-amber-300 rounded-xl px-4 py-3 text-sm">
+                    <span className="text-amber-600 text-lg">✏️</span>
+                    <div className="flex-1">
+                      <p className="font-bold text-amber-800">Edit Mode</p>
+                      <p className="text-amber-600 text-xs">
+                        Ref: <span className="font-mono font-bold">{editingEntry.reference_no}</span>
+                        {" · "}Original: ₹{fmt(editingEntry.amount)}
+                        {" · "}Saving will delete the old entry and create a corrected one.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => { setEditingEntry(null); resetForm(); }}
+                      className="text-amber-500 hover:text-amber-700 text-xs font-semibold underline"
+                    >
+                      Cancel Edit
+                    </button>
+                  </div>
+                )}
+
                 {/* Type banner */}
                 <div
                   className={`text-xs px-4 py-2.5 rounded-lg font-medium border ${
@@ -1453,7 +1518,7 @@ const AddCNBadDebtModal = ({
                         invoiceList={invoiceList}
                         value={formData.invoiceOrRef}
                         onChange={(val) => handleChange("invoiceOrRef", val)}
-                        disabled={!!editData}
+                        disabled={!!editData || !!editingEntry}
                       />
                       <ErrorMsg field="invoiceOrRef" />
                       <p className="text-xs text-gray-500 mt-1">
@@ -2120,7 +2185,7 @@ const AddCNBadDebtModal = ({
                       </>
                     ) : (
                       <>
-                        <span>Save {formData.optionType}</span>
+                        <span>{editingEntry ? `Update ${formData.optionType}` : `Save ${formData.optionType}`}</span>
                         <ArrowRight className="w-4 h-4" />
                       </>
                     )}

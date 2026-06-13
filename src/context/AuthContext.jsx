@@ -59,7 +59,7 @@ export const AuthProvider = ({ children }) => {
     clearInterval(sessionCheckIntervalRef.current);
     sessionCheckIntervalRef.current = setInterval(() => {
       validateSession();
-    }, 1000);
+    }, 3000);
   }, [validateSession]);
 
   useEffect(() => {
