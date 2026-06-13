@@ -690,17 +690,11 @@ const AddStatutoryPayoutModal = ({
       return;
     }
 
-    console.log("🔥 FETCH RUNNING...");
-    console.log(entity, month, type, rpcType);
-
     const { data, error } = await supabase.rpc("get_statutory_due", {
       selected_entity: entity,
       selected_month: `${month}-01`,
       selected_type: rpcType,   // ← use rpc_type not display type
     });
-
-    console.log("RPC DATA:", data);
-    console.log("RPC ERROR:", error);
 
     if (error) {
       console.error(error);
