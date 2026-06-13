@@ -449,12 +449,30 @@ const SettingsPage = () => {
                   </SettingRow>
 
                   <div className="mt-4 space-y-3">
-                    {[
-                      { key: "shortcutAddInvoice", label: "Add Invoice", combo: ["Ctrl", "I"] },
-                      { key: "shortcutPaymentReceived", label: "Payment Received", combo: ["Ctrl", "P"] },
-                      { key: "shortcutOsPayout", label: "OS Payout", combo: ["Ctrl", "O"] },
-                      { key: "shortcutSalaryPayment", label: "Salary Payment", combo: ["Ctrl", "S"] },
-                    ].map((item) => (
+                  {[
+                      // ── Quick Add ──
+                      { key: "shortcutAddInvoice",      label: "Add Invoice",              combo: ["Ctrl", "I"], group: "Quick Add" },
+                      { key: "shortcutPaymentReceived", label: "Payment Received",          combo: ["Ctrl", "P"], group: "Quick Add" },
+                      { key: "shortcutOsPayout",        label: "OS / 3rd Party Payout",    combo: ["Ctrl", "O"], group: "Quick Add" },
+                      { key: "shortcutSalaryPayment",   label: "Salary Payout",            combo: ["Ctrl", "S"], group: "Quick Add" },
+                      { key: "shortcutExpense",         label: "Add Expense",              combo: ["Ctrl", "E"], group: "Quick Add" },
+                      { key: "shortcutCreditNote",      label: "Credit Note / Bad Debt",   combo: ["Ctrl", "C"], group: "Quick Add" },
+                      { key: "shortcutBounceBack",      label: "Bounce Back",              combo: ["Ctrl", "B"], group: "Quick Add" },
+                      { key: "shortcutAdvanceLoan",     label: "Advance / Loan",           combo: ["Ctrl", "A"], group: "Quick Add" },
+                      { key: "shortcutStatutory",       label: "Statutory Payout",         combo: ["Ctrl", "G"], group: "Quick Add" },
+                      // ── Navigate ──
+                      { key: null, label: "Dashboard",              combo: ["Ctrl", "D"], group: "Navigate" },
+                      { key: null, label: "Internal Team",          combo: ["Ctrl", "T"], group: "Navigate" },
+                      { key: null, label: "Ledger View",            combo: ["Ctrl", "L"], group: "Navigate" },
+                      { key: null, label: "Bank & Fund Flow",       combo: ["Ctrl", "J"], group: "Navigate" },
+                      { key: null, label: "Client Advance",         combo: ["Ctrl", "M"], group: "Navigate" },
+                      { key: null, label: "Salary Records",         combo: ["Ctrl", "Y"], group: "Navigate" },
+                      { key: null, label: "Payment Records",        combo: ["Ctrl", "R"], group: "Navigate" },
+                      // ── Power ──
+                      { key: "shortcutCommandPalette", label: "Command Palette (search)",  combo: ["Ctrl", "K"], group: "Power" },
+                      { key: null, label: "Global Search",          combo: ["Ctrl", "F"],  group: "Power" },
+                      { key: null, label: "Show All Shortcuts",     combo: ["Ctrl", "/"],  group: "Power" },
+                    ].map((item, idx, arr) => (
                       <div key={item.key} className="flex items-center justify-between py-3 px-4 rounded-xl bg-gray-50 dark:bg-slate-700/50 border border-gray-100 dark:border-slate-700">
                         <div className="flex items-center gap-3">
                           <div className="flex items-center gap-1.5">

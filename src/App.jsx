@@ -9,6 +9,8 @@ import LivePopup from "./components/LivePopup";
 import AuditLogPage from "./components/Auditlogpage";
 import MyAccountPage from "./components/Myaccountpage";
 import supabase from "./lib/supabaseClient";
+import CommandPalette from "./components/CommandPalette";
+import ShortcutsHelp from "./components/ShortcutsHelp";
 import {
   LayoutDashboard,
   TrendingUp,
@@ -393,12 +395,14 @@ function App() {
 
     // Respect landing page setting
     try {
-      const saved = JSON.parse(localStorage.getItem("verto_app_settings") || "{}");
+      const saved = JSON.parse(
+        localStorage.getItem("verto_app_settings") || "{}"
+      );
       const landingMap = {
-        dashboard:     "dashboard",
-        pl:            "pl-center",
-        banking:       "bank-reco",
-        invoices:      "dashboard",
+        dashboard: "dashboard",
+        pl: "pl-center",
+        banking: "bank-reco",
+        invoices: "dashboard",
         "internal-cost": "internal-cost",
       };
       if (saved.landingPage && landingMap[saved.landingPage]) {
@@ -430,6 +434,8 @@ function App() {
   const [showAdvanceLoanModal, setShowAdvanceLoanModal] = useState(false);
   const [showStatutoryModal, setShowStatutoryModal] = useState(false);
   const [showCreditCardModal, setShowCreditCardModal] = useState(false);
+  const [showCommandPalette, setShowCommandPalette] = useState(false);
+  const [showShortcutsHelp, setShowShortcutsHelp] = useState(false);
   const [selectedExpense, setSelectedExpense] = useState(null);
   const [banks, setBanks] = useState([]);
   const [loggedInEmployee, setLoggedInEmployee] = useState(null);
@@ -524,41 +530,56 @@ function App() {
 
   // ── KEYBOARD SHORTCUTS ─────────────────────────────────────────────────
   useKeyboardShortcuts(); // Initialize keyboard shortcut listeners
-  
+
   // Listen for shortcut events
+  // ── Shortcut event handlers ──────────────────────────────────
   useEffect(() => {
     const handlers = {
+      // Modals
       "verto:shortcut:add-invoice": () => setShowInvoiceModal(true),
       "verto:shortcut:payment-received": () => setShowPaymentModal(true),
       "verto:shortcut:payment-made": () => setShowPaymentMadeModal(true),
+      "verto:shortcut:os-payout": () => {
+        setShowExpenseDetailsManModal(true);
+      },
+      "verto:shortcut:salary-payment": () => {
+        setShowExpenseDetailsManModal(true);
+      },
+      "verto:shortcut:expense-material": () => setShowExpenseDetailsModal(true),
       "verto:shortcut:cn-bad-debt": () => setShowCNBadDebtModal(true),
       "verto:shortcut:bounce-back": () => setShowBounceBackModal(true),
+      "verto:shortcut:advance-loan": () => setShowAdvanceLoanModal(true),
       "verto:shortcut:statutory-payout": () => setShowStatutoryModal(true),
-      "verto:shortcut:expense-material": () => setShowExpenseDetailsModal(true),
-      "verto:shortcut:expense-man": () => setShowExpenseDetailsManModal(true),
       "verto:shortcut:interest-penalty": () => setShowPenaltyModal(true),
+      "verto:shortcut:credit-card": () => setShowCreditCardModal(true),
       "verto:shortcut:internal-team": () => {
         setEditingEmployee(null);
         setShowInternalTeamModal(true);
       },
-      "verto:shortcut:advance-loan": () => setShowAdvanceLoanModal(true),
-      "verto:shortcut:credit-card": () => setShowCreditCardModal(true),
+      // Navigation
+      "verto:shortcut:dashboard": () => setActiveTab("dashboard"),
+      "verto:shortcut:internal-team-nav": () => setActiveTab("internal-team"),
+      "verto:shortcut:ledger-nav": () => setActiveTab("ledger"),
+      "verto:shortcut:bank-nav": () => setActiveTab("bank-reco"),
+      "verto:shortcut:payment-records-nav": () => setActiveTab("dashboard"),
+      "verto:shortcut:salary-records-nav": () => setActiveTab("internal-cost"),
+      "verto:shortcut:client-advance-nav": () =>
+        setActiveTab("advance-credit-locker"),
       "verto:shortcut:settings": () => setActiveTab("settings"),
+      // Special
+      "verto:shortcut:command-palette": () => setShowCommandPalette(true),
+      "verto:shortcut:global-search": () => setShowCommandPalette(true),
+      "verto:shortcut:help": () => setShowShortcutsHelp(true),
     };
 
-    // Register all event handlers
-    Object.entries(handlers).forEach(([event, handler]) => {
-      window.addEventListener(event, handler);
-    });
-
-    // Cleanup
-    return () => {
-      Object.entries(handlers).forEach(([event, handler]) => {
-        window.removeEventListener(event, handler);
-      });
-    };
+    Object.entries(handlers).forEach(([ev, fn]) =>
+      window.addEventListener(ev, fn)
+    );
+    return () =>
+      Object.entries(handlers).forEach(([ev, fn]) =>
+        window.removeEventListener(ev, fn)
+      );
   }, []);
-
   if (sessionKicked) {
     return (
       <div className="flex h-screen items-center justify-center bg-[#05060f] px-4">
@@ -1171,12 +1192,19 @@ function App() {
               exit={{ opacity: 0, scale: 0.96, y: 24 }}
               transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
               className="bg-white rounded-3xl shadow-2xl w-full max-w-4xl overflow-hidden border border-gray-100"
-              style={{ boxShadow: "0 32px 80px -12px rgba(59,130,246,0.18), 0 0 0 1px rgba(0,0,0,0.04)", maxHeight: "90vh" }}
+              style={{
+                boxShadow:
+                  "0 32px 80px -12px rgba(59,130,246,0.18), 0 0 0 1px rgba(0,0,0,0.04)",
+                maxHeight: "90vh",
+              }}
             >
               {/* Modal Header */}
               <div
                 className="relative px-8 py-5 border-b border-gray-100 overflow-hidden flex-shrink-0"
-                style={{ background: "linear-gradient(135deg, #eff6ff 0%, #eef2ff 100%)" }}
+                style={{
+                  background:
+                    "linear-gradient(135deg, #eff6ff 0%, #eef2ff 100%)",
+                }}
               >
                 <div className="absolute top-0 right-0 w-64 h-64 bg-blue-500/5 rounded-full -translate-y-1/2 translate-x-1/2 pointer-events-none" />
                 <div className="flex items-center justify-between relative">
@@ -1185,8 +1213,12 @@ function App() {
                       <Settings className="w-5 h-5 text-white" />
                     </div>
                     <div>
-                      <h2 className="text-lg font-bold text-gray-900 tracking-tight">Account Settings</h2>
-                      <p className="text-xs text-gray-500 mt-0.5">Your profile & employment details</p>
+                      <h2 className="text-lg font-bold text-gray-900 tracking-tight">
+                        Account Settings
+                      </h2>
+                      <p className="text-xs text-gray-500 mt-0.5">
+                        Your profile & employment details
+                      </p>
                     </div>
                   </div>
                   <button
@@ -1199,7 +1231,10 @@ function App() {
               </div>
 
               {/* Scrollable Content */}
-              <div className="overflow-y-auto" style={{ maxHeight: "calc(90vh - 90px)" }}>
+              <div
+                className="overflow-y-auto"
+                style={{ maxHeight: "calc(90vh - 90px)" }}
+              >
                 <MyAccountPage supabase={supabase} />
               </div>
             </motion.div>
@@ -1289,6 +1324,14 @@ function App() {
       <LivePopup
         isOpen={showLivePopup}
         onClose={() => setShowLivePopup(false)}
+      />
+      <CommandPalette
+        isOpen={showCommandPalette}
+        onClose={() => setShowCommandPalette(false)}
+      />
+      <ShortcutsHelp
+        isOpen={showShortcutsHelp}
+        onClose={() => setShowShortcutsHelp(false)}
       />
     </div>
   );

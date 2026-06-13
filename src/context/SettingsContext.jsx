@@ -41,6 +41,12 @@ const DEFAULTS = {
   shortcutPaymentReceived: true,
   shortcutOsPayout: true,
   shortcutSalaryPayment: true,
+  shortcutExpense: true,
+  shortcutCreditNote: true,
+  shortcutBounceBack: true,
+  shortcutAdvanceLoan: true,
+  shortcutStatutory: true,
+  shortcutCommandPalette: true,
 
   // Export Settings (NEW)
   defaultExportType: "excel",

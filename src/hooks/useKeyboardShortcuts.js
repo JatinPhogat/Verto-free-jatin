@@ -1,11 +1,6 @@
 import { useEffect, useCallback } from "react";
 import { useSettings } from "../context/SettingsContext";
 
-/**
- * Global keyboard shortcuts hook.
- * Place this inside your main App component (or layout).
- * It dispatches CustomEvents you can listen to anywhere.
- */
 export function useKeyboardShortcuts() {
   const { settings } = useSettings();
 
@@ -14,23 +9,47 @@ export function useKeyboardShortcuts() {
       if (!settings.shortcutsEnabled) return;
       if (!e.ctrlKey) return;
 
+      // Don't fire when typing inside an input/textarea/select
+      const tag = document.activeElement?.tagName?.toLowerCase();
+      if (tag === "input" || tag === "textarea" || tag === "select") return;
+
+      const key = e.key === "/" ? "/" : e.key.toLowerCase();
+
       const map = {
-        i: { key: "shortcutAddInvoice", event: "verto:shortcut:add-invoice" },
-        p: { key: "shortcutPaymentReceived", event: "verto:shortcut:payment-received" },
-        o: { key: "shortcutOsPayout", event: "verto:shortcut:os-payout" },
-        s: { key: "shortcutSalaryPayment", event: "verto:shortcut:salary-payment" },
+        // ── Modals ──
+        i: "verto:shortcut:add-invoice",
+        p: "verto:shortcut:payment-received",
+        o: "verto:shortcut:os-payout",
+        s: "verto:shortcut:salary-payment",
+        e: "verto:shortcut:expense-material",
+        c: "verto:shortcut:cn-bad-debt",
+        b: "verto:shortcut:bounce-back",
+        a: "verto:shortcut:advance-loan",
+        g: "verto:shortcut:statutory-payout",
+        // ── Navigation ──
+        d: "verto:shortcut:dashboard",
+        h: "verto:shortcut:dashboard",
+        t: "verto:shortcut:internal-team-nav",
+        l: "verto:shortcut:ledger-nav",
+        j: "verto:shortcut:bank-nav",
+        r: "verto:shortcut:payment-records-nav",
+        y: "verto:shortcut:salary-records-nav",
+        m: "verto:shortcut:client-advance-nav",
+        // ── Special ──
+        k: "verto:shortcut:command-palette",
+        f: "verto:shortcut:global-search",
+        "/": "verto:shortcut:help",
       };
 
-      const entry = map[e.key.toLowerCase()];
-      if (!entry) return;
-      if (!settings[entry.key]) return;
+      const event = map[key];
+      if (!event) return;
 
       e.preventDefault();
       e.stopPropagation();
 
-      window.dispatchEvent(new CustomEvent(entry.event, { bubbles: true }));
+      window.dispatchEvent(new CustomEvent(event, { bubbles: true }));
     },
-    [settings]
+    [settings.shortcutsEnabled]
   );
 
   useEffect(() => {
