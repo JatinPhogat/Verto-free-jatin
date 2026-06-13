@@ -59,6 +59,8 @@ import AddStatutoryPayoutModal from "./components/AddStatutoryPayoutModal";
 import SettingsPage from "./components/Settingspage.jsx";
 import InternModeBanner from "./components/InternModeBanner.jsx";
 import { useInternGuard } from "./hooks/useInternGuard";
+import { PermissionsContext } from "./context/PermissionsContext";
+import { usePermissions } from "./hooks/usePermissions";
 
 // ── Manage Team Modal ──────────────────────────────────────────────────────
 const ManageTeamModal = ({ onClose, role }) => {
@@ -489,6 +491,7 @@ function App() {
   } = useAuth();
 
   const { isIntern, blockIfIntern } = useInternGuard();
+  const permissions = usePermissions();
 
   useEffect(() => {
     const checkMidnightLogout = async () => {
@@ -542,19 +545,19 @@ function App() {
   useEffect(() => {
     const handlers = {
       // Modals — blocked for interns
-      "verto:shortcut:add-invoice": () => { if (blockIfIntern()) return; setShowInvoiceModal(true); },
-      "verto:shortcut:payment-received": () => { if (blockIfIntern()) return; setShowPaymentModal(true); },
-      "verto:shortcut:payment-made": () => { if (blockIfIntern()) return; setShowPaymentMadeModal(true); },
-      "verto:shortcut:os-payout": () => { if (blockIfIntern()) return; setShowExpenseDetailsManModal(true); },
-      "verto:shortcut:salary-payment": () => { if (blockIfIntern()) return; setShowExpenseDetailsManModal(true); },
-      "verto:shortcut:expense-material": () => { if (blockIfIntern()) return; setShowExpenseDetailsModal(true); },
-      "verto:shortcut:cn-bad-debt": () => { if (blockIfIntern()) return; setShowCNBadDebtModal(true); },
-      "verto:shortcut:bounce-back": () => { if (blockIfIntern()) return; setShowBounceBackModal(true); },
-      "verto:shortcut:advance-loan": () => { if (blockIfIntern()) return; setShowAdvanceLoanModal(true); },
-      "verto:shortcut:statutory-payout": () => { if (blockIfIntern()) return; setShowStatutoryModal(true); },
-      "verto:shortcut:interest-penalty": () => { if (blockIfIntern()) return; setShowPenaltyModal(true); },
-      "verto:shortcut:credit-card": () => { if (blockIfIntern()) return; setShowCreditCardModal(true); },
-      "verto:shortcut:internal-team": () => { if (blockIfIntern()) return; setEditingEmployee(null); setShowInternalTeamModal(true); },
+      "verto:shortcut:add-invoice": () => { setShowInvoiceModal(true); },
+      "verto:shortcut:payment-received": () => { setShowPaymentModal(true); },
+      "verto:shortcut:payment-made": () => { setShowPaymentMadeModal(true); },
+      "verto:shortcut:os-payout": () => { setShowExpenseDetailsManModal(true); },
+      "verto:shortcut:salary-payment": () => { setShowExpenseDetailsManModal(true); },
+      "verto:shortcut:expense-material": () => { setShowExpenseDetailsModal(true); },
+      "verto:shortcut:cn-bad-debt": () => { setShowCNBadDebtModal(true); },
+      "verto:shortcut:bounce-back": () => { setShowBounceBackModal(true); },
+      "verto:shortcut:advance-loan": () => { setShowAdvanceLoanModal(true); },
+      "verto:shortcut:statutory-payout": () => { setShowStatutoryModal(true); },
+      "verto:shortcut:interest-penalty": () => { setShowPenaltyModal(true); },
+      "verto:shortcut:credit-card": () => { setShowCreditCardModal(true); },
+      "verto:shortcut:internal-team": () => { setEditingEmployee(null); setShowInternalTeamModal(true); },
       // Navigation
       "verto:shortcut:dashboard": () => setActiveTab("dashboard"),
       "verto:shortcut:internal-team-nav": () => setActiveTab("internal-team"),
@@ -689,7 +692,7 @@ function App() {
   ];
 
   const handleActionClick = (label) => {
-    if (blockIfIntern()) return;
+    
     ({
       "Add Payment Received": () => setShowPaymentModal(true),
       "Add Invoice Details": () => setShowInvoiceModal(true),
@@ -715,7 +718,8 @@ function App() {
   const activeNav = navItems.find((n) => n.id === activeTab);
 
   return (
-    <div className="flex h-screen flex-col md:flex-row bg-slate-50 text-gray-900 font-sans overflow-hidden selection:bg-blue-500/30">
+    <PermissionsContext.Provider value={permissions}>
+      <div className="flex h-screen flex-col md:flex-row bg-slate-50 text-gray-900 font-sans overflow-hidden selection:bg-blue-500/30">
       {/* ── SIDEBAR ── */}
       <motion.aside
         initial={false}
@@ -1404,6 +1408,7 @@ function App() {
         onClose={() => setShowShortcutsHelp(false)}
       />
     </div>
+    </PermissionsContext.Provider>
   );
 }
 

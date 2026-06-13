@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import ReactDOM from "react-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import supabase from "../lib/supabaseClient";
+import { usePerms } from "../context/PermissionsContext";
 import {
   X,
   Plus,
@@ -236,6 +237,7 @@ const AddExpenseDetailsModal = ({
   editData,
   invoice,
 }) => {
+  const { canSave, isIntern } = usePerms();
   const [form, setForm] = useState(DEFAULT_FORM);
   const [errors, setErrors] = useState({});
   const [loading, setLoading] = useState(false);
@@ -629,6 +631,13 @@ const AddExpenseDetailsModal = ({
 
             {/* ── Body ── */}
             <div className="overflow-y-auto flex-1 px-6 py-4 space-y-6">
+              {isIntern && (
+                <div style={{background: '#f3e8ff', border: '1px solid #a855f7', borderRadius: '0.75rem', padding: '0.75rem 1rem'}}>
+                  <p style={{fontSize: '0.875rem', color: '#6b21a8', margin: 0}}>
+                    <strong>Training Mode</strong> — You can explore this form but cannot save changes.
+                  </p>
+                </div>
+              )}
               {/* ══ SECTION 1 — HEADER INFO ══ */}
               <section>
                 <SectionTitle color="orange" label="Header Information" />
@@ -1484,32 +1493,34 @@ const AddExpenseDetailsModal = ({
                 >
                   Cancel
                 </button>
-                <button
-                  type="button"
-                  onClick={handleSubmit}
-                  disabled={loading || saved}
-                  className={`px-6 py-2.5 rounded-xl text-sm font-semibold transition flex items-center gap-2 min-w-[140px] justify-center
-                    ${
-                      saved
-                        ? "bg-emerald-500 text-white"
-                        : "bg-orange-600 hover:bg-orange-700 text-white disabled:opacity-60"
-                    }`}
-                >
-                  {loading ? (
-                    <>
-                      <Loader2 className="w-4 h-4 animate-spin" /> Saving...
-                    </>
-                  ) : saved ? (
-                    <>
-                      <CheckCircle2 className="w-4 h-4" /> Saved!
-                    </>
-                  ) : (
-                    <>
-                      <Plus className="w-4 h-4" />{" "}
-                      {editData ? "Update" : "Save"} Expense
-                    </>
-                  )}
-                </button>
+                {canSave && (
+                  <button
+                    type="button"
+                    onClick={handleSubmit}
+                    disabled={loading || saved}
+                    className={`px-6 py-2.5 rounded-xl text-sm font-semibold transition flex items-center gap-2 min-w-[140px] justify-center
+                      ${
+                        saved
+                          ? "bg-emerald-500 text-white"
+                          : "bg-orange-600 hover:bg-orange-700 text-white disabled:opacity-60"
+                      }`}
+                  >
+                    {loading ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" /> Saving...
+                      </>
+                    ) : saved ? (
+                      <>
+                        <CheckCircle2 className="w-4 h-4" /> Saved!
+                      </>
+                    ) : (
+                      <>
+                        <Plus className="w-4 h-4" />{" "}
+                        {editData ? "Update" : "Save"} Expense
+                      </>
+                    )}
+                  </button>
+                )}
               </div>
             </div>
           </motion.div>

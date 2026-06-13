@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import ReactDOM from "react-dom";
 import supabase from "../lib/supabaseClient";
+import { usePerms } from "../context/PermissionsContext";
 import {
   ArrowLeft,
   Pencil,
@@ -24,6 +25,7 @@ import {
 import * as XLSX from "xlsx";
 
 const ExpenseRecordsView = ({ onClose }) => {
+  const { canEdit, canDelete, canExport } = usePerms();
   const [loading, setLoading] = useState(true);
   const [records, setRecords] = useState([]);
   const [bulkFolders, setBulkFolders] = useState([]);
@@ -573,39 +575,43 @@ const ExpenseRecordsView = ({ onClose }) => {
 
                           {/* Action Buttons */}
                           <div className="flex items-center gap-2 flex-shrink-0 ml-4">
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                exportBatch(folder.batchId);
-                              }}
-                              className="w-8 h-8 rounded-lg border border-blue-200 bg-blue-50 text-blue-600 flex items-center justify-center hover:bg-blue-100 transition-colors"
-                              title="Export to Excel"
-                            >
-                              <Download className="w-3.5 h-3.5" />
-                            </button>
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setConfirmDeleteBatch(
-                                  confirmDeleteBatch === folder.batchId
-                                    ? null
-                                    : folder.batchId
-                                );
-                              }}
-                              className={`w-8 h-8 rounded-lg border flex items-center justify-center transition-colors ${
-                                deletingBatchId === folder.batchId
-                                  ? "bg-slate-50 border-slate-200 text-slate-400 cursor-not-allowed"
-                                  : "border-red-200 bg-red-50 text-red-600 hover:bg-red-100"
-                              }`}
-                              title="Delete batch"
-                              disabled={deletingBatchId === folder.batchId}
-                            >
-                              {deletingBatchId === folder.batchId ? (
-                                <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                              ) : (
-                                <Trash2 className="w-3.5 h-3.5" />
-                              )}
-                            </button>
+                            {canExport && (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  exportBatch(folder.batchId);
+                                }}
+                                className="w-8 h-8 rounded-lg border border-blue-200 bg-blue-50 text-blue-600 flex items-center justify-center hover:bg-blue-100 transition-colors"
+                                title="Export to Excel"
+                              >
+                                <Download className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+                            {canDelete && (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setConfirmDeleteBatch(
+                                    confirmDeleteBatch === folder.batchId
+                                      ? null
+                                      : folder.batchId
+                                  );
+                                }}
+                                className={`w-8 h-8 rounded-lg border flex items-center justify-center transition-colors ${
+                                  deletingBatchId === folder.batchId
+                                    ? "bg-slate-50 border-slate-200 text-slate-400 cursor-not-allowed"
+                                    : "border-red-200 bg-red-50 text-red-600 hover:bg-red-100"
+                                }`}
+                                title="Delete batch"
+                                disabled={deletingBatchId === folder.batchId}
+                              >
+                                {deletingBatchId === folder.batchId ? (
+                                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                ) : (
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                )}
+                              </button>
+                            )}
                             <div className="text-slate-400">
                               {expandingId === folder.batchId ? (
                                 <Loader2 className="w-4 h-4 animate-spin" />
@@ -901,20 +907,24 @@ const ExpenseRecordsView = ({ onClose }) => {
                                   Save
                                 </button>
                               ) : (
-                                <button
-                                  onClick={() => startEdit(row)}
-                                  className="w-8 h-8 rounded-lg border border-amber-200 bg-amber-50 text-amber-700 flex items-center justify-center hover:bg-amber-100 transition-colors"
-                                >
-                                  <Pencil className="w-3.5 h-3.5" />
-                                </button>
+                                canEdit && (
+                                  <button
+                                    onClick={() => startEdit(row)}
+                                    className="w-8 h-8 rounded-lg border border-amber-200 bg-amber-50 text-amber-700 flex items-center justify-center hover:bg-amber-100 transition-colors"
+                                  >
+                                    <Pencil className="w-3.5 h-3.5" />
+                                  </button>
+                                )
                               )}
 
-                              <button
-                                onClick={() => handleDelete(row.id)}
-                                className="w-8 h-8 rounded-lg border border-red-200 bg-red-50 text-red-600 flex items-center justify-center hover:bg-red-100 transition-colors"
-                              >
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </button>
+                              {canDelete && (
+                                <button
+                                  onClick={() => handleDelete(row.id)}
+                                  className="w-8 h-8 rounded-lg border border-red-200 bg-red-50 text-red-600 flex items-center justify-center hover:bg-red-100 transition-colors"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              )}
                             </div>
                           </td>
                         </tr>
