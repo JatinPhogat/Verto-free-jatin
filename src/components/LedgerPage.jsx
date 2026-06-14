@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import supabase from "../lib/supabaseClient";
 import Card from "./ui/Card";
+import { exportInvoiceLedgerXlsx, exportInvoicePDF } from "../utils/Invoiceexport";
 import {
   ArrowLeft,
   Calendar,
@@ -16,6 +17,8 @@ import {
   Users,
   ChevronDown,
   ChevronUp,
+  FileDown,
+  FileSpreadsheet,
 } from "lucide-react";
 
 // ─── TYPE CONFIG ───────────────────────────────────────────────────────────────
@@ -364,6 +367,7 @@ const LedgerPage = () => {
   const [netInHand, setNetInHand] = useState(0);
   const [osPayouts, setOsPayouts] = useState([]);
   const [invoiceTds, setInvoiceTds] = useState(0);
+  const [exportLoading, setExportLoading] = useState(false);
 
   // ── Get invoice from global state ──
   useEffect(() => {
@@ -625,6 +629,101 @@ const LedgerPage = () => {
         });
   };
 
+  // ── EXPORT HANDLERS ─────────────────────────────────────────────────────────
+  // These do their own isolated fetch — completely separate from fetchLedger
+  // so they can never affect the main ledger view or cause "No transactions" bug.
+
+  const handleExcelDownload = async () => {
+    if (!invoice?.dbId) return;
+    setExportLoading(true);
+    try {
+      const { data: inv } = await supabase
+        .from("invoices").select("*").eq("id", invoice.dbId).single();
+
+      const [
+        { data: clientRow },
+        { data: entityRow },
+        { data: deptRow },
+        { data: paymentsRaw },
+        { data: osPayoutsRaw },
+        { data: cnsRaw },
+        { data: bbRaw },
+      ] = await Promise.all([
+        inv?.client_id
+          ? supabase.from("clients_master").select("client_name").eq("id", inv.client_id).maybeSingle()
+          : Promise.resolve({ data: null }),
+        inv?.entity_id
+          ? supabase.from("entity_master").select("entity_name").eq("id", inv.entity_id).maybeSingle()
+          : Promise.resolve({ data: null }),
+        inv?.department_id
+          ? supabase.from("departments_master").select("dept_name").eq("id", inv.department_id).maybeSingle()
+          : Promise.resolve({ data: null }),
+        supabase.from("payments_received").select("*").eq("invoice_id", invoice.dbId).order("payment_date"),
+        supabase.from("os_payouts").select("*").eq("invoice_id", invoice.dbId).order("payment_date"),
+        supabase.from("credit_note_bad_debt").select("*").eq("invoice_id", invoice.dbId).order("issue_date"),
+        supabase.from("bounce_back").select("*").eq("invoice_id", invoice.dbId).order("bounce_date"),
+      ]);
+
+      exportInvoiceLedgerXlsx({
+        invoiceData: {
+          ...(inv || {}),
+          invoice_number: inv?.invoice_number || invoice.id,
+          client_name: clientRow?.client_name || "",
+          entity_name: entityRow?.entity_name || "",
+          dept_name: deptRow?.dept_name || "",
+        },
+        ledgerRows: ledger,
+        osPayouts: osPayoutsRaw || [],
+        paymentsRaw: paymentsRaw || [],
+        cnsRaw: cnsRaw || [],
+        bbRaw: bbRaw || [],
+      });
+    } catch (err) {
+      console.error("Excel export error:", err);
+      alert("Export failed: " + err.message);
+    } finally {
+      setExportLoading(false);
+    }
+  };
+
+  const handlePdfDownload = async () => {
+    if (!invoice?.dbId) return;
+    setExportLoading(true);
+    try {
+      const { data: inv } = await supabase
+        .from("invoices").select("*").eq("id", invoice.dbId).single();
+
+      const [{ data: clientRow }, { data: entityRow }, { data: deptRow }] = await Promise.all([
+        inv?.client_id
+          ? supabase.from("clients_master").select("client_name").eq("id", inv.client_id).maybeSingle()
+          : Promise.resolve({ data: null }),
+        inv?.entity_id
+          ? supabase.from("entity_master").select("entity_name").eq("id", inv.entity_id).maybeSingle()
+          : Promise.resolve({ data: null }),
+        inv?.department_id
+          ? supabase.from("departments_master").select("dept_name").eq("id", inv.department_id).maybeSingle()
+          : Promise.resolve({ data: null }),
+      ]);
+
+      exportInvoicePDF({
+        invoiceData: {
+          ...(inv || {}),
+          invoice_number: inv?.invoice_number || invoice.id,
+          client_name: clientRow?.client_name || "",
+          entity_name: entityRow?.entity_name || "",
+          dept_name: deptRow?.dept_name || "",
+        },
+        outstanding,
+        ledgerRows: ledger,
+      });
+    } catch (err) {
+      console.error("PDF export error:", err);
+      alert("PDF failed: " + err.message);
+    } finally {
+      setExportLoading(false);
+    }
+  };
+
   if (!invoice) return null;
 
   // CHANGE 3: Pre-calculate OS Paid Total with BB deduction (used in summary cards)
@@ -685,6 +784,24 @@ const LedgerPage = () => {
           >
             <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
             Refresh
+          </button>
+
+          <button
+            onClick={handlePdfDownload}
+            disabled={exportLoading || loading}
+            className="flex items-center gap-2 px-3 py-2 text-sm text-white bg-blue-600 rounded-xl hover:bg-blue-700 transition disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            <FileDown className="w-4 h-4" />
+            {exportLoading ? "..." : "PDF"}
+          </button>
+
+          <button
+            onClick={handleExcelDownload}
+            disabled={exportLoading || loading}
+            className="flex items-center gap-2 px-3 py-2 text-sm text-white bg-emerald-600 rounded-xl hover:bg-emerald-700 transition disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            <FileSpreadsheet className="w-4 h-4" />
+            {exportLoading ? "..." : "Excel"}
           </button>
 
           <button
