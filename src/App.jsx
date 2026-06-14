@@ -565,9 +565,10 @@ function App() {
       "verto:shortcut:bank-nav": () => setActiveTab("bank-reco"),
       "verto:shortcut:payment-records-nav": () => setActiveTab("dashboard"),
       "verto:shortcut:salary-records-nav": () => setActiveTab("internal-cost"),
-      "verto:shortcut:client-advance-nav": () =>
+"verto:shortcut:client-advance-nav": () =>
         setActiveTab("advance-credit-locker"),
       "verto:shortcut:settings": () => setActiveTab("settings"),
+      "verto:shortcut:payment-center": () => setShowPaymentCenter(true),  // ← ADD THIS LINE
       // Special
       "verto:shortcut:command-palette": () => setShowCommandPalette(true),
       "verto:shortcut:global-search": () => setShowCommandPalette(true),

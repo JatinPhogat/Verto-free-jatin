@@ -1,4 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from "react";
+import supabase from "../lib/supabaseClient";
+import { DEFAULT_SHORTCUT_MAP } from "../utils/shortcutDefaults";
 
 const STORAGE_KEY = "verto_app_settings";
 
@@ -202,8 +204,92 @@ export function SettingsProvider({ children }) {
     setSettings({ ...DEFAULTS });
   }, []);
 
+  // ── Keyboard shortcuts: per-user, synced via Supabase ─────────────────
+  const [shortcuts, setShortcuts] = useState({ ...DEFAULT_SHORTCUT_MAP });
+  const [shortcutsLoaded, setShortcutsLoaded] = useState(false);
+
+  const getEmail = useCallback(() => {
+    return localStorage.getItem("verto_user_email") || null;
+  }, []);
+
+  // Load custom shortcuts (if any) on mount
+  useEffect(() => {
+    (async () => {
+      const email = getEmail();
+      if (!email) {
+        setShortcutsLoaded(true);
+        return;
+      }
+      const { data } = await supabase
+        .from("user_shortcuts")
+        .select("shortcuts")
+        .eq("email", email)
+        .maybeSingle();
+
+      if (data?.shortcuts) {
+        setShortcuts({ ...DEFAULT_SHORTCUT_MAP, ...data.shortcuts });
+      }
+      setShortcutsLoaded(true);
+    })();
+  }, [getEmail]);
+
+  // Persist the full current map to Supabase (upsert)
+  const persistShortcuts = useCallback(async (map) => {
+    const email = getEmail();
+    if (!email) return;
+    await supabase
+      .from("user_shortcuts")
+      .upsert({ email, shortcuts: map }, { onConflict: "email" });
+  }, [getEmail]);
+
+  // Rebind a single action to a new combo
+  const updateShortcut = useCallback((actionId, combo) => {
+    setShortcuts((prev) => {
+      const next = { ...prev, [actionId]: combo };
+      persistShortcuts(next);
+      return next;
+    });
+  }, [persistShortcuts]);
+
+  // Restore all shortcuts to defaults
+  const resetShortcuts = useCallback(() => {
+    const next = { ...DEFAULT_SHORTCUT_MAP };
+    setShortcuts(next);
+    persistShortcuts(next);
+  }, [persistShortcuts]);
+
+  // Export current shortcuts as a JSON string
+  const exportShortcuts = useCallback(() => {
+    return JSON.stringify(shortcuts, null, 2);
+  }, [shortcuts]);
+
+  // Import shortcuts from a parsed JSON object — only known action ids are kept
+  const importShortcuts = useCallback((obj) => {
+    const next = { ...DEFAULT_SHORTCUT_MAP };
+    Object.keys(DEFAULT_SHORTCUT_MAP).forEach((id) => {
+      if (typeof obj?.[id] === "string" && obj[id].trim()) {
+        next[id] = obj[id].trim().toLowerCase();
+      }
+    });
+    setShortcuts(next);
+    persistShortcuts(next);
+    return next;
+  }, [persistShortcuts]);
+
   return (
-    <SettingsContext.Provider value={{ settings, updateSetting, resetSettings }}>
+    <SettingsContext.Provider
+      value={{
+        settings,
+        updateSetting,
+        resetSettings,
+        shortcuts,
+        shortcutsLoaded,
+        updateShortcut,
+        resetShortcuts,
+        exportShortcuts,
+        importShortcuts,
+      }}
+    >
       {children}
     </SettingsContext.Provider>
   );
