@@ -58,7 +58,7 @@ import AddAdvanceLoanModal from "./components/advance/Addadvanceloanmodal.jsx";
 import AddCreditCardModal from "./components/advance/Addcreditcardmodal.jsx";
 import AddStatutoryPayoutModal from "./components/AddStatutoryPayoutModal";
 import SettingsPage from "./components/Settingspage.jsx";
-import AnalyticsDashboard from "./components/AnalyticsDashboard.jsx";
+import AnalyticsDashboard from "./components/Analyticsdashboard.jsx";
 import InternModeBanner from "./components/InternModeBanner.jsx";
 import { useInternGuard } from "./hooks/useInternGuard";
 import { PermissionsContext } from "./context/PermissionsContext";
