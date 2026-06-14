@@ -37,34 +37,48 @@ import {
   ChevronLeft,
   ChevronsLeft,
   ChevronsRight,
+  TrendingUp,
+  FileDown,
+  FileSpreadsheet,
+  Archive,
 } from "lucide-react";
 
 // ── Static config ───────────────────────────────────────────────────────
 const CATEGORY_CONFIG = {
-  Invoice: { label: "Invoices", icon: FileText, color: "#2563eb", bg: "#eff6ff", border: "#bfdbfe" },
-  "Payment Received": { label: "Payments Received", icon: ArrowDownLeft, color: "#059669", bg: "#ecfdf5", border: "#a7f3d0" },
-  "Payment Made": { label: "Payments Made", icon: ArrowUpRight, color: "#dc2626", bg: "#fef2f2", border: "#fecaca" },
-  "OS Payout": { label: "OS Payouts", icon: Banknote, color: "#7c3aed", bg: "#f5f3ff", border: "#ddd6fe" },
-  "CN / Bad Debt": { label: "CN / Bad Debt", icon: FileMinus2, color: "#ea580c", bg: "#fff7ed", border: "#fed7aa" },
-  "Employee Payout": { label: "Employee Payouts", icon: Users, color: "#0891b2", bg: "#ecfeff", border: "#a5f3fc" },
-  Expense: { label: "Expenses", icon: Receipt, color: "#d97706", bg: "#fffbeb", border: "#fde68a" },
-  "Bank Transfer": { label: "Bank Transfers", icon: Landmark, color: "#4f46e5", bg: "#eef2ff", border: "#c7d2fe" },
-  Statutory: { label: "Statutory Payouts", icon: ShieldCheck, color: "#0d9488", bg: "#f0fdfa", border: "#99f6e4" },
-  "Interest / Penalty": { label: "Interest / Penalty", icon: AlertTriangle, color: "#b91c1c", bg: "#fef2f2", border: "#fecaca" },
-  "Petty Cash": { label: "Petty Cash", icon: Wallet, color: "#65a30d", bg: "#f7fee7", border: "#d9f99d" },
-  Employee: { label: "Employee Records", icon: Users, color: "#475569", bg: "#f8fafc", border: "#e2e8f0" },
-  "User Management": { label: "User Management", icon: ShieldCheck, color: "#9333ea", bg: "#faf5ff", border: "#e9d5ff" },
-  Login: { label: "Login Activity", icon: LogIn, color: "#0284c7", bg: "#f0f9ff", border: "#bae6fd" },
-  "Bounce Back": { label: "Bounce Back", icon: Undo2, color: "#c026d3", bg: "#fdf4ff", border: "#f5d0fe" },
+  Invoice:             { label: "Invoices",             icon: FileText,      color: "#2563eb", bg: "#eff6ff", border: "#bfdbfe" },
+  "Payment Received":  { label: "Payments Received",    icon: ArrowDownLeft, color: "#059669", bg: "#ecfdf5", border: "#a7f3d0" },
+  "Payment Made":      { label: "Payments Made",        icon: ArrowUpRight,  color: "#dc2626", bg: "#fef2f2", border: "#fecaca" },
+  "OS Payout":         { label: "OS Payouts",           icon: Banknote,      color: "#7c3aed", bg: "#f5f3ff", border: "#ddd6fe" },
+  "CN / Bad Debt":     { label: "CN / Bad Debt",        icon: FileMinus2,    color: "#ea580c", bg: "#fff7ed", border: "#fed7aa" },
+  "Employee Payout":   { label: "Employee Payouts",     icon: Users,         color: "#0891b2", bg: "#ecfeff", border: "#a5f3fc" },
+  Expense:             { label: "Expenses",             icon: Receipt,       color: "#d97706", bg: "#fffbeb", border: "#fde68a" },
+  "Bank Transfer":     { label: "Bank Transfers",       icon: Landmark,      color: "#4f46e5", bg: "#eef2ff", border: "#c7d2fe" },
+  Statutory:           { label: "Statutory Payouts",    icon: ShieldCheck,   color: "#0d9488", bg: "#f0fdfa", border: "#99f6e4" },
+  "Interest / Penalty":{ label: "Interest / Penalty",   icon: AlertTriangle, color: "#b91c1c", bg: "#fef2f2", border: "#fecaca" },
+  "Petty Cash":        { label: "Petty Cash",           icon: Wallet,        color: "#65a30d", bg: "#f7fee7", border: "#d9f99d" },
+  Employee:            { label: "Employee Records",     icon: Users,         color: "#475569", bg: "#f8fafc", border: "#e2e8f0" },
+  "User Management":   { label: "User Management",      icon: ShieldCheck,   color: "#9333ea", bg: "#faf5ff", border: "#e9d5ff" },
+  Login:               { label: "Login Activity",       icon: LogIn,         color: "#0284c7", bg: "#f0f9ff", border: "#bae6fd" },
+  "Bounce Back":       { label: "Bounce Back",          icon: Undo2,         color: "#c026d3", bg: "#fdf4ff", border: "#f5d0fe" },
+  // ── New categories ──────────────────────────────────────────────────────────
+  Advance:             { label: "Advance Tracker",      icon: TrendingUp,    color: "#0369a1", bg: "#f0f9ff", border: "#bae6fd" },
+  Reports:             { label: "Reports & Exports",    icon: FileSpreadsheet,color: "#0f766e", bg: "#f0fdfa", border: "#99f6e4" },
+  "Internal Cost":     { label: "Internal Cost",        icon: Archive,       color: "#6d28d9", bg: "#f5f3ff", border: "#ddd6fe" },
 };
 
 const ACTION_CONFIG = {
-  INSERT: { label: "Created", icon: PlusCircle, color: "#059669", bg: "#ecfdf5", border: "#a7f3d0" },
-  UPDATE: { label: "Updated", icon: Pencil, color: "#d97706", bg: "#fffbeb", border: "#fde68a" },
-  DELETE: { label: "Deleted", icon: Trash2, color: "#dc2626", bg: "#fef2f2", border: "#fecaca" },
-  LOGIN: { label: "Login", icon: LogIn, color: "#0284c7", bg: "#f0f9ff", border: "#bae6fd" },
-  LOGOUT: { label: "Logout", icon: LogOutIcon, color: "#64748b", bg: "#f8fafc", border: "#e2e8f0" },
-  KICKED: { label: "Session Kicked", icon: AlertTriangle, color: "#b91c1c", bg: "#fef2f2", border: "#fecaca" },
+  INSERT:              { label: "Created",        icon: PlusCircle,    color: "#059669", bg: "#ecfdf5", border: "#a7f3d0" },
+  UPDATE:              { label: "Updated",        icon: Pencil,        color: "#d97706", bg: "#fffbeb", border: "#fde68a" },
+  DELETE:              { label: "Deleted",        icon: Trash2,        color: "#dc2626", bg: "#fef2f2", border: "#fecaca" },
+  LOGIN:               { label: "Login",          icon: LogIn,         color: "#0284c7", bg: "#f0f9ff", border: "#bae6fd" },
+  LOGOUT:              { label: "Logout",         icon: LogOutIcon,    color: "#64748b", bg: "#f8fafc", border: "#e2e8f0" },
+  KICKED:              { label: "Session Kicked", icon: AlertTriangle, color: "#b91c1c", bg: "#fef2f2", border: "#fecaca" },
+  // ── Export / Download actions ────────────────────────────────────────────────
+  EXPORT_EXCEL:        { label: "Excel Export",   icon: FileDown,      color: "#15803d", bg: "#f0fdf4", border: "#bbf7d0" },
+  EXPORT_PDF:          { label: "PDF Export",     icon: FileDown,      color: "#0369a1", bg: "#eff6ff", border: "#bfdbfe" },
+  EXPORT_ZIP:          { label: "ZIP Download",   icon: FileDown,      color: "#7c3aed", bg: "#f5f3ff", border: "#ddd6fe" },
+  EXPORT_SALARY_SLIP:  { label: "Salary Slip",    icon: FileText,      color: "#0891b2", bg: "#ecfeff", border: "#a5f3fc" },
+  EXPORT_TEMPLATE:     { label: "Template DL",    icon: FileSpreadsheet,color: "#64748b", bg: "#f8fafc", border: "#e2e8f0" },
 };
 
 const DATE_PRESETS = [
@@ -748,13 +762,37 @@ export default function AuditLogPage() {
         {/* Quick category shortcuts */}
         <div className="flex items-center gap-1.5 flex-wrap pt-1 border-t border-gray-50">
           <span className="text-[10px] font-bold text-gray-300 uppercase tracking-widest mr-1">Quick:</span>
-          {["Invoice", "Payment Received", "Payment Made", "OS Payout", "CN / Bad Debt", "Expense", "Login", "Bounce Back"].map((cat) => {
+          {["Invoice", "Payment Received", "Payment Made", "OS Payout", "CN / Bad Debt", "Expense", "Advance", "Reports", "Internal Cost", "Login", "Bounce Back"].map((cat) => {
             const cfg = CATEGORY_CONFIG[cat];
             const isActive = category === cat;
             return (
               <button
                 key={cat}
                 onClick={() => setCategory(isActive ? null : cat)}
+                className="flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold transition-all border"
+                style={
+                  isActive
+                    ? { color: cfg.color, background: cfg.bg, borderColor: cfg.border }
+                    : { color: "#94a3b8", background: "transparent", borderColor: "#f1f5f9" }
+                }
+              >
+                <cfg.icon className="w-3 h-3" />
+                {cfg.label}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Quick export-action shortcuts */}
+        <div className="flex items-center gap-1.5 flex-wrap pt-1 border-t border-gray-50">
+          <span className="text-[10px] font-bold text-gray-300 uppercase tracking-widest mr-1">Exports:</span>
+          {["EXPORT_EXCEL", "EXPORT_PDF", "EXPORT_ZIP", "EXPORT_SALARY_SLIP", "EXPORT_TEMPLATE"].map((act) => {
+            const cfg = ACTION_CONFIG[act];
+            const isActive = action === act;
+            return (
+              <button
+                key={act}
+                onClick={() => setAction(isActive ? null : act)}
                 className="flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold transition-all border"
                 style={
                   isActive

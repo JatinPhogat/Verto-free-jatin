@@ -9,6 +9,7 @@ import {
   Loader2, Eye
 } from "lucide-react";
 import supabase from "../../lib/supabaseClient";
+import { logExport, EXPORT_ACTIONS } from "../../utils/auditLog";
 
 const STATUS_OPTIONS = ["Pending", "Partially Paid", "Closed"];
 
@@ -67,6 +68,12 @@ const downloadTemplate = () => {
   ws["!cols"] = headers.map(() => ({ wch: 20 }));
   XLSX.utils.book_append_sheet(wb, ws, "Client Advance");
   XLSX.writeFile(wb, "client_advance_template.xlsx");
+  logExport({
+    action:      EXPORT_ACTIONS.TEMPLATE,
+    category:    "Advance",
+    description: "Downloaded Client Advance Upload Template",
+    meta:        { file: "client_advance_template.xlsx" },
+  });
 };
 
 // ─── Stat Card ────────────────────────────────────────────────────────────────
@@ -318,7 +325,16 @@ const BulkDetailModal = ({ upload, onClose, onDataChanged }) => {
   // ── Delete a single row from the bulk upload ──────────────────────────────
   const handleRowDeleted = async (rowId) => {
     setDeleting(true);
+    const rec = rows.find((r) => r.id === rowId);
     await supabase.from("client_advance_tracker").delete().eq("id", rowId);
+    logExport({
+      action:      "DELETE",
+      category:    "Advance",
+      description: `Deleted Client Advance Row — ${rec?.client_name || rowId} (from bulk upload)`,
+      client_name: rec?.client_name || null,
+      amount:      rec?.amount || null,
+      meta:        { id: rowId, bulk_upload_id: upload?.id },
+    });
     const newRows = rows.filter((r) => r.id !== rowId);
     setRows(newRows);
     setConfirmDeleteId(null);
@@ -530,8 +546,24 @@ export default function ClientAdvanceTracker() {
     };
     if (editRecord) {
       await supabase.from("client_advance_tracker").update(payload).eq("id", editRecord.id);
+      logExport({
+        action:      "UPDATE",
+        category:    "Advance",
+        description: `Updated Client Advance — ${form.client_name}`,
+        client_name: form.client_name,
+        amount:      parseFloat(form.amount) || 0,
+        meta:        { id: editRecord.id, status: form.status, pending_due },
+      });
     } else {
       await supabase.from("client_advance_tracker").insert([payload]);
+      logExport({
+        action:      "INSERT",
+        category:    "Advance",
+        description: `Added Client Advance — ${form.client_name}`,
+        client_name: form.client_name,
+        amount:      parseFloat(form.amount) || 0,
+        meta:        { status: form.status, pending_due },
+      });
     }
     setSaving(false);
     setShowModal(false);
@@ -539,15 +571,31 @@ export default function ClientAdvanceTracker() {
   }
 
   async function handleDelete(id) {
+    const rec = records.find((r) => r.id === id);
     await supabase.from("client_advance_tracker").delete().eq("id", id);
+    logExport({
+      action:      "DELETE",
+      category:    "Advance",
+      description: `Deleted Client Advance — ${rec?.client_name || id}`,
+      client_name: rec?.client_name || null,
+      amount:      rec?.amount || null,
+      meta:        { id, status: rec?.status, pending_due: rec?.pending_due },
+    });
     setDeleteId(null);
     fetchAll();
   }
 
   async function handleDeleteBulkUpload(bulkId) {
     setBulkDeleting(true);
+    const bulkRec = bulkUploads.find((u) => u.id === bulkId);
     await supabase.from("client_advance_tracker").delete().eq("bulk_upload_id", bulkId);
     await supabase.from("client_advance_bulk_uploads").delete().eq("id", bulkId);
+    logExport({
+      action:      "DELETE",
+      category:    "Advance",
+      description: `Deleted Bulk Advance Upload — ${bulkRec?.upload_label || bulkId} (${bulkRec?.row_count || "?"} rows)`,
+      meta:        { bulk_id: bulkId, label: bulkRec?.upload_label, rows: bulkRec?.row_count },
+    });
     setBulkDeleting(false);
     setConfirmBulkDelete(null);
     fetchAll();
@@ -631,6 +679,12 @@ export default function ClientAdvanceTracker() {
       }).eq("id", uploadSession.id);
 
       setBulkResult({ added, failed: failedDetails.length, failedDetails });
+      logExport({
+        action:      "INSERT",
+        category:    "Advance",
+        description: `Bulk Uploaded Client Advance — ${added} added, ${failedDetails.length} failed`,
+        meta:        { added, failed: failedDetails.length, label: uploadLabel, total_amount: totalAmount },
+      });
       fetchAll();
     } catch (err) {
       alert("❌ Failed to process Excel: " + err.message);
