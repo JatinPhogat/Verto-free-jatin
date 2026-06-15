@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import supabase from '../lib/supabaseClient';
 import * as XLSX from 'xlsx';
-import { logExport, EXPORT_ACTIONS } from '../utils/auditLog';
+import { logExport, EXPORT_ACTIONS } from "../utils/Auditlog.js";
 import {
   Search, Download, Filter, ChevronRight, ChevronLeft,
   ChevronDown, ChevronUp, Building2, TrendingUp, TrendingDown,

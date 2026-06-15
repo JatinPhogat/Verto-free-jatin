@@ -2,7 +2,7 @@ import React, { useEffect, useState, useCallback, useMemo, useRef } from "react"
 import ReactDOM from "react-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import * as XLSX from "xlsx";
-import { logExport, EXPORT_ACTIONS } from "../utils/auditLog";
+import { logExport, EXPORT_ACTIONS } from "../utils/Auditlog.js";
 import { usePerms } from "../context/PermissionsContext";
 import {
   X,

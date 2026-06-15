@@ -6,7 +6,7 @@
 // ────────────────────────────────────────────────────────────────────────────
 
 import * as XLSX from "xlsx";
-import { logExport, EXPORT_ACTIONS } from "./auditLog";
+import { logExport, EXPORT_ACTIONS } from "../utils/Auditlog.js";
 
 const INR = (val) =>
   `₹ ${Number(val || 0).toLocaleString("en-IN", { maximumFractionDigits: 2 })}`;

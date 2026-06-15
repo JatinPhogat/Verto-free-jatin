@@ -1,4 +1,4 @@
-import { logExport, EXPORT_ACTIONS } from '../utils/auditLog';
+import { logExport, EXPORT_ACTIONS } from "../utils/Auditlog.js";
 import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import * as XLSX from "xlsx";

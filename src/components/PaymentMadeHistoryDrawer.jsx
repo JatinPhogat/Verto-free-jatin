@@ -3,7 +3,7 @@ import supabase from "../lib/supabaseClient";
 import Card from "./ui/Card";
 import { X, CreditCard, Calendar, Building2, Download, RefreshCw } from "lucide-react";
 import * as XLSX from "xlsx";
-import { logExport, EXPORT_ACTIONS } from "../utils/auditLog";
+import { logExport, EXPORT_ACTIONS } from "../utils/Auditlog.js";
 
 const PaymentMadeHistoryDrawer = ({ invoice, isOpen, onClose }) => {
   const [payments, setPayments] = useState([]);

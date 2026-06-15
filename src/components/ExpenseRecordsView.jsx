@@ -25,7 +25,7 @@ import {
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import { printSalarySlip, downloadBulkSlipsZip } from "../utils/salarySlip";
-import { logExport, EXPORT_ACTIONS } from "../utils/auditLog";
+import { logExport, EXPORT_ACTIONS } from "../utils/Auditlog.js";
 
 const ExpenseRecordsView = ({ onClose }) => {
   const { canEdit, canDelete, canExport } = usePerms();

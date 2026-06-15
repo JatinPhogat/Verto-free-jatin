@@ -13,7 +13,7 @@
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-import { logExport, EXPORT_ACTIONS } from "./auditLog";
+import { logExport, EXPORT_ACTIONS } from "../utils/Auditlog.js";
 
 const fmtINR = (val) =>
     "\u20b9 " +

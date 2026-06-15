@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from "react";
 import supabase from "../lib/supabaseClient";
 import * as XLSX from "xlsx";
-import { logExport, EXPORT_ACTIONS } from "../utils/auditLog";
+import { logExport, EXPORT_ACTIONS } from "../utils/Auditlog.js";
 import { usePerms } from "../context/PermissionsContext";
 import {
   X,
