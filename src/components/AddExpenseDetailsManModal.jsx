@@ -583,7 +583,7 @@ const OsPayoutRecordsView = ({
   onClose,
   onChanged,
 }) => {
-  const { canEdit, canDelete } = usePerms();
+  const { canEdit, canDelete, isIntern } = usePerms();
   const [records, setRecords] = useState([]);
   const [loading, setLoading] = useState(true);
   const [editRow, setEditRow] = useState(null);
@@ -1652,7 +1652,7 @@ const OsPayoutRecordsView = ({
                           >
                             <CornerDownLeft size={13} />
                           </button>
-                          {canDelete && (
+                          {canDelete && !isIntern && (
                             <button
                               onClick={() => deleteRecord(row)}
                               disabled={deleting === row.id}
@@ -2236,7 +2236,7 @@ const OS_PAY_HEADS = ["Salary", "Claim", "Incentive", "Other"];
 
 // ─── MAIN COMPONENT ───────────────────────────────────────────────────────────
 const AddExpenseDetailsManModal = ({ isOpen, onClose, onSaved }) => {
-  const { role } = usePerms?.() || {};
+  const { role, isIntern } = usePerms?.() || {};
 
   const [selectedOption, setSelectedOption] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -3598,9 +3598,9 @@ const AddExpenseDetailsManModal = ({ isOpen, onClose, onSaved }) => {
         </div>
         <button
           onClick={saveInternal}
-          disabled={loading || saved || role?.toLowerCase() === "intern"}
+          disabled={loading || saved || isIntern}
           className={`px-6 py-2.5 rounded-xl text-sm font-semibold flex items-center gap-2 min-w-[160px] justify-center transition ${
-            role?.toLowerCase() === "intern"
+            isIntern
               ? "bg-blue-200 text-blue-700 cursor-not-allowed"
               : saved
               ? "bg-emerald-500 text-white"
@@ -4141,14 +4141,14 @@ const AddExpenseDetailsManModal = ({ isOpen, onClose, onSaved }) => {
             ← Back
           </button>
           <button
-            onClick={saveOS}
-            disabled={loading || saved}
-            className={`px-6 py-2.5 rounded-xl text-sm font-semibold flex items-center gap-2 min-w-[160px] justify-center transition ${
-              saved
-                ? "bg-emerald-500 text-white"
-                : "bg-purple-600 hover:bg-purple-700 text-white disabled:opacity-60"
-            }`}
-          >
+          onClick={saveOS}
+          disabled={loading || saved || isIntern}
+          className={`px-6 py-2.5 rounded-xl text-sm font-semibold flex items-center gap-2 min-w-[160px] justify-center transition ${
+            saved
+              ? "bg-emerald-500 text-white"
+              : "bg-purple-600 hover:bg-purple-700 text-white disabled:opacity-60"
+          }`}
+        >
             {loading ? (
               <>
                 <Loader2 className="w-4 h-4 animate-spin" /> Saving...
