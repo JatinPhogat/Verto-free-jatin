@@ -1,6 +1,6 @@
 import * as XLSX from "xlsx";
 import { saveAs } from "file-saver";
-import { logExport, EXPORT_ACTIONS } from "./auditLog";
+import { logExport, EXPORT_ACTIONS } from "../utils/Auditlog.js";
 
 export const exportToExcel = (data) => {
   const formattedData = data.map((row) => ({
