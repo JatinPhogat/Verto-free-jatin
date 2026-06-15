@@ -304,7 +304,24 @@ export default function AnalyticsDashboard() {
   const [entities,setEn]        = useState([]);
   const [loading,setLoading]    = useState(true);
   const [lastFetched,setLF]     = useState(null);
-  const [modal,setModal]        = useState(null); // {title,subtitle,content}
+  const [modal,setModal]        = useState(null);
+
+  // ── RPC-fetched aggregated data (scale-safe) ───────────────────────────
+  const [rpcKpi,         setRpcKpi]         = useState(null);
+  const [rpcProfit,      setRpcProfit]      = useState([]);
+  const [rpcDeptRev,     setRpcDeptRev]     = useState([]);
+  const [rpcClientPL,    setRpcClientPL]    = useState([]);
+  const [rpcAging,       setRpcAging]       = useState([]);
+  const [rpcFunnel,      setRpcFunnel]      = useState([]);
+  const [rpcOsMonth,     setRpcOsMonth]     = useState([]);
+  const [rpcBankWeekly,  setRpcBankWeekly]  = useState([]);
+  const [rpcBankSource,  setRpcBankSource]  = useState([]);
+  const [rpcStatutory,   setRpcStatutory]   = useState([]);
+  const [rpcHeadEcon,    setRpcHeadEcon]    = useState([]);
+  const [rpcInvHealth,   setRpcInvHealth]   = useState([]);
+  const [rpcTopEarners,  setRpcTopEarners]  = useState([]);
+  const [rpcCnSummary,   setRpcCnSummary]   = useState([]);
+  const [rpcPayTrend,    setRpcPayTrend]    = useState([]);
 
   // Financial Year selector (Apr–Mar)
   const [fyStartYear,setFyStartYear] = useState(currentFYStartYear());
@@ -373,10 +390,65 @@ export default function AnalyticsDashboard() {
       ]);
       setSI(inv||[]); setSP(pay||[]); setSO(os||[]); setSC(cn||[]); setSS(sal||[]);
       setTeam(tm||[]); setBE(be||[]); setSE2(se||[]); setCl(cl||[]); setDm(dm||[]); setEn(em||[]);
+
+      // ── RPC calls — all aggregated server-side, scale-safe ─────────────
+      const fyS = `${fyStartYear}-04-01`;
+      const fyE = `${fyStartYear + 1}-03-31`;
+
+      const [
+        { data: dKpi },
+        { data: dProfit },
+        { data: dDeptRev },
+        { data: dClientPL },
+        { data: dAging },
+        { data: dFunnel },
+        { data: dOsMonth },
+        { data: dBankWeekly },
+        { data: dBankSource },
+        { data: dStatutory },
+        { data: dHeadEcon },
+        { data: dInvHealth },
+        { data: dTopEarners },
+        { data: dCnSummary },
+        { data: dPayTrend },
+      ] = await Promise.all([
+        supabase.rpc("get_analytics_kpi_summary",        { p_start: fyS, p_end: fyE }),
+        supabase.rpc("get_analytics_profit_waterfall",   { p_start: fyS, p_end: fyE }),
+        supabase.rpc("get_analytics_dept_revenue",       { p_start: fyS, p_end: fyE }),
+        supabase.rpc("get_analytics_client_pl",          { p_start: fyS, p_end: fyE, p_dept_id: null, p_limit: 15 }),
+        supabase.rpc("get_analytics_collection_aging",   { p_start: fyS, p_end: fyE }),
+        supabase.rpc("get_analytics_collection_funnel",  { p_start: fyS, p_end: fyE }),
+        supabase.rpc("get_analytics_os_payout_summary",  { p_start: fyS, p_end: fyE }),
+        supabase.rpc("get_analytics_bank_flow_weekly",   { p_start: fyS, p_end: fyE }),
+        supabase.rpc("get_analytics_bank_flow_by_source",{ p_start: fyS, p_end: fyE }),
+        supabase.rpc("get_analytics_statutory_summary",  { p_start: fyS, p_end: fyE }),
+        supabase.rpc("get_analytics_headcount_economics",{ p_start: fyS, p_end: fyE }),
+        supabase.rpc("get_analytics_invoice_health",     { p_start: fyS, p_end: fyE }),
+        supabase.rpc("get_analytics_top_earners",        { p_start: fyS, p_end: fyE, p_limit: 10 }),
+        supabase.rpc("get_analytics_cn_summary",         { p_start: fyS, p_end: fyE }),
+        supabase.rpc("get_analytics_payment_trend",      { p_start: fyS, p_end: fyE }),
+      ]);
+
+      setRpcKpi(dKpi?.[0] || null);
+      setRpcProfit(dProfit     || []);
+      setRpcDeptRev(dDeptRev   || []);
+      setRpcClientPL(dClientPL || []);
+      setRpcAging(dAging       || []);
+      setRpcFunnel(dFunnel     || []);
+      setRpcOsMonth(dOsMonth   || []);
+      setRpcBankWeekly(dBankWeekly || []);
+      setRpcBankSource(dBankSource || []);
+      setRpcStatutory(dStatutory   || []);
+      setRpcHeadEcon(dHeadEcon     || []);
+      setRpcInvHealth(dInvHealth   || []);
+      setRpcTopEarners(dTopEarners || []);
+      setRpcCnSummary(dCnSummary   || []);
+      setRpcPayTrend(dPayTrend     || []);
+
       setLF(new Date());
     } catch(e) { console.error("Analytics fetch error:",e); }
     finally { setLoading(false); }
-  }, []);
+  }, [fyStartYear]);
   useEffect(()=>{fetchAll();},[fetchAll]);
 
   // ── Lookups ────────────────────────────────────────────────────────────────
@@ -1309,6 +1381,303 @@ export default function AnalyticsDashboard() {
             scrollable minScrollWidth={Math.max(500,statByInv.length*100)}>
             <HScrollBar data={statByInv} xKey="invoice" barWidth={22}
               bars={[{key:"Co. PF",color:P.indigo},{key:"Co. ESI",color:P.sky},{key:"LWF",color:P.amber},{key:"PT",color:P.rose}]} height={240}/>
+          </ChartCard>
+        </>
+      )}
+
+      {/* ══ SECTION 9: PROFIT WATERFALL (RPC) ══ */}
+      {rpcProfit.length > 0 && (
+        <>
+          <SH icon={TrendingUp} title="Profit Waterfall — by Department & Month" color={P.emerald} />
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+
+            <ChartCard title="Verto Fee vs Expense vs Profit (Monthly)" subtitle="Pre-TDS profit trend from profit_center_pl_view"
+              scrollable minScrollWidth={Math.max(500, rpcProfit.length * 90)}>
+              <HScrollBar
+                data={rpcProfit.map(r => ({
+                  month: r.month,
+                  "Verto Fee":    Number(r.verto_fee_earned  || 0),
+                  "Expense":      Number(r.monthly_expense   || 0),
+                  "Profit (Pre-TDS)": Number(r.profit_pre_tds || 0),
+                }))}
+                xKey="month" barWidth={50} height={240}
+                bars={[
+                  { key: "Verto Fee",        color: P.indigo },
+                  { key: "Expense",          color: P.rose   },
+                  { key: "Profit (Pre-TDS)", color: P.emerald},
+                ]}
+              />
+            </ChartCard>
+
+            <ChartCard title="Profit Margin % by Month" subtitle="profit_pre_tds / verto_fee_earned × 100">
+              {rpcProfit.length === 0 ? <Empty /> : (
+                <BrushArea
+                  data={rpcProfit.map(r => ({
+                    month:  r.month,
+                    "Margin %": Number(r.margin_pct || 0),
+                  }))}
+                  xKey="month"
+                  lines={[{ key: "Margin %", color: P.emerald }]}
+                  height={220}
+                />
+              )}
+            </ChartCard>
+
+            <ChartCard title="Revenue vs Profit by Department" subtitle="From profit_center_pl_view — all months combined">
+              {rpcDeptRev.length === 0 ? <Empty /> : (
+                <VScrollBar
+                  data={rpcDeptRev.map(r => ({
+                    dept:           r.dept_name,
+                    "Verto Fee":    Number(r.verto_fee_earned || 0),
+                    "Profit Pre-TDS": Number(r.profit_pre_tds || 0),
+                  }))}
+                  dataKey="Verto Fee" nameKey="dept" color={P.indigo}
+                  height={Math.min(280, rpcDeptRev.length * 52 + 20)}
+                />
+              )}
+            </ChartCard>
+
+            <ChartCard title="Client P&L — Top 15" subtitle="From client_wise_pl_view · verto fee earned vs profit">
+              {rpcClientPL.length === 0 ? <Empty /> : (
+                <VScrollBar
+                  data={rpcClientPL.map(r => ({
+                    client:        r.client_name,
+                    "Verto Fee":   Number(r.verto_fee_earned || 0),
+                    "Profit":      Number(r.actual_profit    || 0),
+                  }))}
+                  dataKey="Verto Fee" nameKey="client" color={P.violet}
+                  height={Math.min(400, rpcClientPL.length * 44 + 20)}
+                />
+              )}
+            </ChartCard>
+
+          </div>
+        </>
+      )}
+
+      {/* ══ SECTION 10: COLLECTION FUNNEL & AGING (RPC) ══ */}
+      {(rpcFunnel.length > 0 || rpcAging.length > 0) && (
+        <>
+          <SH icon={DollarSign} title="Collection Funnel & Invoice Aging" color={P.teal} />
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+
+            <ChartCard title="Collection Funnel" subtitle="Invoiced → Expected → Collected → Outstanding">
+              {rpcFunnel.length === 0 ? <Empty /> : (
+                <ResponsiveContainer width="100%" height={240}>
+                  <BarChart data={rpcFunnel} layout="vertical" margin={{ top: 4, right: 80, left: 8, bottom: 4 }} barSize={28}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" horizontal={false} />
+                    <XAxis type="number" tick={{ fontSize: 10 }} tickFormatter={fmt} />
+                    <YAxis dataKey="stage" type="category" tick={{ fontSize: 10 }} width={140} />
+                    <Tooltip content={<CT />} />
+                    <Bar dataKey="amount" name="Amount" radius={[0, 4, 4, 0]}>
+                      {rpcFunnel.map((_, i) => <Cell key={i} fill={[P.blue, P.indigo, P.emerald, P.amber][i % 4]} />)}
+                      <LabelList dataKey="amount" position="right" formatter={fmt} style={{ fontSize: 9 }} />
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              )}
+            </ChartCard>
+
+            <ChartCard title="Invoice Aging — Outstanding Buckets" subtitle="Grouped by delay_days">
+              {rpcAging.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-10 text-emerald-500">
+                  <DollarSign className="w-8 h-8 mb-2" />
+                  <p className="text-xs font-semibold">No outstanding invoices 🎉</p>
+                </div>
+              ) : (
+                <ResponsiveContainer width="100%" height={240}>
+                  <BarChart data={rpcAging} margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                    <XAxis dataKey="bucket" tick={{ fontSize: 10 }} />
+                    <YAxis tick={{ fontSize: 10 }} tickFormatter={fmt} />
+                    <Tooltip content={<CT />} />
+                    <Bar dataKey="outstanding" name="Outstanding" radius={[4, 4, 0, 0]}>
+                      {rpcAging.map((_, i) => <Cell key={i} fill={[P.emerald, P.amber, P.orange, P.rose][i % 4]} />)}
+                      <LabelList dataKey="outstanding" position="top" formatter={fmt} style={{ fontSize: 9 }} />
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              )}
+            </ChartCard>
+
+            <ChartCard title="Invoice Health Check" subtitle="Mismatches & delayed invoices">
+              {rpcInvHealth.length === 0 ? <Empty /> : (
+                <ResponsiveContainer width="100%" height={220}>
+                  <BarChart data={rpcInvHealth} layout="vertical" margin={{ top: 4, right: 80, left: 8, bottom: 4 }} barSize={24}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" horizontal={false} />
+                    <XAxis type="number" tick={{ fontSize: 10 }} />
+                    <YAxis dataKey="metric" type="category" tick={{ fontSize: 10 }} width={130} />
+                    <Tooltip content={<CT />} />
+                    <Bar dataKey="count" name="Count" fill={P.rose} radius={[0, 4, 4, 0]}>
+                      <LabelList dataKey="count" position="right" style={{ fontSize: 9, fill: P.rose }} />
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              )}
+            </ChartCard>
+
+            <ChartCard title="Weekly Payment Collections" subtitle="Aggregated weekly — scale-safe for 1000+ invoices/month">
+              {rpcPayTrend.length === 0 ? <Empty /> : (
+                <BrushArea
+                  data={rpcPayTrend.map(r => ({ week: r.week_start, received: Number(r.total_received || 0) }))}
+                  xKey="week"
+                  lines={[{ key: "received", name: "Received", color: P.emerald }]}
+                  height={220}
+                />
+              )}
+            </ChartCard>
+
+          </div>
+        </>
+      )}
+
+      {/* ══ SECTION 11: HEADCOUNT ECONOMICS (RPC) ══ */}
+      {rpcHeadEcon.length > 0 && (
+        <>
+          <SH icon={Users} title="Headcount Economics — Revenue & Cost per Head" color={P.sky} />
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+
+            <ChartCard title="Revenue per Head by Month" subtitle="Invoice value ÷ employee count">
+              <BrushArea
+                data={rpcHeadEcon.map(r => ({
+                  month:             r.month,
+                  "Revenue/Head":    Number(r.revenue_per_head || 0),
+                  "OS Cost/Head":    Number(r.os_cost_per_head || 0),
+                }))}
+                xKey="month"
+                lines={[
+                  { key: "Revenue/Head", color: P.blue   },
+                  { key: "OS Cost/Head", color: P.orange },
+                ]}
+                height={220}
+              />
+            </ChartCard>
+
+            <ChartCard title="Headcount vs OS & Salary Cost" subtitle="Monthly volume trend">
+              <HScrollBar
+                data={rpcHeadEcon.map(r => ({
+                  month:      r.month,
+                  "Headcount": Number(r.total_employee_count || 0),
+                  "OS Cost":   Number(r.os_cost    || 0),
+                  "Salary":    Number(r.salary_cost || 0),
+                }))}
+                xKey="month" barWidth={40} height={220}
+                bars={[
+                  { key: "Headcount", color: P.teal   },
+                  { key: "OS Cost",   color: P.orange },
+                  { key: "Salary",    color: P.violet },
+                ]}
+              />
+            </ChartCard>
+
+          </div>
+        </>
+      )}
+
+      {/* ══ SECTION 12: STATUTORY MONTHLY TREND (RPC) ══ */}
+      {rpcStatutory.length > 0 && (
+        <>
+          <SH icon={FileText} title="Statutory Liability Trend — Net after CN" color={P.rose} />
+          <ChartCard
+            title="Net Statutory by Month (PF + ESI + LWF + PT)"
+            subtitle="After CN deductions · aggregated server-side"
+            scrollable minScrollWidth={Math.max(500, rpcStatutory.length * 90)}
+          >
+            <HScrollBar
+              data={rpcStatutory.map(r => ({
+                month:    r.month,
+                "Net PF":  Number(r.net_pf  || 0),
+                "Net ESI": Number(r.net_esi || 0),
+                "Net LWF": Number(r.net_lwf || 0),
+                "PT":      Number(r.pt_tax  || 0),
+              }))}
+              xKey="month" barWidth={30} height={240}
+              bars={[
+                { key: "Net PF",  color: P.indigo },
+                { key: "Net ESI", color: P.sky    },
+                { key: "Net LWF", color: P.amber  },
+                { key: "PT",      color: P.rose   },
+              ]}
+            />
+          </ChartCard>
+        </>
+      )}
+
+      {/* ══ SECTION 13: BANK FLOW WEEKLY (RPC) ══ */}
+      {rpcBankWeekly.length > 0 && (
+        <>
+          <SH icon={Activity} title="Bank Flow — Weekly (Scale-Safe)" color={P.sky} />
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+
+            <ChartCard title="Weekly Bank Inflow vs Outflow" subtitle="1 year = 52 data points regardless of transaction volume">
+              <BrushArea
+                data={rpcBankWeekly.map(r => ({
+                  week:    r.week_start,
+                  Inflow:  Number(r.inflow  || 0),
+                  Outflow: Number(r.outflow || 0),
+                }))}
+                xKey="week"
+                lines={[
+                  { key: "Inflow",  color: P.emerald },
+                  { key: "Outflow", color: P.rose    },
+                ]}
+                height={240}
+              />
+            </ChartCard>
+
+            <ChartCard title="Cash Flow by Source Type" subtitle="Pre-aggregated — safe at 100K+ bank entries">
+              {rpcBankSource.length === 0 ? <Empty /> : (
+                <ResponsiveContainer width="100%" height={240}>
+                  <BarChart data={rpcBankSource} margin={{ top: 5, right: 10, left: 0, bottom: 20 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                    <XAxis dataKey="source_label" tick={{ fontSize: 10 }} angle={-15} textAnchor="end" />
+                    <YAxis tick={{ fontSize: 10 }} tickFormatter={fmt} />
+                    <Tooltip content={<CT />} />
+                    <Legend wrapperStyle={{ fontSize: 10 }} />
+                    <Bar dataKey="inflow"  name="Inflow"  fill={P.emerald} radius={[4, 4, 0, 0]} />
+                    <Bar dataKey="outflow" name="Outflow" fill={P.rose}    radius={[4, 4, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              )}
+            </ChartCard>
+
+          </div>
+        </>
+      )}
+
+      {/* ══ SECTION 14: TOP EARNERS RPC TABLE ══ */}
+      {rpcTopEarners.length > 0 && (
+        <>
+          <SH icon={CreditCard} title="Top Earners — Period Summary" color={P.violet} />
+          <ChartCard title={`Top ${rpcTopEarners.length} Earners`} subtitle="Aggregated from server — handles 7000+ payouts/month">
+            <div className="overflow-auto max-h-[320px]">
+              <table className="w-full text-xs">
+                <thead className="sticky top-0 bg-white border-b border-gray-100">
+                  <tr>
+                    <th className="text-left py-2 pr-3 text-gray-400 font-semibold">#</th>
+                    <th className="text-left py-2 pr-3 text-gray-400 font-semibold">Employee</th>
+                    <th className="text-left py-2 pr-3 text-gray-400 font-semibold">Dept</th>
+                    <th className="text-left py-2 pr-3 text-gray-400 font-semibold">Pay Head</th>
+                    <th className="text-right py-2 pr-3 text-gray-400 font-semibold">Gross</th>
+                    <th className="text-right py-2 pr-3 text-gray-400 font-semibold">TDS</th>
+                    <th className="text-right py-2 text-gray-400 font-semibold">Net Pay</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-50">
+                  {rpcTopEarners.map((r, i) => (
+                    <tr key={i} className="hover:bg-gray-50">
+                      <td className="py-2 pr-3 text-gray-300 font-bold">{i + 1}</td>
+                      <td className="py-2 pr-3 font-semibold text-gray-800 truncate max-w-[140px]">{r.employee_name || "—"}</td>
+                      <td className="py-2 pr-3 text-gray-400 truncate">{r.dept_name}</td>
+                      <td className="py-2 pr-3 text-gray-400">{r.pay_head}</td>
+                      <td className="py-2 pr-3 text-right text-gray-600">{fmt(r.total_gross)}</td>
+                      <td className="py-2 pr-3 text-right text-rose-400">{fmt(r.total_tds)}</td>
+                      <td className="py-2 text-right font-bold text-gray-800">{fmt(r.total_net)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </ChartCard>
         </>
       )}
