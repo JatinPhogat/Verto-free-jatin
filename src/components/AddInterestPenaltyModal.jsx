@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 
 import supabase from "../lib/supabaseClient";
+import { usePerms } from "../context/PermissionsContext";
 
 const ENTITIES = [
   "Verto India Pvt Ltd",
@@ -32,12 +33,14 @@ const EMPTY_FORM = {
 };
 
 const AddInterestPenaltyModal = ({ isOpen, onClose, banks = [] }) => {
+  const { isIntern } = usePerms?.() || {};
   const [loading, setLoading] = useState(false);
   const [form, setForm] = useState(EMPTY_FORM);
 
   const set = (field, value) => setForm((prev) => ({ ...prev, [field]: value }));
 
   const handleSave = async () => {
+    if (isIntern) return;
     if (!form.amount || !form.bank_id) {
       alert("Bank and Amount are required.");
       return;
@@ -297,10 +300,12 @@ const AddInterestPenaltyModal = ({ isOpen, onClose, banks = [] }) => {
             </button>
             <button
               onClick={handleSave}
-              disabled={loading}
-              className="flex-1 rounded-2xl bg-red-600 py-3 font-semibold text-white transition hover:bg-red-700 disabled:opacity-60"
+              disabled={loading || isIntern}
+              className={`flex-1 rounded-2xl py-3 font-semibold text-white transition hover:bg-red-700 disabled:opacity-60 ${
+                isIntern ? "bg-red-300 cursor-not-allowed" : "bg-red-600"
+              }`}
             >
-              {loading ? "Saving..." : "Save Entry"}
+              {loading ? "Saving..." : isIntern ? "Intern — View Only" : "Save Entry"}
             </button>
           </div>
         </motion.div>

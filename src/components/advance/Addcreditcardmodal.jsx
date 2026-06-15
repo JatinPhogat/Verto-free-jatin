@@ -2,10 +2,12 @@ import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { X, Save, CreditCard } from "lucide-react";
 import supabase from "../../lib/supabaseClient";
+import { usePerms } from "../../context/PermissionsContext";
 
 // REMOVED: const BANK_OPTIONS = [...] — now fetched from bank_master
 
 export default function AddCreditCardModal({ isOpen, onClose }) {
+  const { isIntern } = usePerms?.() || {};
   const [form, setForm] = useState({
     bank: "", card_last4: "", issued_to: "", billing_cycle_from: "", billing_cycle_to: "", payment_date: "",
   });
@@ -29,6 +31,7 @@ export default function AddCreditCardModal({ isOpen, onClose }) {
   const goldGrad = "linear-gradient(135deg, #78350f 0%, #b45309 60%, #d97706 100%)";
 
   async function handleSave() {
+    if (isIntern) return;
     if (!form.bank || !form.card_last4) return;
     setSaving(true);
     await supabase.from("credit_card_master").insert([form]);
@@ -98,9 +101,10 @@ export default function AddCreditCardModal({ isOpen, onClose }) {
             <div className="px-6 pb-6 flex justify-end gap-3">
               <button onClick={onClose} className="px-5 py-2.5 rounded-xl border text-gray-300 text-sm font-semibold"
                 style={{ borderColor: "#78350f" }}>Cancel</button>
-              <button onClick={handleSave} disabled={saving} className="px-6 py-2.5 text-white rounded-xl text-sm font-semibold flex items-center gap-2 disabled:opacity-60"
-                style={{ background: goldGrad }}>
-                <Save className="w-4 h-4" /> {saving ? "Saving…" : "Save Card"}
+              <button onClick={handleSave} disabled={saving || isIntern} className={`px-6 py-2.5 text-white rounded-xl text-sm font-semibold flex items-center gap-2 disabled:opacity-60 ${
+                isIntern ? "cursor-not-allowed" : ""
+              }`} style={{ background: goldGrad }}>
+                <Save className="w-4 h-4" /> {saving ? "Saving…" : isIntern ? "View Only" : "Save Card"}
               </button>
             </div>
           </motion.div>
