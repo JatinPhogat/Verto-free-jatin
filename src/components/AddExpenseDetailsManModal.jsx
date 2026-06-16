@@ -283,10 +283,10 @@ const downloadTemplate = () => {
   XLSX.utils.book_append_sheet(wb, ws, "Employee Payouts");
   XLSX.writeFile(wb, "employee_payout_template.xlsx");
   logExport({
-    action:      EXPORT_ACTIONS.TEMPLATE,
-    category:    "Expense",
+    action: EXPORT_ACTIONS.TEMPLATE,
+    category: "Expense",
     description: "Downloaded Employee Payout Upload Template",
-    meta:        { file: "employee_payout_template.xlsx" },
+    meta: { file: "employee_payout_template.xlsx" },
   });
 };
 
@@ -571,6 +571,85 @@ const MismatchConfirmModal = ({ matched, mismatches, onProceed, onCancel }) => (
     </div>
   </div>
 );
+// ─── CONFIRM MODAL (replaces window.confirm) ──────────────────────────────────
+const ConfirmModal = ({ modal, onConfirm, onCancel }) => {
+  if (!modal) return null;
+  return (
+    <div className="fixed inset-0 z-[9999999] flex items-center justify-center bg-black/60 backdrop-blur-sm">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm mx-4 overflow-hidden">
+        <div
+          className={`px-5 py-4 flex items-center gap-3 ${
+            modal.type === "os"
+              ? "bg-gradient-to-r from-amber-500 to-orange-500"
+              : "bg-gradient-to-r from-rose-500 to-red-600"
+          }`}
+        >
+          <div className="w-9 h-9 rounded-xl bg-white/20 flex items-center justify-center flex-shrink-0">
+            <AlertTriangle className="w-5 h-5 text-white" />
+          </div>
+          <div>
+            <h4 className="text-white font-bold text-sm">
+              {modal.type === "os"
+                ? "OS Amount Exceeded"
+                : "Bank Balance Insufficient"}
+            </h4>
+            <p className="text-white/70 text-xs">Review before proceeding</p>
+          </div>
+        </div>
+
+        <div className="p-5 space-y-2">
+          {modal.rows.map((row, i) =>
+            row.divider ? (
+              <div key={i} className="border-t border-gray-200 my-1" />
+            ) : (
+              <div key={i} className="flex justify-between items-center">
+                <span
+                  className={`text-xs ${
+                    row.highlight ? "font-bold text-gray-800" : "text-gray-500"
+                  }`}
+                >
+                  {row.label}
+                </span>
+                <span
+                  className={`text-sm font-bold ${
+                    row.color || "text-gray-800"
+                  }`}
+                >
+                  {row.value}
+                </span>
+              </div>
+            )
+          )}
+        </div>
+
+        <div className="px-5 pb-4">
+          <p className="text-xs text-gray-500 bg-gray-50 border border-gray-200 rounded-xl px-3 py-2">
+            {modal.note}
+          </p>
+        </div>
+
+        <div className="flex gap-3 px-5 py-4 border-t border-gray-100">
+          <button
+            onClick={onCancel}
+            className="flex-1 py-2.5 rounded-xl border-2 border-gray-200 text-gray-600 text-sm font-semibold hover:bg-gray-50 transition"
+          >
+            Cancel — Go Back
+          </button>
+          <button
+            onClick={onConfirm}
+            className={`flex-1 py-2.5 rounded-xl text-white text-sm font-bold transition ${
+              modal.type === "os"
+                ? "bg-amber-500 hover:bg-amber-600"
+                : "bg-rose-600 hover:bg-rose-700"
+            }`}
+          >
+            Proceed Anyway
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
 
 // ─── OS PAYOUT RECORDS VIEW (INLINE — Edit/View/Delete) ───────────────────────
 // ─── OS PAYOUT RECORDS VIEW (INLINE — Edit/View/Delete) ───────────────────────
@@ -2063,7 +2142,7 @@ const OsPayoutRecordsView = ({
               )}
             </div>
 
-              <div className="px-5 py-3 border-t flex gap-2">
+            <div className="px-5 py-3 border-t flex gap-2">
               {!isIntern && (
                 <button
                   onClick={() => {
@@ -2180,7 +2259,7 @@ const OsPayoutRecordsView = ({
                 </div>
               ))}
             </div>
-              <div className="px-5 py-3 border-t flex gap-2">
+            <div className="px-5 py-3 border-t flex gap-2">
               {!isIntern && (
                 <button
                   onClick={() => {
@@ -2255,8 +2334,9 @@ const AddExpenseDetailsManModal = ({ isOpen, onClose, onSaved }) => {
 
   const [showViewPage, setShowViewPage] = useState(false);
   const [showOsRecords, setShowOsRecords] = useState(false);
-  const [osOutstanding, setOsOutstanding] = useState(null); // { net_in_hand, already_paid, remaining }
+  const [osOutstanding, setOsOutstanding] = useState(null);
   const [osOutstandingLoading, setOsOutstandingLoading] = useState(false);
+  const [confirmModal, setConfirmModal] = useState(null); // { type, message, onConfirm, onCancel }
 
   const [entities, setEntities] = useState([]);
   const [departments, setDepartments] = useState([]);
@@ -2355,10 +2435,10 @@ const AddExpenseDetailsManModal = ({ isOpen, onClose, onSaved }) => {
         .from("internal_team")
         .select("id, emp_code, name, entity, department, designation, status")
         .order("name"),
-      supabase
+        supabase
         .from("invoices")
         .select(
-          "id, invoice_number, client_id, entity_id, clients_master(client_name), entity_master(entity_name)"
+          "id, invoice_number, client_id, entity_id, net_in_hand, clients_master(client_name), entity_master(entity_name)"
         )
         .order("invoice_number", { ascending: false }),
     ]);
@@ -3081,24 +3161,70 @@ const AddExpenseDetailsManModal = ({ isOpen, onClose, onSaved }) => {
           const remaining = Number(inv.net_in_hand) - alreadyPaid;
 
           if (thisAmount > remaining) {
-            const proceed = window.confirm(
-              `⚠️ Amount Paid (₹${thisAmount.toLocaleString(
-                "en-IN"
-              )}) exceeds the OS Amt Difference remaining (₹${remaining.toLocaleString(
-                "en-IN"
-              )}).\n\nClick OK to proceed anyway, or Cancel to go back and fix the amount.`
-            );
-            if (!proceed) {
-              setErrors((p) => ({
-                ...p,
-                amountPaid: `⛔ Exceeds OS Amt Difference. Max allowed: ₹${remaining.toLocaleString(
-                  "en-IN"
-                )} — You entered: ₹${thisAmount.toLocaleString("en-IN")}`,
-              }));
-              setLoading(false);
-              return; // Cancel → stop save
+            const excess = thisAmount - remaining;
+            setLoading(false);
+            try {
+              await new Promise((resolve, reject) => {
+                setConfirmModal({
+                  type: "os",
+                  rows: [
+                    {
+                      label: "Invoice Net in Hand",
+                      value: `₹${Number(inv.net_in_hand).toLocaleString(
+                        "en-IN"
+                      )}`,
+                      color: "text-gray-800",
+                    },
+                    {
+                      label: "Already Paid (net)",
+                      value: `−₹${alreadyPaid.toLocaleString("en-IN")}`,
+                      color: "text-rose-600",
+                    },
+                    { divider: true },
+                    {
+                      label: "Remaining Allowed",
+                      value: `₹${remaining.toLocaleString("en-IN")}`,
+                      color: "text-emerald-600",
+                      highlight: true,
+                    },
+                    {
+                      label: "You Entered",
+                      value: `₹${thisAmount.toLocaleString("en-IN")}`,
+                      color: "text-amber-600",
+                      highlight: true,
+                    },
+                    {
+                      label: "Excess",
+                      value: `₹${excess.toLocaleString("en-IN")}`,
+                      color: "text-rose-600",
+                      highlight: true,
+                    },
+                  ],
+                  note: "This exceeds the OS amount difference. Proceed anyway or go back to fix.",
+                  onConfirm: () => {
+                    setConfirmModal(null);
+                    resolve(true);
+                  },
+                  onCancel: () => {
+                    setConfirmModal(null);
+                    reject("user_cancelled");
+                  },
+                });
+              });
+            } catch (e) {
+              if (e === "user_cancelled") {
+                setErrors((p) => ({
+                  ...p,
+                  amountPaid: `⛔ Exceeds OS Amt Difference. Max allowed: ₹${remaining.toLocaleString(
+                    "en-IN"
+                  )} — You entered: ₹${thisAmount.toLocaleString("en-IN")}`,
+                }));
+                return;
+              }
+              throw e;
             }
             setErrors((p) => ({ ...p, amountPaid: "" }));
+            setLoading(true);
           }
         }
 
@@ -3172,19 +3298,55 @@ const AddExpenseDetailsManModal = ({ isOpen, onClose, onSaved }) => {
           }, 0);
           const currentBalance = opening + movement;
           if (osAmt > currentBalance) {
-            const ok = window.confirm(
-              `⚠️ Payment (₹${osAmt.toLocaleString(
-                "en-IN"
-              )}) exceeds bank balance (₹${Number(
-                currentBalance
-              ).toLocaleString(
-                "en-IN"
-              )}).\n\nClick OK to proceed, or Cancel to go back.`
-            );
-            if (!ok) {
-              setLoading(false);
-              return;
+            const shortfall = osAmt - currentBalance;
+            setLoading(false);
+            try {
+              await new Promise((resolve, reject) => {
+                setConfirmModal({
+                  type: "bank",
+                  rows: [
+                    {
+                      label: "Bank",
+                      value: bank?.bank_name || "Selected Bank",
+                      color: "text-gray-800",
+                    },
+                    { divider: true },
+                    {
+                      label: "Current Balance",
+                      value: `₹${Number(currentBalance).toLocaleString(
+                        "en-IN"
+                      )}`,
+                      color: "text-gray-800",
+                    },
+                    {
+                      label: "Payment Amount",
+                      value: `₹${osAmt.toLocaleString("en-IN")}`,
+                      color: "text-rose-600",
+                      highlight: true,
+                    },
+                    {
+                      label: "Shortfall",
+                      value: `₹${shortfall.toLocaleString("en-IN")}`,
+                      color: "text-rose-700",
+                      highlight: true,
+                    },
+                  ],
+                  note: "Payment exceeds the current bank balance. Proceed anyway or go back to fix.",
+                  onConfirm: () => {
+                    setConfirmModal(null);
+                    resolve(true);
+                  },
+                  onCancel: () => {
+                    setConfirmModal(null);
+                    reject("user_cancelled");
+                  },
+                });
+              });
+            } catch (e) {
+              if (e === "user_cancelled") return;
+              throw e;
             }
+            setLoading(true);
           }
         }
       } catch (err) {
@@ -4151,14 +4313,14 @@ const AddExpenseDetailsManModal = ({ isOpen, onClose, onSaved }) => {
             ← Back
           </button>
           <button
-          onClick={saveOS}
-          disabled={loading || saved || isIntern}
-          className={`px-6 py-2.5 rounded-xl text-sm font-semibold flex items-center gap-2 min-w-[160px] justify-center transition ${
-            saved
-              ? "bg-emerald-500 text-white"
-              : "bg-purple-600 hover:bg-purple-700 text-white disabled:opacity-60"
-          }`}
-        >
+            onClick={saveOS}
+            disabled={loading || saved || isIntern}
+            className={`px-6 py-2.5 rounded-xl text-sm font-semibold flex items-center gap-2 min-w-[160px] justify-center transition ${
+              saved
+                ? "bg-emerald-500 text-white"
+                : "bg-purple-600 hover:bg-purple-700 text-white disabled:opacity-60"
+            }`}
+          >
             {loading ? (
               <>
                 <Loader2 className="w-4 h-4 animate-spin" /> Saving...
@@ -4199,6 +4361,11 @@ const AddExpenseDetailsManModal = ({ isOpen, onClose, onSaved }) => {
 
   return ReactDOM.createPortal(
     <>
+      <ConfirmModal
+        modal={confirmModal}
+        onConfirm={confirmModal?.onConfirm}
+        onCancel={confirmModal?.onCancel}
+      />
       {bulkMismatch && (
         <MismatchConfirmModal
           matched={bulkMismatch.matched}
