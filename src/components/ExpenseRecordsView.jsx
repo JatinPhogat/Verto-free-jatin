@@ -42,6 +42,7 @@ const ExpenseRecordsView = ({ onClose }) => {
   const [expandingId, setExpandingId] = useState(null);
   const [deletingBatchId, setDeletingBatchId] = useState(null);
   const [confirmDeleteBatch, setConfirmDeleteBatch] = useState(null);
+  const [confirmDeleteRow, setConfirmDeleteRow] = useState(null);
   const [toast, setToast] = useState(null);
   const [slipLoading, setSlipLoading] = useState(null); // batchId or rowId being processed
 
@@ -213,6 +214,42 @@ const ExpenseRecordsView = ({ onClose }) => {
     } catch (err) {
       console.error(err);
       showToast(err.message, "error");
+    }
+  };
+
+  // =====================================================
+  // DELETE SINGLE ROW INSIDE BULK BATCH
+  // =====================================================
+  const handleDeleteBulkRow = async (rowId) => {
+    setConfirmDeleteRow(null);
+    setDeletingBatchId(rowId); // reuse state as "deleting indicator" for the row
+    try {
+      const { error } = await supabase.rpc("delete_employee_expense_complete", {
+        p_payout_id: rowId,
+      });
+      if (error) throw error;
+      // Remove from expanded rows locally
+      setExpandedRows((prev) => prev.filter((r) => r.id !== rowId));
+      // Update folder count/totals live
+      setBulkFolders((prev) =>
+        prev.map((f) => {
+          if (f.batchId !== expandedBatch) return f;
+          const deleted = expandedRows.find((r) => r.id === rowId);
+          return {
+            ...f,
+            count: f.count - 1,
+            totalAmount: f.totalAmount - Number(deleted?.payment_amount || 0),
+            totalTax: f.totalTax - Number(deleted?.income_tax_deducted || 0),
+            totalNet: f.totalNet - Number(deleted?.net_payment || 0),
+          };
+        })
+      );
+      showToast("Row deleted successfully");
+      window.refreshDashboard?.();
+    } catch (err) {
+      showToast("Delete failed: " + err.message, "error");
+    } finally {
+      setDeletingBatchId(null);
     }
   };
 
@@ -766,11 +803,13 @@ const ExpenseRecordsView = ({ onClose }) => {
                                   "Date",
                                   "Remarks",
                                   "Slip",
+                                  "Edit",
+                                  "Delete",
                                 ].map((h) => (
                                   <th
                                     key={h}
                                     className={`px-3 py-2.5 text-[10px] font-medium text-emerald-800 uppercase tracking-wide whitespace-nowrap ${
-                                      h === "Slip" ? "text-center" : "text-left"
+                                      h === "Slip" || h === "Edit" || h === "Delete" ? "text-center" : "text-left"
                                     }`}
                                   >
                                     {h}
@@ -800,17 +839,57 @@ const ExpenseRecordsView = ({ onClose }) => {
                                   <td className="px-3 py-2.5 text-slate-500 text-[11px] whitespace-nowrap">
                                     {row.pay_head}
                                   </td>
-                                  <td className="px-3 py-2.5 font-mono text-[11px] font-medium text-[#0f172a]">
-                                    ₹{Number(row.payment_amount).toLocaleString("en-IN")}
+                                  {/* Amount — editable */}
+                                  <td className="px-3 py-2.5">
+                                    {editingId === row.id ? (
+                                      <input
+                                        value={editData.payment_amount}
+                                        onChange={(e) => setEditData({ ...editData, payment_amount: e.target.value })}
+                                        className="w-[90px] border border-slate-200 bg-[#f7f8fb] rounded-lg px-2 py-1 text-[11px] font-mono text-slate-800 focus:outline-none focus:border-[#1e3a5f] focus:bg-white transition-all"
+                                      />
+                                    ) : (
+                                      <span className="font-mono text-[11px] font-medium text-[#0f172a]">
+                                        ₹{Number(row.payment_amount).toLocaleString("en-IN")}
+                                      </span>
+                                    )}
                                   </td>
-                                  <td className="px-3 py-2.5 font-mono text-[11px] text-amber-700">
-                                    ₹{Number(row.income_tax_deducted).toLocaleString("en-IN")}
+
+                                  {/* Tax — editable */}
+                                  <td className="px-3 py-2.5">
+                                    {editingId === row.id ? (
+                                      <input
+                                        value={editData.income_tax_deducted}
+                                        onChange={(e) => setEditData({ ...editData, income_tax_deducted: e.target.value })}
+                                        className="w-[80px] border border-slate-200 bg-[#f7f8fb] rounded-lg px-2 py-1 text-[11px] font-mono text-slate-800 focus:outline-none focus:border-[#1e3a5f] focus:bg-white transition-all"
+                                      />
+                                    ) : (
+                                      <span className="font-mono text-[11px] text-amber-700">
+                                        ₹{Number(row.income_tax_deducted).toLocaleString("en-IN")}
+                                      </span>
+                                    )}
                                   </td>
+
+                                  {/* Net — always computed, read-only */}
                                   <td className="px-3 py-2.5 font-mono text-[11px] font-semibold text-emerald-700">
-                                    ₹{Number(row.net_payment).toLocaleString("en-IN")}
+                                    {editingId === row.id
+                                      ? `₹${(Number(editData.payment_amount || 0) - Number(editData.income_tax_deducted || 0)).toLocaleString("en-IN")}`
+                                      : `₹${Number(row.net_payment).toLocaleString("en-IN")}`
+                                    }
                                   </td>
-                                  <td className="px-3 py-2.5 text-slate-500 text-[11px] max-w-[150px] truncate">
-                                    {row.payment_description || "—"}
+
+                                  {/* Description — editable */}
+                                  <td className="px-3 py-2.5">
+                                    {editingId === row.id ? (
+                                      <input
+                                        value={editData.payment_description}
+                                        onChange={(e) => setEditData({ ...editData, payment_description: e.target.value })}
+                                        className="w-[130px] border border-slate-200 bg-[#f7f8fb] rounded-lg px-2 py-1 text-[11px] text-slate-800 focus:outline-none focus:border-[#1e3a5f] focus:bg-white transition-all"
+                                      />
+                                    ) : (
+                                      <span className="text-slate-500 text-[11px] max-w-[150px] truncate block">
+                                        {row.payment_description || "—"}
+                                      </span>
+                                    )}
                                   </td>
                                   <td className="px-3 py-2.5 text-slate-500 text-[10px] whitespace-nowrap">
                                     {row.bank_name || "—"}
@@ -818,8 +897,19 @@ const ExpenseRecordsView = ({ onClose }) => {
                                   <td className="px-3 py-2.5 text-slate-500 text-[11px] whitespace-nowrap">
                                     {fmtDate(row.date_of_pay)}
                                   </td>
-                                  <td className="px-3 py-2.5 text-slate-400 text-[10px] max-w-[120px] truncate italic">
-                                    {row.remarks || "—"}
+                                  {/* Remarks — editable */}
+                                  <td className="px-3 py-2.5">
+                                    {editingId === row.id ? (
+                                      <input
+                                        value={editData.remarks}
+                                        onChange={(e) => setEditData({ ...editData, remarks: e.target.value })}
+                                        className="w-[110px] border border-slate-200 bg-[#f7f8fb] rounded-lg px-2 py-1 text-[11px] text-slate-800 focus:outline-none focus:border-[#1e3a5f] focus:bg-white transition-all"
+                                      />
+                                    ) : (
+                                      <span className="text-slate-400 text-[10px] max-w-[120px] truncate italic block">
+                                        {row.remarks || "—"}
+                                      </span>
+                                    )}
                                   </td>
                                   {/* ── Per-row slip button ── */}
                                   <td className="px-3 py-2.5 text-center">
@@ -840,6 +930,71 @@ const ExpenseRecordsView = ({ onClose }) => {
                                       )}
                                       Slip
                                     </button>
+                                  </td>
+
+                                  {/* ── Per-row EDIT ── */}
+                                  <td className="px-3 py-2.5 text-center">
+                                    {canEdit && (
+                                      editingId === row.id ? (
+                                        <button
+                                          onClick={async () => {
+                                            await handleUpdate();
+                                            // Refresh expanded rows after update
+                                            await loadBatch(expandedBatch);
+                                          }}
+                                          className="h-7 px-2.5 rounded-lg border border-emerald-200 bg-emerald-50 text-emerald-700 text-[10px] font-semibold hover:bg-emerald-100 transition-colors whitespace-nowrap"
+                                        >
+                                          Save
+                                        </button>
+                                      ) : (
+                                        <button
+                                          onClick={() => startEdit(row)}
+                                          className="w-7 h-7 rounded-lg border border-amber-200 bg-amber-50 text-amber-700 flex items-center justify-center hover:bg-amber-100 transition-colors mx-auto"
+                                          title="Edit row"
+                                        >
+                                          <Pencil className="w-3 h-3" />
+                                        </button>
+                                      )
+                                    )}
+                                  </td>
+
+                                  {/* ── Per-row DELETE with inline confirm ── */}
+                                  <td className="px-3 py-2.5 text-center">
+                                    {canDelete && (
+                                      confirmDeleteRow === row.id ? (
+                                        <div className="flex items-center gap-1 justify-center">
+                                          <button
+                                            onClick={() => handleDeleteBulkRow(row.id)}
+                                            className="px-2 py-1 bg-red-600 text-white text-[10px] font-bold rounded-lg hover:bg-red-700 transition-colors whitespace-nowrap"
+                                          >
+                                            Yes
+                                          </button>
+                                          <button
+                                            onClick={() => setConfirmDeleteRow(null)}
+                                            className="px-2 py-1 border border-gray-200 text-gray-500 text-[10px] rounded-lg hover:bg-gray-50 transition-colors"
+                                          >
+                                            No
+                                          </button>
+                                        </div>
+                                      ) : (
+                                        <button
+                                          onClick={() => setConfirmDeleteRow(row.id)}
+                                          disabled={deletingBatchId === row.id}
+                                          className={`w-7 h-7 rounded-lg border flex items-center justify-center mx-auto transition-colors ${
+                                            deletingBatchId === row.id
+                                              ? "bg-slate-50 border-slate-200 text-slate-400 cursor-not-allowed"
+                                              : "border-red-200 bg-red-50 text-red-600 hover:bg-red-100"
+                                          }`}
+                                          title="Delete row"
+                                        >
+                                          {deletingBatchId === row.id ? (
+                                            <Loader2 className="w-3 h-3 animate-spin" />
+                                          ) : (
+                                            <Trash2 className="w-3 h-3" />
+                                          )}
+                                        </button>
+                                      )
+                                    )}
                                   </td>
                                 </tr>
                               ))}
