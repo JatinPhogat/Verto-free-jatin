@@ -148,16 +148,18 @@ const downloadTemplate = () => {
     rec: 0,
     projects: 0,
   };
-  const ws = XLSX.utils.json_to_sheet([sampleRow], { header: TEMPLATE_COLUMNS });
+  const ws = XLSX.utils.json_to_sheet([sampleRow], {
+    header: TEMPLATE_COLUMNS,
+  });
   ws["!cols"] = TEMPLATE_COLUMNS.map(() => ({ wch: 18 }));
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, "Internal Team");
   XLSX.writeFile(wb, "internal_team_template.xlsx");
   logExport({
-    action:      EXPORT_ACTIONS.TEMPLATE,
-    category:    "Internal Cost",
+    action: EXPORT_ACTIONS.TEMPLATE,
+    category: "Internal Cost",
     description: "Downloaded Internal Team Upload Template",
-    meta:        { file: "internal_team_template.xlsx" },
+    meta: { file: "internal_team_template.xlsx" },
   });
 };
 
@@ -541,7 +543,8 @@ const AddInternalTeamModal = ({
         esi: parseFloat(formData.cost_shift.esi) || null,
         bonus: parseFloat(formData.cost_shift.bonus) || null,
         reimbursement: parseFloat(formData.cost_shift.reimbursement) || null,
-        other_component: parseFloat(formData.cost_shift.other_component) || null,
+        other_component:
+          parseFloat(formData.cost_shift.other_component) || null,
         client_focus: (formData.cost_shift.client_focus || []).filter((c) =>
           c.clientName?.trim()
         ),
@@ -605,6 +608,33 @@ const AddInternalTeamModal = ({
     "Verto Global LLC",
     "Verto UK Ltd",
   ];
+
+  // Change 2: Add ENTITY_ALIAS_MAP + normalizeEntity()
+  const ENTITY_ALIAS_MAP = {
+    "verto india": "Verto India Pvt Ltd",
+    "verto india pvt": "Verto India Pvt Ltd",
+    "verto india pvt ltd": "Verto India Pvt Ltd",
+    "verto india private": "Verto India Pvt Ltd",
+    "verto india private limited": "Verto India Pvt Ltd",
+    india: "Verto India Pvt Ltd",
+    "verto global": "Verto Global LLC",
+    "verto global llc": "Verto Global LLC",
+    global: "Verto Global LLC",
+    llc: "Verto Global LLC",
+    "verto uk": "Verto UK Ltd",
+    "verto uk ltd": "Verto UK Ltd",
+    uk: "Verto UK Ltd",
+  };
+
+  const normalizeEntity = (raw) => {
+    if (!raw) return "";
+    const lower = String(raw).trim().toLowerCase();
+    if (ENTITY_ALIAS_MAP[lower]) return ENTITY_ALIAS_MAP[lower];
+    const canonical = ENTITY_OPTIONS.find((e) => e.toLowerCase() === lower);
+    if (canonical) return canonical;
+    return String(raw).trim();
+  };
+
   const DEPT_OPTIONS = [
     "Common",
     "OS",
@@ -619,10 +649,70 @@ const AddInternalTeamModal = ({
     "Others",
   ];
 
+  // Change 1: Add DEPT_ALIAS_MAP + normalizeDept()
+  const DEPT_ALIAS_MAP = {
+    // OS / Operations
+    os: "OS",
+    ops: "OS",
+    operation: "OS",
+    operations: "OS",
+    // Temp
+    temp: "Temp",
+    temporary: "Temp",
+    "temporary staffing": "Temp",
+    // Rec / Recruitment
+    rec: "Rec",
+    recruitment: "Rec",
+    recruit: "Rec",
+    // BD / Business Development
+    bd: "BD",
+    "business development": "BD",
+    "business dev": "BD",
+    bizdev: "BD",
+    // Accts / Accounts
+    accts: "Accts",
+    accounts: "Accts",
+    account: "Accts",
+    finance: "Accts",
+    // HR
+    hr: "HR",
+    "human resources": "HR",
+    // Admin
+    admin: "Admin",
+    administration: "Admin",
+    // IT
+    it: "IT",
+    "information technology": "IT",
+    // Projects
+    projects: "Projects",
+    project: "Projects",
+    // Common
+    common: "Common",
+    general: "Common",
+    // Others
+    others: "Others",
+    other: "Others",
+    misc: "Others",
+    miscellaneous: "Others",
+  };
+
+  const normalizeDept = (raw) => {
+    if (!raw) return "";
+    const lower = String(raw).trim().toLowerCase();
+    // First check alias map
+    if (DEPT_ALIAS_MAP[lower]) return DEPT_ALIAS_MAP[lower];
+    // Then check if it already matches canonical (case-insensitive)
+    const canonical = DEPT_OPTIONS.find((d) => d.toLowerCase() === lower);
+    if (canonical) return canonical;
+    // Return original trimmed (will fail validation and show error)
+    return String(raw).trim();
+  };
+
   const parseExcelDate = (val) => {
     if (!val) return null;
     const s = String(val).trim();
-    if (!s || s.toLowerCase() === "nulls" || s.toLowerCase() === "null") return null;
+    if (!s || s.toLowerCase() === "nulls" || s.toLowerCase() === "null")
+      return null;
 
     if (/^\d+$/.test(s)) {
       const excelEpoch = new Date(Date.UTC(1899, 11, 30));
@@ -647,6 +737,11 @@ const AddInternalTeamModal = ({
       const rowNum = idx + 2;
       const rowErrors = [];
       const str = (k) => String(raw[k] || "").trim();
+
+      // Change 3: Add deptNorm and entityNorm variables
+      const deptNorm = normalizeDept(str("department"));
+      const entityNorm = normalizeEntity(str("entity"));
+
       const num = (k) => {
         const v = parseFloat(str(k));
         return isNaN(v) ? 0 : v;
@@ -661,10 +756,20 @@ const AddInternalTeamModal = ({
       });
       if (str("doj") && !parseExcelDate(raw.doj))
         rowErrors.push(`Invalid "doj" date: "${str("doj")}"`);
-      if (str("entity") && !ENTITY_OPTIONS.includes(str("entity")))
-        rowErrors.push(`Invalid entity: "${str("entity")}"`);
-      if (str("department") && !DEPT_OPTIONS.includes(str("department")))
-        rowErrors.push(`Invalid department: "${str("department")}"`);
+
+      // Change 4: Use normalized values for validation
+      if (str("entity") && !ENTITY_OPTIONS.includes(entityNorm))
+        rowErrors.push(
+          `Invalid entity: "${str(
+            "entity"
+          )}" — expected one of: ${ENTITY_OPTIONS.join(", ")}`
+        );
+      if (str("department") && !DEPT_OPTIONS.includes(deptNorm))
+        rowErrors.push(
+          `Invalid department: "${str(
+            "department"
+          )}" — expected one of: ${DEPT_OPTIONS.join(", ")}`
+        );
 
       const ops = intV("ops");
       const temp = intV("temp");
@@ -678,8 +783,9 @@ const AddInternalTeamModal = ({
         emp_code: str("emp_code"),
         name: str("name"),
         father_name: str("father_name") || null,
-        entity: str("entity"),
-        department: str("department"),
+        // Change 5: Use normalized values in the row object
+        entity: entityNorm,
+        department: deptNorm,
         designation: str("designation"),
         location: str("location") || null,
         email: str("email") || null,
@@ -906,19 +1012,21 @@ const AddInternalTeamModal = ({
                   >
                     <option value="">Select Department</option>
                     {[
-                      "Common",
-                      "OS",
-                      "Temp",
-                      "Rec",
-                      "BD",
-                      "Accts",
-                      "HR",
-                      "Admin",
-                      "IT",
-                      "Projects",
-                      "Others",
+                      { code: "Common", label: "Common" },
+                      { code: "OS", label: "Operations" },
+                      { code: "Temp", label: "Temporary Staffing" },
+                      { code: "Rec", label: "Recruitment" },
+                      { code: "BD", label: "Business Development" },
+                      { code: "Accts", label: "Accounts" },
+                      { code: "HR", label: "Human Resources" },
+                      { code: "Admin", label: "Administration" },
+                      { code: "IT", label: "Information Technology" },
+                      { code: "Projects", label: "Projects" },
+                      { code: "Others", label: "Others" },
                     ].map((d) => (
-                      <option key={d}>{d}</option>
+                      <option key={d.code} value={d.code}>
+                        {d.label}
+                      </option>
                     ))}
                   </select>
                 </Field>
@@ -1318,18 +1426,12 @@ const AddInternalTeamModal = ({
                           cost_shift: {
                             effective_month: String(now.getMonth() + 1),
                             effective_year: String(now.getFullYear()),
-                            ctc: String(
-                              editingEmployee?.ctc || p.ctc || ""
-                            ),
+                            ctc: String(editingEmployee?.ctc || p.ctc || ""),
                             variable: String(
                               editingEmployee?.variable || p.variable || ""
                             ),
-                            pf: String(
-                              editingEmployee?.pf || p.pf || ""
-                            ),
-                            esi: String(
-                              editingEmployee?.esi || p.esi || ""
-                            ),
+                            pf: String(editingEmployee?.pf || p.pf || ""),
+                            esi: String(editingEmployee?.esi || p.esi || ""),
                             bonus: String(
                               editingEmployee?.bonus || p.bonus || ""
                             ),
@@ -1354,17 +1456,14 @@ const AddInternalTeamModal = ({
                                 editingEmployee?.cost_head_breakup?.rec ??
                                 p.cost_head_breakup.rec,
                               projects:
-                                editingEmployee?.cost_head_breakup
-                                  ?.projects ?? p.cost_head_breakup.projects,
+                                editingEmployee?.cost_head_breakup?.projects ??
+                                p.cost_head_breakup.projects,
                             },
-                            client_focus: editingEmployee?.client_focus
-                              ?.length
+                            client_focus: editingEmployee?.client_focus?.length
                               ? editingEmployee.client_focus
                               : p.client_focus?.filter((c) =>
                                   c.clientName?.trim()
-                                ) || [
-                                  { clientName: "", percentage: "" },
-                                ],
+                                ) || [{ clientName: "", percentage: "" }],
                           },
                         }));
                       } else {
@@ -1738,9 +1837,7 @@ const AddInternalTeamModal = ({
                             </td>
                             <td className="px-2 py-2 text-right font-mono font-bold text-emerald-700">
                               {row.ctc
-                                ? `₹${Number(row.ctc).toLocaleString(
-                                    "en-IN"
-                                  )}`
+                                ? `₹${Number(row.ctc).toLocaleString("en-IN")}`
                                 : "—"}
                             </td>
                             {COST_HEADS.map((h) => {
@@ -1749,9 +1846,7 @@ const AddInternalTeamModal = ({
                                 <td
                                   key={h.key}
                                   className={`px-2 py-2 text-center font-mono font-bold ${
-                                    v > 0
-                                      ? "text-indigo-700"
-                                      : "text-gray-300"
+                                    v > 0 ? "text-indigo-700" : "text-gray-300"
                                   }`}
                                 >
                                   {v > 0 ? `${v}%` : "—"}
@@ -1880,9 +1975,7 @@ const AddInternalTeamModal = ({
                     }`}
                   >
                     <Upload className="w-3.5 h-3.5" />
-                    <span>
-                      {showBulkSection ? "Close" : "Bulk Upload"}
-                    </span>
+                    <span>{showBulkSection ? "Close" : "Bulk Upload"}</span>
                   </button>
                 </div>
               }
@@ -1912,9 +2005,7 @@ const AddInternalTeamModal = ({
                           type="file"
                           accept=".xlsx,.xls"
                           className="hidden"
-                          onChange={(e) =>
-                            handleBulkFile(e.target.files?.[0])
-                          }
+                          onChange={(e) => handleBulkFile(e.target.files?.[0])}
                         />
                       </div>
                     )}
@@ -1943,8 +2034,7 @@ const AddInternalTeamModal = ({
                               value:
                                 bulkParsed.valid.length +
                                 bulkParsed.errors.length,
-                              color:
-                                "bg-blue-50 border-blue-200 text-blue-800",
+                              color: "bg-blue-50 border-blue-200 text-blue-800",
                             },
                             {
                               label: "Valid",
@@ -2010,8 +2100,7 @@ const AddInternalTeamModal = ({
                             type="button"
                             onClick={handleBulkUpload}
                             disabled={
-                              bulkUploading ||
-                              bulkParsed.valid.length === 0
+                              bulkUploading || bulkParsed.valid.length === 0
                             }
                             className="flex items-center space-x-2 px-5 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-xs font-medium disabled:opacity-50"
                           >
@@ -2045,14 +2134,12 @@ const AddInternalTeamModal = ({
                             {
                               label: "Updated",
                               value: bulkResult.updated,
-                              color:
-                                "bg-blue-50 border-blue-200 text-blue-800",
+                              color: "bg-blue-50 border-blue-200 text-blue-800",
                             },
                             {
                               label: "Skipped",
                               value: bulkResult.skipped,
-                              color:
-                                "bg-gray-50 border-gray-200 text-gray-500",
+                              color: "bg-gray-50 border-gray-200 text-gray-500",
                             },
                           ].map((c) => (
                             <div
