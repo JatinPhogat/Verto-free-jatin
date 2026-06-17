@@ -632,6 +632,7 @@ const MismatchConfirmModal = ({ matched, mismatches, onProceed, onCancel }) => (
   </div>
 );
 // ─── CONFIRM MODAL (replaces window.confirm) ──────────────────────────────────
+// ─── CONFIRM MODAL (replaces window.confirm) ──────────────────────────────────
 const ConfirmModal = ({ modal, onConfirm, onCancel }) => {
   if (!modal) return null;
   return (
@@ -843,7 +844,7 @@ const AddExpenseDetailsManModal = ({ isOpen, onClose, onSaved }) => {
         .from("designation_master")
         .select("id, designation_name")
         .order("designation_name"),
-      supabase
+        supabase
         .from("employee_master")
         .select(
           "*, designation_master(designation_name), entity_master(entity_name), departments_master(dept_name), bank_master(bank_name)"
@@ -1010,16 +1011,17 @@ const AddExpenseDetailsManModal = ({ isOpen, onClose, onSaved }) => {
       }
 
       const netInHand = parseFloat(inv?.net_in_hand) || 0;
-      const alreadyPaid = (payouts || []).reduce(
-        (s, p) =>
-          s +
-          Math.max(
-            (parseFloat(p.amount_paid) || 0) -
-              (parseFloat(p.income_tax_deducted) || 0),
-            0
-          ),
-        0
-      ) - totalBB;
+      const alreadyPaid =
+        (payouts || []).reduce(
+          (s, p) =>
+            s +
+            Math.max(
+              (parseFloat(p.amount_paid) || 0) -
+                (parseFloat(p.income_tax_deducted) || 0),
+              0
+            ),
+          0
+        ) - totalBB;
       const remaining = netInHand - alreadyPaid;
 
       setOsOutstanding({ netInHand, alreadyPaid, remaining });
@@ -1167,6 +1169,8 @@ const AddExpenseDetailsManModal = ({ isOpen, onClose, onSaved }) => {
         empMap[String(r.emp_code).trim().toUpperCase()] = {
           source: "employee_master",
           ...r,
+          // Ensure bank_id is populated from relation if direct column is null
+          bank_id: r.bank_id || r.bank_master?.id || null,
         };
       });
 
@@ -1300,60 +1304,170 @@ const AddExpenseDetailsManModal = ({ isOpen, onClose, onSaved }) => {
       return;
     }
 
-    // Non-blocking bank balance warning for bulk upload
-    // Group total payment amount by bank_id
+    // ══════════════════════════════════════════════════════════════
+    // BANK BALANCE CHECK FOR BULK UPLOAD
+    // ══════════════════════════════════════════════════════════════
+    
+    // Build a map of bank_id → total payment amount
     const bankPaymentMap = {};
+    const rowsWithoutBank = [];
+    
     for (const row of validRows) {
       const emp = row._empData;
-      const bankName = (row.bank_name || emp?.bank_master?.bank_name || "")
-        .toLowerCase()
-        .trim();
-      const bankId = bankMap[bankName] || emp?.bank_id || null;
+      
+      // Try to get bankId from multiple sources
+      let bankId = null;
+      let bankSource = "";
+      
+      // 1. From Excel row.bank_name
+      if (row.bank_name) {
+        const normalizedName = String(row.bank_name).toLowerCase().trim();
+        if (bankMap[normalizedName]) {
+          bankId = bankMap[normalizedName];
+          bankSource = "excel";
+        }
+      }
+      
+      // 2. From employee_master bank relation
+      if (!bankId && emp?.bank_master?.id) {
+        bankId = emp.bank_master.id;
+        bankSource = "emp_bank_relation";
+      }
+      
+      // 3. From employee_master direct bank_id column
+      if (!bankId && emp?.bank_id) {
+        bankId = emp.bank_id;
+        bankSource = "emp_bank_id";
+      }
+      
       const paymentAmount = parseFloat(row.payment_amount) || 0;
+      
       if (bankId && paymentAmount > 0) {
         if (!bankPaymentMap[bankId]) bankPaymentMap[bankId] = 0;
         bankPaymentMap[bankId] += paymentAmount;
+      } else if (!bankId && paymentAmount > 0) {
+        rowsWithoutBank.push({
+          emp_code: row.emp_code,
+          rowNum: row._rowNum,
+          paymentAmount: paymentAmount,
+        });
       }
     }
 
-    // Check each bank's balance against total payment amount
+    // Log for debugging
+    console.log("Bulk upload bank check:", {
+      totalRows: validRows.length,
+      rowsWithBank: Object.keys(bankPaymentMap).length,
+      rowsWithoutBank: rowsWithoutBank.length,
+      bankPaymentMap: bankPaymentMap,
+    });
+
+    // Check each bank's balance
     for (const [bankId, totalPayment] of Object.entries(bankPaymentMap)) {
       try {
-        const { data: bank } = await supabase
+        const { data: bank, error: bankErr } = await supabase
           .from("bank_master")
-          .select("id,opening_balance,bank_name")
+          .select("id, opening_balance, bank_name")
           .eq("id", bankId)
           .maybeSingle();
-        const { data: entries } = await supabase
+
+        if (bankErr) {
+          console.error("Bank fetch error for", bankId, bankErr);
+          continue;
+        }
+
+        if (!bank) {
+          console.warn("Bank not found for ID:", bankId);
+          continue;
+        }
+
+        const { data: entries, error: entriesErr } = await supabase
           .from("bank_entries")
-          .select("amount,type,is_deleted")
+          .select("amount, type, is_deleted")
           .eq("bank_id", bankId)
           .eq("is_deleted", false);
-        const opening = Number(bank?.opening_balance || 0);
+
+        if (entriesErr) {
+          console.error("Bank entries fetch error for", bankId, entriesErr);
+          continue;
+        }
+
+        const opening = Number(bank.opening_balance || 0);
         const movement = (entries || []).reduce((sum, e) => {
           const amt = Number(e.amount || 0);
-          return String(e.type).toLowerCase() === "debit"
-            ? sum - amt
-            : sum + amt;
+          return String(e.type).toLowerCase() === "debit" ? sum - amt : sum + amt;
         }, 0);
         const currentBalance = opening + movement;
+
+        console.log(`Bank ${bank.bank_name} balance check:`, {
+          opening,
+          movement,
+          currentBalance,
+          totalPayment,
+          exceeds: totalPayment > currentBalance,
+        });
+
         if (totalPayment > currentBalance) {
-          const ok = window.confirm(
-            `⚠️ Bulk upload — ${
-              bank?.bank_name || "Bank"
-            }: total payment (₹${totalPayment.toLocaleString(
-              "en-IN"
-            )}) exceeds balance (₹${Number(currentBalance).toLocaleString(
-              "en-IN"
-            )}).\n\nOK to proceed, Cancel to abort.`
-          );
-          if (!ok) {
-            setBulkLoading(false);
-            return;
+          const shortfall = totalPayment - currentBalance;
+          setBulkLoading(false);
+          
+          try {
+            await new Promise((resolve, reject) => {
+              setConfirmModal({
+                type: "bank",
+                rows: [
+                  {
+                    label: "Upload Type",
+                    value: "Bulk Upload",
+                    color: "text-gray-800",
+                  },
+                  {
+                    label: "Bank",
+                    value: bank.bank_name || "Bank",
+                    color: "text-gray-800",
+                  },
+                  { divider: true },
+                  {
+                    label: "Current Balance",
+                    value: `₹${Number(currentBalance).toLocaleString("en-IN")}`,
+                    color: "text-gray-800",
+                  },
+                  {
+                    label: "Total Payment",
+                    value: `₹${totalPayment.toLocaleString("en-IN")}`,
+                    color: "text-rose-600",
+                    highlight: true,
+                  },
+                  {
+                    label: "Shortfall",
+                    value: `₹${shortfall.toLocaleString("en-IN")}`,
+                    color: "text-rose-700",
+                    highlight: true,
+                  },
+                ],
+                note: `Bulk upload total exceeds the current bank balance by ₹${shortfall.toLocaleString("en-IN")}. Proceed anyway or cancel to abort.`,
+                onConfirm: () => {
+                  setConfirmModal(null);
+                  resolve(true);
+                },
+                onCancel: () => {
+                  setConfirmModal(null);
+                  reject("user_cancelled");
+                },
+              });
+            });
+          } catch (e) {
+            if (e === "user_cancelled") {
+              setBulkLoading(false);
+              return; // Abort upload
+            }
+            throw e;
           }
+          setBulkLoading(true);
         }
       } catch (err) {
-        console.debug("Bank balance check failed:", err.message || err);
+        console.error("Bank balance check failed for bank", bankId, ":", err.message || err);
+        // Continue with upload even if check fails (non-blocking)
       }
     }
 
@@ -1378,10 +1492,20 @@ const AddExpenseDetailsManModal = ({ isOpen, onClose, onSaved }) => {
           .toLowerCase()
           .trim();
         const deptId = deptMap[deptName] || null;
-        const bankName = (row.bank_name || emp?.bank_master?.bank_name || "")
-          .toLowerCase()
-          .trim();
-        const bankId = bankMap[bankName] || emp?.bank_id || null;
+        // Try to get bankId from multiple sources (same logic as bank check)
+        let bankId = null;
+        if (row.bank_name) {
+          const normalizedName = String(row.bank_name).toLowerCase().trim();
+          if (bankMap[normalizedName]) {
+            bankId = bankMap[normalizedName];
+          }
+        }
+        if (!bankId && emp?.bank_master?.id) {
+          bankId = emp.bank_master.id;
+        }
+        if (!bankId && emp?.bank_id) {
+          bankId = emp.bank_id;
+        }
         const paymentAmount = parseFloat(row.payment_amount) || 0;
         const incomeTax = parseFloat(row.income_tax_deducted) || 0;
         const netPay = Math.max(paymentAmount - incomeTax, 0);
@@ -1511,7 +1635,7 @@ const AddExpenseDetailsManModal = ({ isOpen, onClose, onSaved }) => {
           payment_date: payDate,
           bank_id: row._bankId,
           bank_name: row._bankName,
-          is_billable: true,
+          is_billable: false,
           entry_type: "bulk",
           bulk_batch_id: batchRow.id,
           bulk_batch_code: batchCode,
@@ -1644,6 +1768,7 @@ const AddExpenseDetailsManModal = ({ isOpen, onClose, onSaved }) => {
           _invoice: invoice,
           _bankId: bankId,
           _bankName: bankMap[bankName]?.bank_name || row.bank_name || "",
+          _bankNameRaw: bankName, // store for debug
         });
       }
 
@@ -1675,6 +1800,147 @@ const AddExpenseDetailsManModal = ({ isOpen, onClose, onSaved }) => {
         if (!proceed) {
           setOsBulkLoading(false);
           return;
+        }
+      }
+
+      // ══════════════════════════════════════════════════════════════
+      // BANK BALANCE CHECK FOR OS BULK UPLOAD
+      // ══════════════════════════════════════════════════════════════
+      
+      // Group total payment amount by bank_id
+      const osBankPaymentMap = {};
+      const osRowsWithoutBank = [];
+      
+      for (const row of validRows) {
+        const bankId = row._bankId;
+        const amountPaid = parseFloat(row.amount_paid) || 0;
+        
+        if (bankId && amountPaid > 0) {
+          if (!osBankPaymentMap[bankId]) osBankPaymentMap[bankId] = 0;
+          osBankPaymentMap[bankId] += amountPaid;
+        } else if (!bankId && amountPaid > 0) {
+          osRowsWithoutBank.push({
+            invoice_number: row.invoice_number,
+            rowNum: row._rowNum,
+            amountPaid: amountPaid,
+          });
+        }
+      }
+
+      // Debug log
+      console.log("OS bulk upload bank check:", {
+        totalRows: validRows.length,
+        rowsWithBank: Object.keys(osBankPaymentMap).length,
+        rowsWithoutBank: osRowsWithoutBank.length,
+        osBankPaymentMap: osBankPaymentMap,
+      });
+
+      // Check each bank's balance
+      for (const [bankId, totalPayment] of Object.entries(osBankPaymentMap)) {
+        try {
+          const { data: bank, error: bankErr } = await supabase
+            .from("bank_master")
+            .select("id, opening_balance, bank_name")
+            .eq("id", bankId)
+            .maybeSingle();
+
+          if (bankErr) {
+            console.error("Bank fetch error for", bankId, bankErr);
+            continue;
+          }
+
+          if (!bank) {
+            console.warn("Bank not found for ID:", bankId);
+            continue;
+          }
+
+          const { data: entries, error: entriesErr } = await supabase
+            .from("bank_entries")
+            .select("amount, type, is_deleted")
+            .eq("bank_id", bankId)
+            .eq("is_deleted", false);
+
+          if (entriesErr) {
+            console.error("Bank entries fetch error for", bankId, entriesErr);
+            continue;
+          }
+
+          const opening = Number(bank.opening_balance || 0);
+          const movement = (entries || []).reduce((sum, e) => {
+            const amt = Number(e.amount || 0);
+            return String(e.type).toLowerCase() === "debit" ? sum - amt : sum + amt;
+          }, 0);
+          const currentBalance = opening + movement;
+
+          console.log(`OS Bank ${bank.bank_name} balance check:`, {
+            opening,
+            movement,
+            currentBalance,
+            totalPayment,
+            exceeds: totalPayment > currentBalance,
+          });
+
+          if (totalPayment > currentBalance) {
+            const shortfall = totalPayment - currentBalance;
+            setOsBulkLoading(false);
+            
+            try {
+              await new Promise((resolve, reject) => {
+                setConfirmModal({
+                  type: "bank",
+                  rows: [
+                    {
+                      label: "Upload Type",
+                      value: "OS Bulk Upload",
+                      color: "text-gray-800",
+                    },
+                    {
+                      label: "Bank",
+                      value: bank.bank_name || "Bank",
+                      color: "text-gray-800",
+                    },
+                    { divider: true },
+                    {
+                      label: "Current Balance",
+                      value: `₹${Number(currentBalance).toLocaleString("en-IN")}`,
+                      color: "text-gray-800",
+                    },
+                    {
+                      label: "Total Payment",
+                      value: `₹${totalPayment.toLocaleString("en-IN")}`,
+                      color: "text-rose-600",
+                      highlight: true,
+                    },
+                    {
+                      label: "Shortfall",
+                      value: `₹${shortfall.toLocaleString("en-IN")}`,
+                      color: "text-rose-700",
+                      highlight: true,
+                    },
+                  ],
+                  note: `OS bulk upload total exceeds the current bank balance by ₹${shortfall.toLocaleString("en-IN")}. Proceed anyway or cancel to abort.`,
+                  onConfirm: () => {
+                    setConfirmModal(null);
+                    resolve(true);
+                  },
+                  onCancel: () => {
+                    setConfirmModal(null);
+                    reject("user_cancelled");
+                  },
+                });
+              });
+            } catch (e) {
+              if (e === "user_cancelled") {
+                setOsBulkLoading(false);
+                return; // Abort upload
+              }
+              throw e;
+            }
+            setOsBulkLoading(true);
+          }
+        } catch (err) {
+          console.error("OS bank balance check failed for bank", bankId, ":", err.message || err);
+          // Continue with upload even if check fails (non-blocking)
         }
       }
 
@@ -1714,19 +1980,56 @@ const AddExpenseDetailsManModal = ({ isOpen, onClose, onSaved }) => {
           const currentBalance = opening + movement;
           const payAmt = Number(parseFloat(intForm.paymentAmount) || 0);
           if (payAmt > currentBalance) {
-            const ok = window.confirm(
-              `⚠️ Payment (₹${payAmt.toLocaleString(
-                "en-IN"
-              )}) exceeds bank balance (₹${Number(
-                currentBalance
-              ).toLocaleString(
-                "en-IN"
-              )}).\n\nClick OK to proceed, or Cancel to go back.`
-            );
-            if (!ok) {
-              setLoading(false);
-              return;
+            const shortfall = payAmt - currentBalance;
+            setLoading(false);
+            try {
+              await new Promise((resolve, reject) => {
+                setConfirmModal({
+                  type: "bank",
+                  rows: [
+                    {
+                      label: "Bank",
+                      value: bank?.bank_name || "Selected Bank",
+                      color: "text-gray-800",
+                    },
+                    { divider: true },
+                    {
+                      label: "Current Balance",
+                      value: `₹${Number(currentBalance).toLocaleString("en-IN")}`,
+                      color: "text-gray-800",
+                    },
+                    {
+                      label: "Payment Amount",
+                      value: `₹${payAmt.toLocaleString("en-IN")}`,
+                      color: "text-rose-600",
+                      highlight: true,
+                    },
+                    {
+                      label: "Shortfall",
+                      value: `₹${shortfall.toLocaleString("en-IN")}`,
+                      color: "text-rose-700",
+                      highlight: true,
+                    },
+                  ],
+                  note: "Payment exceeds the current bank balance. Proceed anyway or go back to fix.",
+                  onConfirm: () => {
+                    setConfirmModal(null);
+                    resolve(true);
+                  },
+                  onCancel: () => {
+                    setConfirmModal(null);
+                    reject("user_cancelled");
+                  },
+                });
+              });
+            } catch (e) {
+              if (e === "user_cancelled") {
+                setLoading(false);
+                return;
+              }
+              throw e;
             }
+            setLoading(true);
           }
         } catch (err) {
           console.debug("Bank balance check failed:", err.message || err);
