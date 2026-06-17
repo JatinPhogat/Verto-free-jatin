@@ -800,7 +800,7 @@ const BankTransferModal = ({
       return;
     }
 
-    // ✅ STEP 6: Fix bank_id type mismatch — cast both to string for comparison
+    // Fix bank_id type mismatch — cast both to string for comparison
     const senderRows = entries.filter(
       (e) => String(e.bank_id) === String(form.sender_bank_id)
     );
@@ -1163,6 +1163,8 @@ const BankReco = () => {
   const [interestPenalties, setInterestPenalties] = useState([]);
   const [editTransfer, setEditTransfer] = useState(null);
   const [futureEntries, setFutureEntries] = useState([]);
+  const [showEditBankModal, setShowEditBankModal] = useState(false);
+  const [editBankData, setEditBankData] = useState(null);
   const [newEntry, setNewEntry] = useState({
     entity: "",
     bank_id: "",
@@ -1182,7 +1184,12 @@ const BankReco = () => {
     if (!error) setBanks(data || []);
   };
 
-  // ✅ STEP 1: Fix deduplication — use e.id instead of composite key
+  const handleEditBank = (bank) => {
+    setEditBankData(bank);
+    setShowEditBankModal(true);
+  };
+
+  // Fix deduplication — use e.id instead of composite key
   const fetchEntries = async () => {
     const { data, error } = await supabase
       .from("bank_entries")
@@ -1303,7 +1310,6 @@ const BankReco = () => {
     }
   };
 
-  // ✅ STEP 2: Replace async DB-calling calculateSoftwareBalance with sync version
   const calculateSoftwareBalance = (bankId, openingBalance = 0) => {
     const bankSw = softwareEntries.filter(
       (e) => String(e.bank_id) === String(bankId) && !e.is_deleted
@@ -1312,7 +1318,7 @@ const BankReco = () => {
     return openingBalance + movement;
   };
 
-  // ✅ STEP 3: Replace entire buildBankRecoData — now sync, per-bank, uses opening_balance
+  // Build bank reconciliation data — sync, per-bank, uses opening_balance
   const buildBankRecoData = () => {
     // ── 1. Build opening_balance map from bank_master ──
     const openingMap = {};
@@ -1419,7 +1425,7 @@ const BankReco = () => {
         asPerSwTotalBal: swBal,
         difference: diff,
         remainingBalance: Math.abs(diff),
-        // ✅ FIXED: reconciled = difference < ₹1 (not ₹50,000)
+        // reconciled = difference < ₹1
         status: Math.abs(diff) < 1 ? "reconciled" : "pending",
         manualEntries,
         unreconciledItems,
@@ -1440,7 +1446,7 @@ const BankReco = () => {
     fetchInterestPenalties();
   }, []);
 
-  // ✅ STEP 4: Fix useEffect — remove async wrapper, add banks as dependency
+  // Fix useEffect — remove async wrapper, add banks as dependency
   useEffect(() => {
     if (banks.length > 0) buildBankRecoData();
   }, [entries, softwareEntries, banks]);
@@ -1556,7 +1562,7 @@ const BankReco = () => {
       return 0;
     });
 
-  // ✅ STEP 5: Fix stale selectedRow update — just clear it instead of setTimeout
+  // Fix stale selectedRow update — just clear it instead of setTimeout
   const handleAddEntry = async () => {
     if (isIntern) return;
     if (!newEntry.bank_id || !newEntry.amount || !newEntry.dateOfBankBal) {
@@ -1573,16 +1579,13 @@ const BankReco = () => {
       return;
     }
 
-    const currentRemaining =
-      (selectedRow?.asPerBankTotalBal || 0) -
-      (selectedRow?.asPerSwTotalBal || 0);
-    if (enteredAmount > Math.abs(currentRemaining)) {
-      alert(
-        `Cannot enter more than remaining balance ₹${Math.abs(
-          currentRemaining
-        )}`
-      );
-      return;
+    // Add a debit safety check
+    if (newEntry.transaction_mode === "debit") {
+      const bankBal = selectedRow?.asPerBankTotalBal || 0;
+      if (enteredAmount > bankBal) {
+        alert(`Insufficient bank balance. Available: ₹${bankBal.toLocaleString("en-IN")}`);
+        return;
+      }
     }
 
     let finalAmount = enteredAmount;
@@ -1595,10 +1598,14 @@ const BankReco = () => {
       const bankEntries = entries.filter(
         (e) => String(e.bank_id) === String(newEntry.bank_id)
       );
+      const selectedBank = banks.find(
+        (b) => String(b.id) === String(newEntry.bank_id)
+      );
+      const openingBal = Number(selectedBank?.opening_balance || 0);
       const currentBalance = bankEntries.reduce((sum, e) => {
         const amt = Math.abs(Number(e.amount || 0));
         return String(e.type).toLowerCase() === "debit" ? sum - amt : sum + amt;
-      }, 0);
+      }, openingBal);
       const adjustment = enteredAmount - currentBalance;
       finalAmount = Math.abs(adjustment);
       finalType = adjustment >= 0 ? "credit" : "debit";
@@ -1669,6 +1676,20 @@ const BankReco = () => {
         onEdit={handleEditTransfer}
         onDelete={handleDeleteTransfer}
         isIntern={isIntern}
+      />
+      <AddBankModal
+        isOpen={showEditBankModal}
+        onClose={() => {
+          setShowEditBankModal(false);
+          setEditBankData(null);
+        }}
+        selectedBank={editBankData}
+        onSave={async () => {
+          await fetchBanks();
+          buildBankRecoData();
+          setShowEditBankModal(false);
+          setEditBankData(null);
+        }}
       />
 
       {/* ── Filter bar ── */}
@@ -1975,7 +1996,7 @@ const BankReco = () => {
                                   </div>
                                 )}
 
-                                {/* ✅ STEP 7: Add unreconciled items breakdown */}
+                                {/* Add unreconciled items breakdown */}
                                 {row.unreconciledItems?.length > 0 && (
                                   <div className="mt-3 bg-rose-50 border border-rose-200 rounded-lg p-3">
                                     <p className="text-xs font-bold text-rose-700 uppercase tracking-wider mb-2">
@@ -2297,22 +2318,28 @@ const BankReco = () => {
                       Quick Actions
                     </h4>
                     <div className="space-y-2">
-                      <select
-                        className="w-full border border-blue-200 p-2 rounded-lg mb-2 bg-white text-sm"
-                        onChange={(e) => {
-                          const bank = banks.find(
-                            (b) => String(b.id) === e.target.value
-                          );
-                          setSelectedBank(bank);
-                        }}
-                      >
-                        <option value="">Select Bank</option>
+                      <div className="space-y-2 mb-2">
                         {banks.map((b) => (
-                          <option key={b.id} value={String(b.id)}>
-                            {b.bank_name}
-                          </option>
+                          <div
+                            key={b.id}
+                            className="flex items-center justify-between bg-white border border-blue-200 rounded-lg px-3 py-2"
+                          >
+                            <div>
+                              <p className="text-sm font-medium text-gray-800">{b.bank_name}</p>
+                              <p className="text-xs text-gray-400">
+                                Opening: ₹{Number(b.opening_balance || 0).toLocaleString("en-IN")}
+                              </p>
+                            </div>
+                            <button
+                              onClick={() => handleEditBank(b)}
+                              className="p-1.5 hover:bg-indigo-50 rounded-lg text-gray-400 hover:text-indigo-600 transition"
+                              title="Edit Bank"
+                            >
+                              <Edit2 className="w-4 h-4" />
+                            </button>
+                          </div>
                         ))}
-                      </select>
+                      </div>
                       <p className="text-xs text-gray-500 mb-2">
                         Select a row to enable entry
                       </p>
@@ -2326,6 +2353,7 @@ const BankReco = () => {
                               const first = bankData[0];
                               setSelectedRow(first);
                               setRemainingBalance(first.remainingBalance || 0);
+                              setNewEntry(prev => ({ ...prev, bank_id: first.bank_id }));
                             }
                             setShowEntryModal(true);
                           }}
