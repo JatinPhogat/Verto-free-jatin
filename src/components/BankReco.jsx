@@ -1583,7 +1583,11 @@ const BankReco = () => {
     if (newEntry.transaction_mode === "debit") {
       const bankBal = selectedRow?.asPerBankTotalBal || 0;
       if (enteredAmount > bankBal) {
-        alert(`Insufficient bank balance. Available: ₹${bankBal.toLocaleString("en-IN")}`);
+        alert(
+          `Insufficient bank balance. Available: ₹${bankBal.toLocaleString(
+            "en-IN"
+          )}`
+        );
         return;
       }
     }
@@ -1648,7 +1652,30 @@ const BankReco = () => {
 
     window.refreshDashboard?.();
   };
+  const handleDeleteEntry = async (id) => {
+    if (isIntern) {
+      alert("Interns cannot delete entries");
+      return;
+    }
+    if (!window.confirm("Delete this entry?")) return;
+    const { error } = await supabase
+      .from("bank_entries")
+      .update({ is_deleted: true })
+      .eq("id", id);
+    if (error) alert("Delete failed: " + error.message);
+  };
 
+  const handleEditEntry = async (id, updates) => {
+    if (isIntern) {
+      alert("Interns cannot edit entries");
+      return;
+    }
+    const { error } = await supabase
+      .from("bank_entries")
+      .update(updates)
+      .eq("id", id);
+    if (error) alert("Update failed: " + error.message);
+  };
   // ─── RENDER ────────────────────────────────────────────────────────────────
   return (
     <div className="space-y-4 pb-6">
@@ -2325,9 +2352,14 @@ const BankReco = () => {
                             className="flex items-center justify-between bg-white border border-blue-200 rounded-lg px-3 py-2"
                           >
                             <div>
-                              <p className="text-sm font-medium text-gray-800">{b.bank_name}</p>
+                              <p className="text-sm font-medium text-gray-800">
+                                {b.bank_name}
+                              </p>
                               <p className="text-xs text-gray-400">
-                                Opening: ₹{Number(b.opening_balance || 0).toLocaleString("en-IN")}
+                                Opening: ₹
+                                {Number(b.opening_balance || 0).toLocaleString(
+                                  "en-IN"
+                                )}
                               </p>
                             </div>
                             <button
@@ -2353,7 +2385,10 @@ const BankReco = () => {
                               const first = bankData[0];
                               setSelectedRow(first);
                               setRemainingBalance(first.remainingBalance || 0);
-                              setNewEntry(prev => ({ ...prev, bank_id: first.bank_id }));
+                              setNewEntry((prev) => ({
+                                ...prev,
+                                bank_id: first.bank_id,
+                              }));
                             }
                             setShowEntryModal(true);
                           }}
@@ -2468,6 +2503,16 @@ const BankReco = () => {
             ? selectedRow.asPerBankTotalBal - selectedRow.asPerSwTotalBal
             : 0
         }
+        // NEW props
+        entries={entries}
+        onDeleteEntry={handleDeleteEntry}
+        onEditEntry={handleEditEntry}
+        onRefreshEntries={async () => {
+          await fetchEntries();
+          await fetchSoftwareEntries();
+          await fetchFundFlowProjection();
+          buildBankRecoData();
+        }}
       />
     </div>
   );
