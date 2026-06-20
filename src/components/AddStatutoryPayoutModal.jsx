@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import supabase from "../lib/supabaseClient";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -18,8 +18,14 @@ import {
   ShieldCheck,
   Calendar,
   Info,
+  BarChart3,
+  Download,
+  FileSpreadsheet,
+  TrendingUp,
+  TrendingDown,
 } from "lucide-react";
 import { usePerms } from "../context/PermissionsContext";
+import * as XLSX from "xlsx";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 const inr = (v) => Number(v || 0).toLocaleString("en-IN");
@@ -46,6 +52,11 @@ const Section = ({ icon: Icon, title, color, children }) => {
       card: "bg-gray-50/60 border-gray-100",
       icon: "bg-gray-100 text-gray-500",
       title: "text-gray-700",
+    },
+    violet: {
+      card: "bg-violet-50/60 border-violet-100",
+      icon: "bg-violet-100 text-violet-600",
+      title: "text-violet-800",
     },
   };
   const s = map[color] || map.gray;
@@ -105,7 +116,6 @@ const inpCls = (err) =>
    focus:ring-4 focus:ring-cyan-500/10 focus:border-cyan-400 hover:border-gray-200 placeholder:text-gray-300
    ${err ? "border-rose-400" : "border-gray-100"}`;
 
-// small reusable input for the inline edit form inside the panel
 const EditInput = ({
   label,
   value,
@@ -132,7 +142,392 @@ const EditInput = ({
   </div>
 );
 
-// ─── Records Panel ────────────────────────────────────────────────────────────
+// ─── Compliance Tracker Panel ─────────────────────────────────────────────────
+const ComplianceTrackerPanel = ({ onClose }) => {
+  const [records, setRecords] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState("");
+  const [entityFilter, setEntityFilter] = useState("All");
+  const [yearFilter, setYearFilter] = useState(
+    new Date().getFullYear().toString()
+  );
+  const [exporting, setExporting] = useState(false);
+
+  const fetchRecords = async () => {
+    setLoading(true);
+    const { data } = await supabase
+      .from("statutory_payments")
+      .select("*, bank_master(bank_name)")
+      .order("month", { ascending: false });
+    setRecords(data || []);
+    setLoading(false);
+  };
+
+  useEffect(() => {
+    fetchRecords();
+  }, []);
+
+  // Month-wise aggregation
+  const monthWise = useMemo(() => {
+    const map = {};
+    records.forEach((r) => {
+      const monthKey = r.month ? r.month.slice(0, 7) : "";
+      if (!monthKey) return;
+      if (!map[monthKey]) {
+        map[monthKey] = {
+          month: monthKey,
+          monthLabel: new Date(monthKey + "-01").toLocaleDateString("en-IN", {
+            month: "short",
+            year: "numeric",
+          }),
+          payable: 0,
+          paid: 0,
+          pending: 0,
+          count: 0,
+          types: new Set(),
+        };
+      }
+      map[monthKey].payable += Number(r.total_due || 0);
+      map[monthKey].paid += Number(r.total_paid || 0);
+      map[monthKey].pending += Number(r.pending_due || 0);
+      map[monthKey].count += 1;
+      map[monthKey].types.add(r.type);
+    });
+    return Object.values(map).sort((a, b) => b.month.localeCompare(a.month));
+  }, [records]);
+
+  // Filtered month-wise
+  const filteredMonthWise = useMemo(() => {
+    return monthWise.filter((m) => {
+      const matchYear = m.month.startsWith(yearFilter);
+      return matchYear;
+    });
+  }, [monthWise, yearFilter]);
+
+  // Detailed records for export
+  const detailedRecords = useMemo(() => {
+    return records.filter((r) => {
+      const monthKey = r.month ? r.month.slice(0, 7) : "";
+      return monthKey.startsWith(yearFilter);
+    });
+  }, [records, yearFilter]);
+
+  const exportTracker = () => {
+    setExporting(true);
+    try {
+      // Sheet 1: Month-wise summary
+      const summaryHeaders = [
+        "Month",
+        "Total Payable",
+        "Total Paid",
+        "Total Pending",
+        "Status",
+        "Records Count",
+      ];
+      const summaryRows = filteredMonthWise.map((m) => [
+        m.monthLabel,
+        m.payable,
+        m.paid,
+        m.pending,
+        m.pending <= 0 ? "Fully Paid" : m.paid > 0 ? "Partial" : "Pending",
+        m.count,
+      ]);
+      const summaryTotals = [
+        "TOTAL",
+        filteredMonthWise.reduce((s, r) => s + r.payable, 0),
+        filteredMonthWise.reduce((s, r) => s + r.paid, 0),
+        filteredMonthWise.reduce((s, r) => s + r.pending, 0),
+        "",
+        filteredMonthWise.reduce((s, r) => s + r.count, 0),
+      ];
+
+      // Sheet 2: Detailed reconciliation
+      const detailHeaders = [
+        "Month",
+        "Entity",
+        "Type",
+        "Total Due (Payable)",
+        "Total Paid",
+        "Pending Due",
+        "Payment Status",
+        "Penalty",
+        "Bank",
+        "Remarks",
+      ];
+      const detailRows = detailedRecords.map((r) => [
+        r.month ? r.month.slice(0, 7) : "",
+        r.entity || "",
+        r.type || "",
+        Number(r.total_due || 0),
+        Number(r.total_paid || 0),
+        Number(r.pending_due || 0),
+        r.payment_status || "",
+        r.penalty ? `Yes (₹${r.penalty_amount || 0})` : "No",
+        r.bank_master?.bank_name || r.bank_name || "",
+        r.remarks || "",
+      ]);
+
+      const wb = XLSX.utils.book_new();
+      const ws1 = XLSX.utils.aoa_to_sheet([
+        summaryHeaders,
+        ...summaryRows,
+        summaryTotals,
+      ]);
+      ws1["!cols"] = [
+        { wch: 16 },
+        { wch: 16 },
+        { wch: 16 },
+        { wch: 16 },
+        { wch: 14 },
+        { wch: 14 },
+      ];
+      XLSX.utils.book_append_sheet(wb, ws1, "Month-wise Summary");
+
+      const ws2 = XLSX.utils.aoa_to_sheet([detailHeaders, ...detailRows]);
+      ws2["!cols"] = [
+        { wch: 12 },
+        { wch: 24 },
+        { wch: 14 },
+        { wch: 16 },
+        { wch: 16 },
+        { wch: 16 },
+        { wch: 14 },
+        { wch: 16 },
+        { wch: 20 },
+        { wch: 30 },
+      ];
+      XLSX.utils.book_append_sheet(wb, ws2, "Detailed Reconciliation");
+
+      XLSX.writeFile(wb, `Compliance_Tracker_${yearFilter}.xlsx`);
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  const totalPayable = filteredMonthWise.reduce((s, r) => s + r.payable, 0);
+  const totalPaid = filteredMonthWise.reduce((s, r) => s + r.paid, 0);
+  const totalPending = filteredMonthWise.reduce((s, r) => s + r.pending, 0);
+
+  const years = Array.from({ length: 7 }, (_, i) =>
+    (new Date().getFullYear() - 3 + i).toString()
+  );
+
+  return (
+    <motion.div
+      initial={{ x: "100%", opacity: 0 }}
+      animate={{ x: 0, opacity: 1 }}
+      exit={{ x: "100%", opacity: 0 }}
+      transition={{ type: "spring", damping: 28, stiffness: 260 }}
+      className="absolute inset-0 bg-white z-10 flex flex-col rounded-2xl overflow-hidden"
+    >
+      {/* Header */}
+      <div className="bg-gradient-to-r from-violet-600 via-violet-500 to-blue-600 px-5 py-4 flex-shrink-0 text-white">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <button
+              onClick={onClose}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-white/15 hover:bg-white/25 rounded-xl text-xs font-bold transition-all"
+            >
+              <ChevronLeft className="w-3.5 h-3.5" /> Back
+            </button>
+            <div className="w-px h-5 bg-white/25" />
+            <div>
+              <p className="text-sm font-black">Compliance Tracker</p>
+              <p className="text-[11px] text-violet-200 mt-0.5">
+                Month-wise payable · paid · pending
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={exportTracker}
+              disabled={exporting || filteredMonthWise.length === 0}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-white/10 hover:bg-white/20 text-white rounded-xl text-xs font-bold border border-white/20 transition-all disabled:opacity-40"
+            >
+              {exporting ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              ) : (
+                <FileSpreadsheet className="w-3.5 h-3.5" />
+              )}
+              Export Excel
+            </button>
+            <button
+              onClick={onClose}
+              className="w-7 h-7 flex items-center justify-center bg-white/10 hover:bg-white/20 rounded-xl transition-all"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* KPI Cards */}
+      <div className="px-4 py-3 bg-gray-50 border-b border-gray-100">
+        <div className="grid grid-cols-3 gap-3">
+          <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 text-center">
+            <p className="text-[10px] font-bold text-blue-600 uppercase tracking-widest">
+              Total Payable
+            </p>
+            <p className="text-xl font-black text-blue-800 mt-1">
+              ₹ {inr(totalPayable)}
+            </p>
+          </div>
+          <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-3 text-center">
+            <p className="text-[10px] font-bold text-emerald-600 uppercase tracking-widest">
+              Total Paid
+            </p>
+            <p className="text-xl font-black text-emerald-800 mt-1">
+              ₹ {inr(totalPaid)}
+            </p>
+          </div>
+          <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-center">
+            <p className="text-[10px] font-bold text-amber-600 uppercase tracking-widest">
+              Total Pending
+            </p>
+            <p className="text-xl font-black text-amber-800 mt-1">
+              ₹ {inr(totalPending)}
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {/* Filters */}
+      <div className="px-4 py-2 border-b bg-white flex items-center gap-3">
+        <select
+          value={yearFilter}
+          onChange={(e) => setYearFilter(e.target.value)}
+          className="border border-gray-200 bg-gray-50 rounded-lg px-3 py-1.5 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-violet-300 transition"
+        >
+          {years.map((y) => (
+            <option key={y} value={y}>
+              {y}
+            </option>
+          ))}
+        </select>
+        <span className="text-xs text-gray-400 ml-auto">
+          {filteredMonthWise.length} months
+        </span>
+      </div>
+
+      {/* Table */}
+      <div className="flex-1 overflow-y-auto bg-gray-50/50">
+        {loading ? (
+          <div className="flex items-center justify-center py-20 text-gray-300">
+            <Loader2 className="w-6 h-6 animate-spin mr-2" />
+            <span className="text-sm font-medium">Loading…</span>
+          </div>
+        ) : filteredMonthWise.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-20 text-gray-300">
+            <BarChart3 className="w-10 h-10 mb-3 opacity-40" />
+            <p className="text-sm font-semibold">No compliance data</p>
+          </div>
+        ) : (
+          <table className="w-full text-sm border-collapse">
+            <thead className="sticky top-0 z-10">
+              <tr className="bg-slate-800 text-white">
+                <th className="px-4 py-3 text-left text-[10px] font-bold uppercase tracking-widest">
+                  Month
+                </th>
+                <th className="px-4 py-3 text-right text-[10px] font-bold uppercase tracking-widest">
+                  Payable
+                </th>
+                <th className="px-4 py-3 text-right text-[10px] font-bold uppercase tracking-widest">
+                  Paid
+                </th>
+                <th className="px-4 py-3 text-right text-[10px] font-bold uppercase tracking-widest">
+                  Pending
+                </th>
+                <th className="px-4 py-3 text-center text-[10px] font-bold uppercase tracking-widest">
+                  Status
+                </th>
+                <th className="px-4 py-3 text-center text-[10px] font-bold uppercase tracking-widest">
+                  Records
+                </th>
+                <th className="px-4 py-3 text-left text-[10px] font-bold uppercase tracking-widest">
+                  Types
+                </th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100">
+              {filteredMonthWise.map((m, i) => (
+                <tr
+                  key={m.month}
+                  className={`bg-white hover:bg-violet-50/40 transition-colors ${
+                    i % 2 === 1 ? "bg-gray-50/40" : ""
+                  }`}
+                >
+                  <td className="px-4 py-3 font-semibold text-gray-800">
+                    {m.monthLabel}
+                  </td>
+                  <td className="px-4 py-3 text-right font-mono font-bold text-blue-700">
+                    ₹ {inr(m.payable)}
+                  </td>
+                  <td className="px-4 py-3 text-right font-mono font-bold text-emerald-700">
+                    ₹ {inr(m.paid)}
+                  </td>
+                  <td className="px-4 py-3 text-right font-mono font-bold text-amber-700">
+                    ₹ {inr(m.pending)}
+                  </td>
+                  <td className="px-4 py-3 text-center">
+                    <span
+                      className={`text-[10px] font-bold px-2.5 py-1 rounded-full border ${
+                        m.pending <= 0
+                          ? "bg-emerald-100 text-emerald-700 border-emerald-200"
+                          : m.paid > 0
+                          ? "bg-amber-100 text-amber-700 border-amber-200"
+                          : "bg-rose-100 text-rose-700 border-rose-200"
+                      }`}
+                    >
+                      {m.pending <= 0
+                        ? "Fully Paid"
+                        : m.paid > 0
+                        ? "Partial"
+                        : "Pending"}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3 text-center text-gray-500 text-xs">
+                    {m.count}
+                  </td>
+                  <td className="px-4 py-3">
+                    <div className="flex flex-wrap gap-1">
+                      {Array.from(m.types).map((t) => (
+                        <span
+                          key={t}
+                          className="text-[10px] bg-gray-100 text-gray-600 px-2 py-0.5 rounded-md font-medium"
+                        >
+                          {t}
+                        </span>
+                      ))}
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+            <tfoot>
+              <tr className="bg-slate-800 text-white font-bold">
+                <td className="px-4 py-3 text-[10px] uppercase tracking-widest">
+                  Total
+                </td>
+                <td className="px-4 py-3 text-right font-mono text-emerald-300">
+                  ₹ {inr(totalPayable)}
+                </td>
+                <td className="px-4 py-3 text-right font-mono text-emerald-300">
+                  ₹ {inr(totalPaid)}
+                </td>
+                <td className="px-4 py-3 text-right font-mono text-amber-300">
+                  ₹ {inr(totalPending)}
+                </td>
+                <td colSpan={4} />
+              </tr>
+            </tfoot>
+          </table>
+        )}
+      </div>
+    </motion.div>
+  );
+};
+
+// ─── Records Panel (unchanged from your latest) ─────────────────────────────
 const StatutoryRecordsPanel = ({ onClose }) => {
   const [records, setRecords] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -163,7 +558,6 @@ const StatutoryRecordsPanel = ({ onClose }) => {
     fetchRecords();
   }, []);
 
-  // ── Delete ─────────────────────────────────────────────────────────────────
   const handleDelete = async (id) => {
     setConfirmId(null);
     setDeletingId(id);
@@ -183,7 +577,6 @@ const StatutoryRecordsPanel = ({ onClose }) => {
     }
   };
 
-  // ── Edit helpers ───────────────────────────────────────────────────────────
   const startEdit = (row) => {
     setEditingId(row.id);
     setEditForm({
@@ -203,7 +596,6 @@ const StatutoryRecordsPanel = ({ onClose }) => {
     setEditForm((prev) => ({ ...prev, [field]: value }));
   };
 
-  // ── Save edit ──────────────────────────────────────────────────────────────
   const handleSaveEdit = async () => {
     setDeletingId(editingId);
     try {
@@ -211,59 +603,17 @@ const StatutoryRecordsPanel = ({ onClose }) => {
       const oldPaid = parseFloat(editForm.original_total_paid) || 0;
       const monthTotalDue = parseFloat(editForm.month_total_due) || 0;
       const monthTotalPaid = parseFloat(editForm.month_total_paid) || 0;
-
       const otherRowsPaid = monthTotalPaid - oldPaid;
       const maxAllowed = monthTotalDue - otherRowsPaid;
-
       if (newPaid > maxAllowed) {
         showToast(
-          `❌ Cannot pay more than remaining ₹${inr(
-            maxAllowed
-          )} for this month`,
+          `Cannot pay more than remaining ₹${inr(maxAllowed)}`,
           "error"
         );
         setDeletingId(null);
         return;
       }
-
       const pending = Math.max(monthTotalDue - otherRowsPaid - newPaid, 0);
-
-      // Non-blocking bank balance warning when paying from a bank
-      if (editForm.bank_id && newPaid > 0) {
-        try {
-          const { data: bank } = await supabase
-            .from("bank_master")
-            .select("id,opening_balance,bank_name")
-            .eq("id", editForm.bank_id)
-            .maybeSingle();
-          const { data: entries } = await supabase
-            .from("bank_entries")
-            .select("amount,type,is_deleted")
-            .eq("bank_id", editForm.bank_id)
-            .eq("is_deleted", false);
-          const opening = Number(bank?.opening_balance || 0);
-          const movement = (entries || []).reduce((sum, e) => {
-            const amt = Number(e.amount || 0);
-            return String(e.type).toLowerCase() === "debit"
-              ? sum - amt
-              : sum + amt;
-          }, 0);
-          const currentBalance = opening + movement;
-          if (newPaid > currentBalance) {
-            showToast(
-              `⚠️ Entered bank payment (₹${newPaid.toLocaleString(
-                "en-IN"
-              )}) is greater than current bank balance (₹${Number(
-                currentBalance
-              ).toLocaleString("en-IN")}). Proceeding anyway.`,
-              "error"
-            );
-          }
-        } catch (err) {
-          console.debug("Bank balance check failed:", err.message || err);
-        }
-      }
-
       const { error } = await supabase
         .from("statutory_payments")
         .update({
@@ -282,7 +632,7 @@ const StatutoryRecordsPanel = ({ onClose }) => {
       setEditingId(null);
       setEditForm({});
       window.refreshDashboard?.();
-      showToast("Updated & ERP synced ✅");
+      showToast("Updated & ERP synced");
       await fetchRecords();
     } catch (err) {
       showToast("Update failed: " + err.message, "error");
@@ -293,7 +643,6 @@ const StatutoryRecordsPanel = ({ onClose }) => {
 
   const filteredRecords = records.filter((r) => {
     const q = search.toLowerCase();
-
     return (
       r.entity?.toLowerCase().includes(q) ||
       r.type?.toLowerCase().includes(q) ||
@@ -309,7 +658,6 @@ const StatutoryRecordsPanel = ({ onClose }) => {
       transition={{ type: "spring", damping: 28, stiffness: 260 }}
       className="absolute inset-0 bg-white z-10 flex flex-col rounded-2xl overflow-hidden"
     >
-      {/* ── Header ── */}
       <div className="bg-gradient-to-r from-cyan-600 via-cyan-500 to-blue-600 px-5 py-4 flex-shrink-0 text-white">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -335,8 +683,6 @@ const StatutoryRecordsPanel = ({ onClose }) => {
           </button>
         </div>
       </div>
-
-      {/* Search Bar */}
       <div className="px-4 py-3 border-b bg-white">
         <input
           type="text"
@@ -346,8 +692,6 @@ const StatutoryRecordsPanel = ({ onClose }) => {
           className="w-full border-2 border-gray-100 rounded-xl px-4 py-2 text-sm outline-none focus:border-cyan-400"
         />
       </div>
-
-      {/* ── List ── */}
       <div className="flex-1 overflow-y-auto bg-gray-50/50">
         {loading ? (
           <div className="flex items-center justify-center py-20 text-gray-300">
@@ -404,7 +748,6 @@ const StatutoryRecordsPanel = ({ onClose }) => {
                       </span>
                     )}
                   </div>
-
                   <div className="flex flex-wrap gap-x-3 gap-y-0.5 mb-2">
                     <span className="text-[11px] text-gray-500 font-semibold">
                       Entity:{" "}
@@ -432,17 +775,12 @@ const StatutoryRecordsPanel = ({ onClose }) => {
                         <span className="text-gray-700">
                           {new Date(row.payment_date).toLocaleDateString(
                             "en-IN",
-                            {
-                              day: "numeric",
-                              month: "short",
-                              year: "numeric",
-                            }
+                            { day: "numeric", month: "short", year: "numeric" }
                           )}
                         </span>
                       </span>
                     )}
                   </div>
-
                   <div className="flex items-center gap-3">
                     <span className="text-xs font-bold text-gray-700">
                       ₹{inr(row.total_paid)}
@@ -454,7 +792,6 @@ const StatutoryRecordsPanel = ({ onClose }) => {
                     )}
                   </div>
                 </div>
-
                 <div className="flex-shrink-0 pt-0.5 flex flex-col gap-1.5">
                   {deletingId === row.id ? (
                     <Loader2 className="w-4 h-4 animate-spin text-cyan-400" />
@@ -513,8 +850,6 @@ const StatutoryRecordsPanel = ({ onClose }) => {
                   )}
                 </div>
               </div>
-
-              {/* ── Inline edit form ── */}
               <AnimatePresence>
                 {editingId === row.id && (
                   <motion.div
@@ -588,7 +923,6 @@ const StatutoryRecordsPanel = ({ onClose }) => {
                         className="w-full border-2 border-cyan-200 bg-white rounded-lg px-2.5 py-1.5 text-xs text-gray-700 outline-none focus:border-cyan-400"
                       />
                     </div>
-
                     {(() => {
                       const remaining = Math.max(
                         (parseFloat(editForm.month_total_due) || 0) -
@@ -608,12 +942,11 @@ const StatutoryRecordsPanel = ({ onClose }) => {
                           {remaining > 0 ? (
                             <>
                               <AlertTriangle className="w-3 h-3" /> Partial — ₹
-                              {inr(remaining)} still remaining for this month
+                              {inr(remaining)} still remaining
                             </>
                           ) : (
                             <>
                               <CheckCircle2 className="w-3 h-3" /> Fully Paid
-                              for this month
                             </>
                           )}
                         </div>
@@ -626,8 +959,6 @@ const StatutoryRecordsPanel = ({ onClose }) => {
           ))
         )}
       </div>
-
-      {/* Toast */}
       <AnimatePresence>
         {toast && (
           <motion.div
@@ -648,21 +979,16 @@ const StatutoryRecordsPanel = ({ onClose }) => {
 };
 
 // ─── Main Modal ───────────────────────────────────────────────────────────────
-// CHANGE 4: Removed `entities = []` from props
 const AddStatutoryPayoutModal = ({
   isOpen,
   onClose,
   banks: banksProp = [],
 }) => {
   const [banks, setBanks] = useState(banksProp);
-  // CHANGE 1: Added entitiesList state
   const [entitiesList, setEntitiesList] = useState([]);
   const { canSave, isIntern } = usePerms();
-
-  // ── Monthly total state ──
   const [monthlyTotalDue, setMonthlyTotalDue] = useState(0);
 
-  // CHANGE 2: Updated useEffect to fetch both banks and entities
   useEffect(() => {
     const fetchMasters = async () => {
       const [banksRes, entitiesRes] = await Promise.all([
@@ -678,7 +1004,6 @@ const AddStatutoryPayoutModal = ({
     if (isOpen) fetchMasters();
   }, [isOpen]);
 
-  // Sync prop changes too (in case parent provides them)
   useEffect(() => {
     if (banksProp && banksProp.length > 0) setBanks(banksProp);
   }, [banksProp]);
@@ -689,7 +1014,7 @@ const AddStatutoryPayoutModal = ({
     statutoryPayoutType: "GST",
     tds_direction: null,
     rpc_type: "GST",
-    forTheMonth: new Date().toISOString().slice(0, 7), // defaults to current month
+    forTheMonth: new Date().toISOString().slice(0, 7),
     totalDue: "",
     totalPaid: "",
     pendingDue: "",
@@ -709,6 +1034,7 @@ const AddStatutoryPayoutModal = ({
   const [showErrors, setShowErrors] = useState(false);
   const [loading, setLoading] = useState(false);
   const [viewOpen, setViewOpen] = useState(false);
+  const [trackerOpen, setTrackerOpen] = useState(false);
 
   const statutoryTypes = [
     { value: "GST", label: "GST", tds_direction: null, rpc_type: "GST" },
@@ -737,7 +1063,6 @@ const AddStatutoryPayoutModal = ({
     { value: "Others", label: "Others", tds_direction: null, rpc_type: null },
   ];
 
-  // ── Fetch total compliance payable for the month (all types) ──
   const fetchMonthlyTotalCompliance = async (entity, month) => {
     if (!entity || !month) {
       setMonthlyTotalDue(0);
@@ -751,19 +1076,16 @@ const AddStatutoryPayoutModal = ({
     )
       .toISOString()
       .slice(0, 10);
-
     const { data, error } = await supabase
       .from("statutory_payments")
       .select("total_due, pending_due")
       .eq("entity", entity)
       .gte("month", monthStart)
       .lte("month", monthEnd);
-
     if (error) {
       console.error("Monthly compliance fetch error:", error);
       return;
     }
-    // Sum of total_due for all statutory records in that month
     const total = (data || []).reduce(
       (sum, row) => sum + Number(row.total_due || 0),
       0
@@ -777,27 +1099,21 @@ const AddStatutoryPayoutModal = ({
       setFormData((prev) => ({ ...prev, totalDue: "" }));
       return;
     }
-
     const { data, error } = await supabase.rpc("get_statutory_due", {
       selected_entity: entity,
       selected_month: `${month}-01`,
       selected_type: rpcType,
     });
-
     if (error) {
       console.error(error);
       return;
     }
-
-    const totalDue = Number(data || 0);
-
     setFormData((prev) => ({
       ...prev,
-      totalDue: totalDue.toFixed(2),
+      totalDue: Number(data || 0).toFixed(2),
     }));
   };
 
-  // ── Fetch monthly total whenever entity or month changes ──
   useEffect(() => {
     fetchMonthlyTotalCompliance(formData.entity, formData.forTheMonth);
   }, [formData.entity, formData.forTheMonth]);
@@ -878,18 +1194,15 @@ const AddStatutoryPayoutModal = ({
     ev.preventDefault();
     setShowErrors(true);
     if (!validateForm()) return;
-
     const paying = Number(formData.totalPaid || 0);
     const remaining = Number(formData.totalDue || 0);
     if (paying > remaining) {
-      alert("❌ Cannot pay more than remaining due");
+      alert("Cannot pay more than remaining due");
       return;
     }
-
     setLoading(true);
     try {
       const month = `${formData.forTheMonth}-01`;
-
       const { error } = await supabase.from("statutory_payments").insert([
         {
           entity: formData.entity,
@@ -916,15 +1229,13 @@ const AddStatutoryPayoutModal = ({
           others_percentage: Number(formData.others || 0),
         },
       ]);
-
       if (error) throw error;
-
       window.refreshDashboard?.();
-      alert("✅ Statutory Payment Saved");
+      alert("Statutory Payment Saved");
       resetForm();
       onClose();
     } catch (err) {
-      alert("❌ " + err.message);
+      alert(err.message);
     } finally {
       setLoading(false);
     }
@@ -963,7 +1274,6 @@ const AddStatutoryPayoutModal = ({
     resetForm();
     onClose();
   };
-
   const totalPercentage = calculateTotalPercentage();
   const hasPending = Number(formData.pendingDue) > 0;
 
@@ -985,14 +1295,16 @@ const AddStatutoryPayoutModal = ({
             onClick={(e) => e.stopPropagation()}
             className="bg-white rounded-3xl shadow-2xl w-full max-w-4xl max-h-[92vh] overflow-hidden relative flex flex-col"
           >
-            {/* Inline Records Panel */}
             <AnimatePresence>
               {viewOpen && (
                 <StatutoryRecordsPanel onClose={() => setViewOpen(false)} />
               )}
+              {trackerOpen && (
+                <ComplianceTrackerPanel onClose={() => setTrackerOpen(false)} />
+              )}
             </AnimatePresence>
 
-            {/* ── Header ── */}
+            {/* Header with small buttons */}
             <div className="bg-gradient-to-r from-cyan-600 via-cyan-500 to-blue-600 px-7 py-5 text-white flex-shrink-0">
               <div className="flex items-center justify-between">
                 <div>
@@ -1006,13 +1318,20 @@ const AddStatutoryPayoutModal = ({
                     Record statutory compliance payments
                   </p>
                 </div>
-                <div className="flex items-center gap-2.5">
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setTrackerOpen(true)}
+                    className="flex items-center gap-1.5 px-3 py-2 bg-white/10 hover:bg-white/20 text-white rounded-xl text-xs font-bold border border-white/20 transition-all"
+                  >
+                    <BarChart3 className="w-3.5 h-3.5" /> Tracker
+                  </button>
                   <button
                     type="button"
                     onClick={() => setViewOpen(true)}
-                    className="flex items-center gap-1.5 px-3.5 py-2 bg-white/10 hover:bg-white/20 text-white rounded-xl text-xs font-bold border border-white/20 transition-all"
+                    className="flex items-center gap-1.5 px-3 py-2 bg-white/10 hover:bg-white/20 text-white rounded-xl text-xs font-bold border border-white/20 transition-all"
                   >
-                    <Eye className="w-3.5 h-3.5" /> View Records
+                    <Eye className="w-3.5 h-3.5" /> Records
                   </button>
                   <button
                     onClick={handleClose}
@@ -1024,10 +1343,8 @@ const AddStatutoryPayoutModal = ({
               </div>
             </div>
 
-            {/* ── Scrollable Form ── */}
             <div className="flex-1 overflow-y-auto p-6 bg-gray-50/30">
               <form onSubmit={handleSubmit} className="space-y-5">
-                {/* ── Statutory Details ── */}
                 <Section
                   icon={ShieldCheck}
                   title="Statutory Details"
@@ -1133,7 +1450,6 @@ const AddStatutoryPayoutModal = ({
                   </div>
                 </Section>
 
-                {/* ── Monthly Compliance Summary ── */}
                 {formData.entity && formData.forTheMonth && (
                   <Section
                     icon={Calendar}
@@ -1164,8 +1480,6 @@ const AddStatutoryPayoutModal = ({
                         </div>
                       </div>
                     </div>
-
-                    {/* Mini breakdown hint */}
                     <div className="mt-3 flex items-center gap-2 text-[11px] text-gray-500">
                       <Info className="w-3.5 h-3.5 text-blue-400" />
                       <span>
@@ -1182,7 +1496,6 @@ const AddStatutoryPayoutModal = ({
                   </Section>
                 )}
 
-                {/* ── Payment Info ── */}
                 <Section
                   icon={IndianRupee}
                   title="Payment Information"
@@ -1274,7 +1587,6 @@ const AddStatutoryPayoutModal = ({
                   </AnimatePresence>
                 </Section>
 
-                {/* ── Penalties ── */}
                 <Section
                   icon={AlertTriangle}
                   title="Interest / Penalties"
@@ -1406,7 +1718,6 @@ const AddStatutoryPayoutModal = ({
                   </AnimatePresence>
                 </Section>
 
-                {/* ── Remarks ── */}
                 <Section icon={StickyNote} title="Remarks" color="gray">
                   <textarea
                     value={formData.remarks}
@@ -1417,7 +1728,6 @@ const AddStatutoryPayoutModal = ({
                   />
                 </Section>
 
-                {/* ── Footer ── */}
                 <div className="flex items-center justify-between pt-2 pb-1">
                   <button
                     type="button"
