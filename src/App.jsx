@@ -744,7 +744,7 @@ function App() {
   const sideActions = [
     { label: "Add Invoice Details" },
     { label: "Add Payment Received" },
-    { label: "Add Payment Made" },
+    //{ label: "Add Payment Made" },
     { label: "Add Bounce Back" },
     { label: "Add CN / Bad Debt" },
     { label: "Add Statutory Payout" },
@@ -752,7 +752,7 @@ function App() {
     { label: "Add Expense / Man" },
     { label: "Interest or Penalties" },
     { label: "Internal Team Details" },
-    { label: "Add Advance / Loan" },
+    //{ label: "Add Advance / Loan" },
     { label: "Add Credit Card" },
   ];
 
