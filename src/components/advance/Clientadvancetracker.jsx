@@ -174,7 +174,18 @@ const InlineEditRow = ({ row, onSave, onCancel }) => {
 
   const handleSave = async () => {
     if (isIntern) return;
-    if (!f.client_name || !f.amount) return;
+    // Updated validation with required fields check
+    if (!f.client_name || !f.amount || !f.ledger_name || !f.date || f.interest === "" || f.paid_back === "") {
+      alert("Please fill all required fields (Client Name, Ledger Name, Date, Amount, Interest, Paid Back)");
+      return;
+    }
+    if (!f.client_name.trim()) { alert("Client Name is required"); return; }
+    if (!f.ledger_name.trim()) { alert("Ledger Name is required"); return; }
+    if (!f.date) { alert("Date of Loan / Advance is required"); return; }
+    if (!f.amount || parseFloat(f.amount) <= 0) { alert("Amount must be greater than 0"); return; }
+    if (f.interest === "" || f.interest === null || f.interest === undefined) { alert("Interest is required (enter 0 if none)"); return; }
+    if (f.paid_back === "" || f.paid_back === null || f.paid_back === undefined) { alert("Paid Back is required (enter 0 if none)"); return; }
+    
     setSaving(true);
     const pending_due = calcPendingDue(f.amount, f.interest, f.paid_back);
     const payload = {
@@ -210,33 +221,39 @@ const InlineEditRow = ({ row, onSave, onCancel }) => {
       </td>
       {/* Client Name */}
       <td className="px-2 py-2 align-top">
-        <input className={inp} value={f.client_name}
+        <input className={`${inp} ${!f.client_name.trim() ? 'border-red-400 bg-red-50' : 'border-orange-300'}`} 
+          value={f.client_name}
           onChange={(e) => setF((p) => ({ ...p, client_name: e.target.value }))} placeholder="Client name *" />
       </td>
       {/* Ledger */}
       <td className="px-2 py-2 align-top">
-        <input className={inp} value={f.ledger_name}
-          onChange={(e) => setF((p) => ({ ...p, ledger_name: e.target.value }))} placeholder="Ledger" />
+        <input className={`${inp} ${!f.ledger_name.trim() ? 'border-red-400 bg-red-50' : 'border-orange-300'}`} 
+          value={f.ledger_name}
+          onChange={(e) => setF((p) => ({ ...p, ledger_name: e.target.value }))} placeholder="Ledger *" />
       </td>
       {/* Date */}
       <td className="px-2 py-2 align-top">
-        <input type="date" className={inp} value={f.date}
+        <input type="date" className={`${inp} ${!f.date ? 'border-red-400 bg-red-50' : 'border-orange-300'}`} 
+          value={f.date}
           onChange={(e) => setF((p) => ({ ...p, date: e.target.value }))} />
       </td>
       {/* Amount */}
       <td className="px-2 py-2 align-top">
-        <input type="number" className={inp} value={f.amount}
-          onChange={(e) => setF((p) => ({ ...p, amount: e.target.value }))} placeholder="0" />
+        <input type="number" className={`${inp} ${!f.amount || parseFloat(f.amount) <= 0 ? 'border-red-400 bg-red-50' : 'border-orange-300'}`} 
+          value={f.amount}
+          onChange={(e) => setF((p) => ({ ...p, amount: e.target.value }))} placeholder="0 *" />
       </td>
       {/* Interest */}
       <td className="px-2 py-2 align-top">
-        <input type="number" className={inp} value={f.interest}
-          onChange={(e) => setF((p) => ({ ...p, interest: e.target.value }))} placeholder="0" />
+        <input type="number" className={`${inp} ${f.interest === "" ? 'border-red-400 bg-red-50' : 'border-orange-300'}`} 
+          value={f.interest}
+          onChange={(e) => setF((p) => ({ ...p, interest: e.target.value }))} placeholder="0 *" />
       </td>
       {/* Paid Back */}
       <td className="px-2 py-2 align-top">
-        <input type="number" className={inp} value={f.paid_back}
-          onChange={(e) => setF((p) => ({ ...p, paid_back: e.target.value }))} placeholder="0" />
+        <input type="number" className={`${inp} ${f.paid_back === "" ? 'border-red-400 bg-red-50' : 'border-orange-300'}`} 
+          value={f.paid_back}
+          onChange={(e) => setF((p) => ({ ...p, paid_back: e.target.value }))} placeholder="0 *" />
       </td>
       {/* Pending Due (auto) */}
       <td className="px-2 py-2 align-top">
@@ -259,7 +276,8 @@ const InlineEditRow = ({ row, onSave, onCancel }) => {
       {/* Actions */}
       <td className="px-2 py-2 align-top">
         <div className="flex gap-1.5">
-          <button onClick={handleSave} disabled={saving || isIntern}
+          <button onClick={handleSave} 
+            disabled={saving || isIntern || !f.client_name.trim() || !f.ledger_name.trim() || !f.date || !f.amount || parseFloat(f.amount) <= 0 || f.interest === "" || f.paid_back === ""}
             className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold transition disabled:opacity-60 ${
               isIntern ? "bg-gray-300 text-gray-600 cursor-not-allowed" : "bg-emerald-600 hover:bg-emerald-700 text-white"
             }`}>
@@ -564,9 +582,22 @@ export default function ClientAdvanceTracker() {
     setShowModal(true);
   }
 
+  // Updated handleSave with validation
   async function handleSave() {
     if (isIntern) return;
-    if (!form.client_name || !form.amount) return;
+    
+    // Required fields validation
+    if (!form.client_name || !form.amount || !form.ledger_name || !form.date || form.interest === "" || form.paid_back === "") {
+      alert("Please fill all required fields (Client Name, Ledger Name, Date, Amount, Interest, Paid Back)");
+      return;
+    }
+    if (!form.client_name.trim()) { alert("Client Name is required"); return; }
+    if (!form.ledger_name.trim()) { alert("Ledger Name is required"); return; }
+    if (!form.date) { alert("Date of Loan / Advance is required"); return; }
+    if (!form.amount || parseFloat(form.amount) <= 0) { alert("Amount must be greater than 0"); return; }
+    if (form.interest === "" || form.interest === null || form.interest === undefined) { alert("Interest is required (enter 0 if none)"); return; }
+    if (form.paid_back === "" || form.paid_back === null || form.paid_back === undefined) { alert("Paid Back is required (enter 0 if none)"); return; }
+    
     setSaving(true);
     const pending_due = calcPendingDue(form.amount, form.interest, form.paid_back);
     const payload = {
@@ -992,33 +1023,39 @@ export default function ClientAdvanceTracker() {
                 </div>
                 <div>
                   <label className="block text-xs font-semibold text-orange-800 mb-1.5 uppercase tracking-wide">Client Name *</label>
-                  <input type="text" className="w-full px-3 py-2.5 border border-orange-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-orange-500"
-                    value={form.client_name} onChange={(e) => setForm((f) => ({ ...f, client_name: e.target.value }))} placeholder="Client name" />
+                  <input type="text" 
+                    className={`w-full px-3 py-2.5 border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-orange-500 ${!form.client_name.trim() ? 'border-red-400 bg-red-50' : 'border-orange-200'}`}
+                    value={form.client_name} onChange={(e) => setForm((f) => ({ ...f, client_name: e.target.value }))} placeholder="Client name *" />
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-orange-800 mb-1.5 uppercase tracking-wide">Ledger Name</label>
-                  <input type="text" className="w-full px-3 py-2.5 border border-orange-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-orange-500"
-                    value={form.ledger_name} onChange={(e) => setForm((f) => ({ ...f, ledger_name: e.target.value }))} placeholder="Ledger" />
+                  <label className="block text-xs font-semibold text-orange-800 mb-1.5 uppercase tracking-wide">Ledger Name *</label>
+                  <input type="text" 
+                    className={`w-full px-3 py-2.5 border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-orange-500 ${!form.ledger_name.trim() ? 'border-red-400 bg-red-50' : 'border-orange-200'}`}
+                    value={form.ledger_name} onChange={(e) => setForm((f) => ({ ...f, ledger_name: e.target.value }))} placeholder="Ledger *" />
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-orange-800 mb-1.5 uppercase tracking-wide">Date of Loan / Advance</label>
-                  <input type="date" className="w-full px-3 py-2.5 border border-orange-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-orange-500"
+                  <label className="block text-xs font-semibold text-orange-800 mb-1.5 uppercase tracking-wide">Date of Loan / Advance *</label>
+                  <input type="date" 
+                    className={`w-full px-3 py-2.5 border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-orange-500 ${!form.date ? 'border-red-400 bg-red-50' : 'border-orange-200'}`}
                     value={form.date} onChange={(e) => setForm((f) => ({ ...f, date: e.target.value }))} />
                 </div>
                 <div>
                   <label className="block text-xs font-semibold text-orange-800 mb-1.5 uppercase tracking-wide">Amount (LA) *</label>
-                  <input type="number" className="w-full px-3 py-2.5 border border-orange-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-orange-500"
-                    value={form.amount} onChange={(e) => setForm((f) => ({ ...f, amount: e.target.value }))} placeholder="0.00" />
+                  <input type="number" 
+                    className={`w-full px-3 py-2.5 border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-orange-500 ${!form.amount || parseFloat(form.amount) <= 0 ? 'border-red-400 bg-red-50' : 'border-orange-200'}`}
+                    value={form.amount} onChange={(e) => setForm((f) => ({ ...f, amount: e.target.value }))} placeholder="0.00 *" />
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-orange-800 mb-1.5 uppercase tracking-wide">Interest (Manual)</label>
-                  <input type="number" className="w-full px-3 py-2.5 border border-orange-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-orange-500"
-                    value={form.interest} onChange={(e) => setForm((f) => ({ ...f, interest: e.target.value }))} placeholder="0.00" />
+                  <label className="block text-xs font-semibold text-orange-800 mb-1.5 uppercase tracking-wide">Interest (Manual) *</label>
+                  <input type="number" 
+                    className={`w-full px-3 py-2.5 border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-orange-500 ${form.interest === "" ? 'border-red-400 bg-red-50' : 'border-orange-200'}`}
+                    value={form.interest} onChange={(e) => setForm((f) => ({ ...f, interest: e.target.value }))} placeholder="0 *" />
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-orange-800 mb-1.5 uppercase tracking-wide">Paid Back</label>
-                  <input type="number" className="w-full px-3 py-2.5 border border-orange-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-orange-500"
-                    value={form.paid_back} onChange={(e) => setForm((f) => ({ ...f, paid_back: e.target.value }))} placeholder="0.00" />
+                  <label className="block text-xs font-semibold text-orange-800 mb-1.5 uppercase tracking-wide">Paid Back *</label>
+                  <input type="number" 
+                    className={`w-full px-3 py-2.5 border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-orange-500 ${form.paid_back === "" ? 'border-red-400 bg-red-50' : 'border-orange-200'}`}
+                    value={form.paid_back} onChange={(e) => setForm((f) => ({ ...f, paid_back: e.target.value }))} placeholder="0 *" />
                 </div>
                 <div>
                   <label className="block text-xs font-semibold text-orange-800 mb-1.5 uppercase tracking-wide">Pending Due (Auto)</label>
@@ -1040,9 +1077,13 @@ export default function ClientAdvanceTracker() {
               </div>
               <div className="px-6 pb-6 flex justify-end gap-3">
                 <button onClick={() => setShowModal(false)} className="px-5 py-2.5 rounded-xl border border-gray-200 text-gray-600 text-sm font-semibold hover:bg-gray-50">Cancel</button>
-                <button onClick={handleSave} disabled={saving || isIntern} className={`px-6 py-2.5 rounded-xl text-sm font-semibold flex items-center gap-2 shadow disabled:opacity-60 ${
-                  isIntern ? "bg-gray-300 text-gray-600 cursor-not-allowed" : "bg-gradient-to-r from-[#7c2d12] to-[#ea580c] text-white"
-                }`}>
+                <button 
+                  onClick={handleSave} 
+                  disabled={saving || isIntern || !form.client_name.trim() || !form.ledger_name.trim() || !form.date || !form.amount || parseFloat(form.amount) <= 0 || form.interest === "" || form.paid_back === ""} 
+                  className={`px-6 py-2.5 rounded-xl text-sm font-semibold flex items-center gap-2 shadow disabled:opacity-60 ${
+                    isIntern ? "bg-gray-300 text-gray-600 cursor-not-allowed" : "bg-gradient-to-r from-[#7c2d12] to-[#ea580c] text-white"
+                  }`}
+                >
                   <Save className="w-4 h-4" /> {saving ? "Saving…" : isIntern ? "View Only" : editRecord ? "Update" : "Save"}
                 </button>
               </div>
