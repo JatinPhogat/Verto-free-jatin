@@ -78,6 +78,37 @@ const GROUP_LABELS = {
 
 const ITEMS_PER_PAGE = 10;
 
+// ─── FY HELPERS ────────────────────────────────────────────────────────────────
+const getFYLabel = (startYear) => `${startYear}-${(startYear + 1).toString().slice(-2)}`;
+const getCurrentFY = () => {
+  const now = new Date();
+  const year = now.getMonth() >= 3 ? now.getFullYear() : now.getFullYear() - 1;
+  return getFYLabel(year);
+};
+const getFYDates = (fyLabel) => {
+  const startYear = parseInt(fyLabel.split('-')[0], 10);
+  return {
+    from: `${startYear}-04-01`,
+    to: `${startYear + 1}-03-31`,
+  };
+};
+const prevFY = (fyLabel) => {
+  const startYear = parseInt(fyLabel.split('-')[0], 10);
+  return getFYLabel(startYear - 1);
+};
+const nextFY = (fyLabel) => {
+  const startYear = parseInt(fyLabel.split('-')[0], 10);
+  return getFYLabel(startYear + 1);
+};
+const ALL_FY_OPTIONS = (() => {
+  const current = parseInt(getCurrentFY().split('-')[0], 10);
+  const list = [];
+  for (let y = current + 1; y >= 2020; y--) {
+    list.push(getFYLabel(y));
+  }
+  return list;
+})();
+
 // ─── KPI CARD ──────────────────────────────────────────────────────────────────
 const KpiCard = ({ label, value, sub, color = 'blue', icon: Icon, delay = 0 }) => {
   const colorMap = {
@@ -118,6 +149,9 @@ const ProfitCenterPL = () => {
   const [page, setPage]         = useState(1);
   const [sortConfig, setSort]   = useState({ key: 'pl_month', dir: 'desc' });
   const [tooltip, setTooltip]   = useState(null); // { key, value, x, y }
+  
+  // FY Navigation state
+  const [fy, setFy] = useState('');
 
   // ── Fetch ──────────────────────────────────────────────────────
   const fetchData = useCallback(async () => {
@@ -144,15 +178,22 @@ const ProfitCenterPL = () => {
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
-  // ── Default date range: last 12 months ────────────────────────
+  // ── Initialize to current FY ──────────────────────────────────
   useEffect(() => {
-    const to = new Date();
-    const from = new Date();
-    from.setMonth(from.getMonth() - 11);
-    from.setDate(1);
-    setDateFrom(from.toISOString().slice(0, 10));
-    setDateTo(to.toISOString().slice(0, 10));
+    const current = getCurrentFY();
+    setFy(current);
+    const { from, to } = getFYDates(current);
+    setDateFrom(from);
+    setDateTo(to);
   }, []);
+
+  // ── Sync date range when FY changes ─────────────────────────
+  useEffect(() => {
+    if (!fy) return;
+    const { from, to } = getFYDates(fy);
+    setDateFrom(from);
+    setDateTo(to);
+  }, [fy]);
 
   // ── Derived lists ──────────────────────────────────────────────
   const allDepts = useMemo(() =>
@@ -314,7 +355,38 @@ const ProfitCenterPL = () => {
           {allDepts.map(d => <option key={d} value={d}>{d === 'All' ? 'All Departments' : d}</option>)}
         </select>
 
-        {/* Date range */}
+        {/* FY Navigation */}
+        <div className="flex items-center gap-2 bg-blue-50 border border-blue-200 rounded-lg px-2 py-1.5">
+          <button
+            onClick={() => setFy(prevFY(fy))}
+            disabled={!fy}
+            className="p-1 rounded-md hover:bg-blue-100 text-blue-600 disabled:opacity-30 transition"
+            title="Previous FY"
+          >
+            <ChevronLeft className="w-4 h-4" />
+          </button>
+
+          <select
+            value={fy}
+            onChange={e => setFy(e.target.value)}
+            className="bg-transparent text-sm font-semibold text-blue-800 focus:outline-none cursor-pointer min-w-[100px]"
+          >
+            {ALL_FY_OPTIONS.map(f => (
+              <option key={f} value={f}>FY {f}</option>
+            ))}
+          </select>
+
+          <button
+            onClick={() => setFy(nextFY(fy))}
+            disabled={!fy || fy === getCurrentFY()}
+            className="p-1 rounded-md hover:bg-blue-100 text-blue-600 disabled:opacity-30 transition"
+            title="Next FY"
+          >
+            <ChevronRight className="w-4 h-4" />
+          </button>
+        </div>
+
+        {/* Date range — editable for custom short-range filtering */}
         <div className="flex items-center gap-2">
           <Calendar className="w-4 h-4 text-gray-400 shrink-0" />
           <input
