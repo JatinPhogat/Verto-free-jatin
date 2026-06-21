@@ -166,7 +166,7 @@ const StatutoryInvoiceBreakdownPanel = ({ onClose }) => {
     const { data } = await supabase
       .from("statutory_invoice_breakdown_view")
       .select("*")
-      .order("impact_month", { ascending: false });
+      .order("invoice_date", { ascending: false });
     setRecords(data || []);
     setLoading(false);
   };
@@ -177,33 +177,57 @@ const StatutoryInvoiceBreakdownPanel = ({ onClose }) => {
 
   const fmtMonth = (d) => {
     if (!d) return "—";
-    return new Date(d).toLocaleDateString("en-IN", { month: "short", year: "numeric" });
+    return new Date(d).toLocaleDateString("en-IN", {
+      month: "short",
+      year: "numeric",
+    });
   };
 
-  const allMonths = [...new Set(records.map(r => r.impact_month?.slice(0, 7)))].filter(Boolean).sort().reverse();
-  const allEntities = [...new Set(records.map(r => r.entity_name))].filter(Boolean).sort();
+  const allMonths = [
+    ...new Set(records.map((r) => r.invoice_date?.slice(0, 7))),
+  ]
+    .filter(Boolean)
+    .sort()
+    .reverse();
+  const allEntities = [...new Set(records.map((r) => r.entity_name))]
+    .filter(Boolean)
+    .sort();
 
-  const filtered = records.filter(r => {
+  const filtered = records.filter((r) => {
     const q = search.toLowerCase();
-    const matchSearch = !q ||
+    const matchSearch =
+      !q ||
       r.invoice_number?.toLowerCase().includes(q) ||
       r.client_name?.toLowerCase().includes(q) ||
       r.entity_name?.toLowerCase().includes(q);
-    const matchMonth = !monthFilter || r.impact_month?.slice(0, 7) === monthFilter;
+    const matchMonth =
+      !monthFilter || r.invoice_date?.slice(0, 7) === monthFilter;
     const matchEntity = !entityFilter || r.entity_name === entityFilter;
     return matchSearch && matchMonth && matchEntity;
   });
 
-  const totals = filtered.reduce((acc, r) => ({
-    invoice_value: acc.invoice_value + Number(r.invoice_value || 0),
-    net_gst:  acc.net_gst  + Number(r.net_gst  || 0),
-    net_tds:  acc.net_tds  + Number(r.net_tds  || 0),
-    net_pf:   acc.net_pf   + Number(r.net_pf   || 0),
-    net_esi:  acc.net_esi  + Number(r.net_esi  || 0),
-    net_lwf:  acc.net_lwf  + Number(r.net_lwf  || 0),
-    net_pt:   acc.net_pt   + Number(r.net_pt   || 0),
-    employee_count: acc.employee_count + Number(r.employee_count || 0),
-  }), { invoice_value:0, net_gst:0, net_tds:0, net_pf:0, net_esi:0, net_lwf:0, net_pt:0, employee_count:0 });
+  const totals = filtered.reduce(
+    (acc, r) => ({
+      invoice_value: acc.invoice_value + Number(r.invoice_value || 0),
+      net_gst: acc.net_gst + Number(r.net_gst || 0),
+      net_tds: acc.net_tds + Number(r.net_tds || 0),
+      net_pf: acc.net_pf + Number(r.net_pf || 0),
+      net_esi: acc.net_esi + Number(r.net_esi || 0),
+      net_lwf: acc.net_lwf + Number(r.net_lwf || 0),
+      net_pt: acc.net_pt + Number(r.net_pt || 0),
+      employee_count: acc.employee_count + Number(r.employee_count || 0),
+    }),
+    {
+      invoice_value: 0,
+      net_gst: 0,
+      net_tds: 0,
+      net_pf: 0,
+      net_esi: 0,
+      net_lwf: 0,
+      net_pt: 0,
+      employee_count: 0,
+    }
+  );
 
   return (
     <motion.div
@@ -254,10 +278,13 @@ const StatutoryInvoiceBreakdownPanel = ({ onClose }) => {
           onChange={(e) => setMonthFilter(e.target.value)}
           className="border-2 border-gray-100 rounded-xl px-3 py-2 text-sm outline-none focus:border-indigo-400 bg-white"
         >
-          <option value="">All Months</option>
-          {allMonths.map(m => (
+          <option value="">All Invoice Months</option>
+          {allMonths.map((m) => (
             <option key={m} value={m}>
-              {new Date(m + "-01").toLocaleDateString("en-IN", { month: "short", year: "numeric" })}
+              {new Date(m + "-01").toLocaleDateString("en-IN", {
+                month: "short",
+                year: "numeric",
+              })}
             </option>
           ))}
         </select>
@@ -267,11 +294,15 @@ const StatutoryInvoiceBreakdownPanel = ({ onClose }) => {
           className="border-2 border-gray-100 rounded-xl px-3 py-2 text-sm outline-none focus:border-indigo-400 bg-white"
         >
           <option value="">All Entities</option>
-          {allEntities.map(e => (
-            <option key={e} value={e}>{e}</option>
+          {allEntities.map((e) => (
+            <option key={e} value={e}>
+              {e}
+            </option>
           ))}
         </select>
-        <span className="text-xs text-gray-400 ml-auto">{filtered.length} invoices</span>
+        <span className="text-xs text-gray-400 ml-auto">
+          {filtered.length} invoices
+        </span>
       </div>
 
       {/* Table */}
@@ -290,46 +321,82 @@ const StatutoryInvoiceBreakdownPanel = ({ onClose }) => {
           <table className="w-full text-xs border-collapse">
             <thead className="sticky top-0 z-10">
               <tr className="bg-slate-800 text-white">
-                <th className="px-3 py-3 text-left text-[10px] font-bold uppercase tracking-widest whitespace-nowrap">Invoice</th>
-                <th className="px-3 py-3 text-left text-[10px] font-bold uppercase tracking-widest whitespace-nowrap">Month</th>
-                <th className="px-3 py-3 text-left text-[10px] font-bold uppercase tracking-widest whitespace-nowrap">Client</th>
-                <th className="px-3 py-3 text-left text-[10px] font-bold uppercase tracking-widest whitespace-nowrap">Entity</th>
-                <th className="px-3 py-3 text-right text-[10px] font-bold uppercase tracking-widest whitespace-nowrap">Inv Value</th>
-                <th className="px-3 py-3 text-right text-[10px] font-bold uppercase tracking-widest text-blue-300">GST</th>
-                <th className="px-3 py-3 text-right text-[10px] font-bold uppercase tracking-widest text-amber-300">TDS</th>
-                <th className="px-3 py-3 text-right text-[10px] font-bold uppercase tracking-widest text-violet-300">PF</th>
-                <th className="px-3 py-3 text-right text-[10px] font-bold uppercase tracking-widest text-emerald-300">ESI</th>
-                <th className="px-3 py-3 text-right text-[10px] font-bold uppercase tracking-widest text-rose-300">LWF</th>
-                <th className="px-3 py-3 text-right text-[10px] font-bold uppercase tracking-widest text-orange-300">PT</th>
-                <th className="px-3 py-3 text-center text-[10px] font-bold uppercase tracking-widest text-gray-300">Emp</th>
+                <th className="px-3 py-3 text-left text-[10px] font-bold uppercase tracking-widest whitespace-nowrap">
+                  Invoice
+                </th>
+                <th className="px-3 py-3 text-left text-[10px] font-bold uppercase tracking-widest whitespace-nowrap">
+                  Invoice Date
+                </th>
+                <th className="px-3 py-3 text-left text-[10px] font-bold uppercase tracking-widest whitespace-nowrap">
+                  Client
+                </th>
+                <th className="px-3 py-3 text-left text-[10px] font-bold uppercase tracking-widest whitespace-nowrap">
+                  Entity
+                </th>
+                <th className="px-3 py-3 text-right text-[10px] font-bold uppercase tracking-widest whitespace-nowrap">
+                  Inv Value
+                </th>
+                <th className="px-3 py-3 text-right text-[10px] font-bold uppercase tracking-widest text-blue-300">
+                  GST
+                </th>
+                <th className="px-3 py-3 text-right text-[10px] font-bold uppercase tracking-widest text-amber-300">
+                  TDS
+                </th>
+                <th className="px-3 py-3 text-right text-[10px] font-bold uppercase tracking-widest text-violet-300">
+                  PF
+                </th>
+                <th className="px-3 py-3 text-right text-[10px] font-bold uppercase tracking-widest text-emerald-300">
+                  ESI
+                </th>
+                <th className="px-3 py-3 text-right text-[10px] font-bold uppercase tracking-widest text-rose-300">
+                  LWF
+                </th>
+                <th className="px-3 py-3 text-right text-[10px] font-bold uppercase tracking-widest text-orange-300">
+                  PT
+                </th>
+                <th className="px-3 py-3 text-center text-[10px] font-bold uppercase tracking-widest text-gray-300">
+                  Emp
+                </th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
               {filtered.map((row, i) => (
                 <tr
                   key={row.invoice_id}
-                  className={`transition-colors hover:bg-indigo-50/40 ${i % 2 === 1 ? "bg-gray-50/40" : "bg-white"}`}
+                  className={`transition-colors hover:bg-indigo-50/40 ${
+                    i % 2 === 1 ? "bg-gray-50/40" : "bg-white"
+                  }`}
                 >
                   <td className="px-3 py-2.5 font-bold text-indigo-700 whitespace-nowrap font-mono text-[11px]">
                     {row.invoice_number}
                   </td>
                   <td className="px-3 py-2.5 text-gray-600 whitespace-nowrap">
-                    {fmtMonth(row.impact_month)}
+                    {fmtMonth(row.invoice_date)}
                   </td>
-                  <td className="px-3 py-2.5 text-gray-800 font-semibold max-w-[180px] truncate" title={row.client_name}>
+                  <td
+                    className="px-3 py-2.5 text-gray-800 font-semibold max-w-[180px] truncate"
+                    title={row.client_name}
+                  >
                     {row.client_name || "—"}
                   </td>
                   <td className="px-3 py-2.5 whitespace-nowrap">
-                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                      row.entity_name === "Verto Bizserv"
-                        ? "bg-blue-100 text-blue-700"
-                        : row.entity_name === "VertoBizserv Global Solutions Pvt Ltd"
-                        ? "bg-purple-100 text-purple-700"
-                        : "bg-red-100 text-red-700"
-                    }`}>
-                      {row.entity_name === "Verto Bizserv" ? "VB"
-                        : row.entity_name === "VertoBizserv Global Solutions Pvt Ltd" ? "VGPL"
-                        : row.entity_name === "Verto UK Ltd" ? "VUK"
+                    <span
+                      className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                        row.entity_name === "Verto Bizserv"
+                          ? "bg-blue-100 text-blue-700"
+                          : row.entity_name ===
+                            "VertoBizserv Global Solutions Pvt Ltd"
+                          ? "bg-purple-100 text-purple-700"
+                          : "bg-red-100 text-red-700"
+                      }`}
+                    >
+                      {row.entity_name === "Verto Bizserv"
+                        ? "VB"
+                        : row.entity_name ===
+                          "VertoBizserv Global Solutions Pvt Ltd"
+                        ? "VGPL"
+                        : row.entity_name === "Verto UK Ltd"
+                        ? "VUK"
                         : row.entity_name}
                     </span>
                   </td>
@@ -337,32 +404,63 @@ const StatutoryInvoiceBreakdownPanel = ({ onClose }) => {
                     ₹{inr(row.invoice_value)}
                   </td>
                   <td className="px-3 py-2.5 text-right font-mono text-blue-700 whitespace-nowrap">
-                    {Number(row.net_gst) > 0 ? `₹${inr(row.net_gst)}` : <span className="text-gray-200">—</span>}
+                    {Number(row.net_gst) > 0 ? (
+                      `₹${inr(row.net_gst)}`
+                    ) : (
+                      <span className="text-gray-200">—</span>
+                    )}
                   </td>
                   <td className="px-3 py-2.5 text-right font-mono text-amber-700 whitespace-nowrap">
-                    {Number(row.net_tds) > 0 ? `₹${inr(row.net_tds)}` : <span className="text-gray-200">—</span>}
+                    {Number(row.net_tds) > 0 ? (
+                      `₹${inr(row.net_tds)}`
+                    ) : (
+                      <span className="text-gray-200">—</span>
+                    )}
                   </td>
                   <td className="px-3 py-2.5 text-right font-mono text-violet-700 whitespace-nowrap">
-                    {Number(row.net_pf) > 0 ? `₹${inr(row.net_pf)}` : <span className="text-gray-200">—</span>}
+                    {Number(row.net_pf) > 0 ? (
+                      `₹${inr(row.net_pf)}`
+                    ) : (
+                      <span className="text-gray-200">—</span>
+                    )}
                   </td>
                   <td className="px-3 py-2.5 text-right font-mono text-emerald-700 whitespace-nowrap">
-                    {Number(row.net_esi) > 0 ? `₹${inr(row.net_esi)}` : <span className="text-gray-200">—</span>}
+                    {Number(row.net_esi) > 0 ? (
+                      `₹${inr(row.net_esi)}`
+                    ) : (
+                      <span className="text-gray-200">—</span>
+                    )}
                   </td>
                   <td className="px-3 py-2.5 text-right font-mono text-rose-700 whitespace-nowrap">
-                    {Number(row.net_lwf) > 0 ? `₹${inr(row.net_lwf)}` : <span className="text-gray-200">—</span>}
+                    {Number(row.net_lwf) > 0 ? (
+                      `₹${inr(row.net_lwf)}`
+                    ) : (
+                      <span className="text-gray-200">—</span>
+                    )}
                   </td>
                   <td className="px-3 py-2.5 text-right font-mono text-orange-700 whitespace-nowrap">
-                    {Number(row.net_pt) > 0 ? `₹${inr(row.net_pt)}` : <span className="text-gray-200">—</span>}
+                    {Number(row.net_pt) > 0 ? (
+                      `₹${inr(row.net_pt)}`
+                    ) : (
+                      <span className="text-gray-200">—</span>
+                    )}
                   </td>
                   <td className="px-3 py-2.5 text-center text-gray-500 font-bold">
-                    {Number(row.employee_count) > 0 ? row.employee_count : <span className="text-gray-200">—</span>}
+                    {Number(row.employee_count) > 0 ? (
+                      row.employee_count
+                    ) : (
+                      <span className="text-gray-200">—</span>
+                    )}
                   </td>
                 </tr>
               ))}
             </tbody>
             <tfoot className="sticky bottom-0">
               <tr className="bg-slate-900 text-white">
-                <td colSpan={4} className="px-3 py-3 text-[10px] font-black uppercase tracking-widest text-slate-300">
+                <td
+                  colSpan={4}
+                  className="px-3 py-3 text-[10px] font-black uppercase tracking-widest text-slate-300"
+                >
                   Total ({filtered.length} invoices)
                 </td>
                 <td className="px-3 py-3 text-right font-black font-mono text-white text-sm whitespace-nowrap">
@@ -1711,7 +1809,9 @@ const AddStatutoryPayoutModal = ({
                 <ComplianceTrackerPanel onClose={() => setTrackerOpen(false)} />
               )}
               {breakdownOpen && ( // ✅ Step 4
-                <StatutoryInvoiceBreakdownPanel onClose={() => setBreakdownOpen(false)} />
+                <StatutoryInvoiceBreakdownPanel
+                  onClose={() => setBreakdownOpen(false)}
+                />
               )}
             </AnimatePresence>
 
@@ -1879,7 +1979,8 @@ const AddStatutoryPayoutModal = ({
                     <div className="flex items-center justify-between bg-gradient-to-r from-blue-50 to-cyan-50 border border-blue-100 rounded-xl px-5 py-4">
                       <div>
                         <p className="text-[11px] font-bold text-blue-600 uppercase tracking-widest">
-                          Total Compliance Payable —{" "}
+                          Total Compliance Payable GST + TDS + PF + ESI + LWF
+                          combined —{" "}
                           {new Date(
                             `${formData.forTheMonth}-01`
                           ).toLocaleDateString("en-IN", {
