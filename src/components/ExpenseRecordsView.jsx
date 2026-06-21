@@ -22,13 +22,14 @@ import {
   FolderOpen,
   X,
   CheckCircle2,
+  Lock,
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import { printSalarySlip, downloadBulkSlipsZip } from "../utils/salarySlip";
 import { logExport, EXPORT_ACTIONS } from "../utils/Auditlog.js";
 
 const ExpenseRecordsView = ({ onClose }) => {
-  const { canEdit, canDelete, canExport } = usePerms();
+  const { canEdit, canDelete, canExport, role } = usePerms();
   const [loading, setLoading] = useState(true);
   const [records, setRecords] = useState([]);
   const [bulkFolders, setBulkFolders] = useState([]);
@@ -480,6 +481,14 @@ const ExpenseRecordsView = ({ onClose }) => {
       hour: "2-digit",
       minute: "2-digit",
     });
+  };
+
+  const isLocked = (dateStr) => {
+    if (!dateStr) return false;
+    const rowDate = new Date(dateStr);
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - 45);
+    return rowDate < cutoff;
   };
 
   // =====================================================
@@ -946,6 +955,14 @@ const ExpenseRecordsView = ({ onClose }) => {
                                         >
                                           Save
                                         </button>
+                                      ) : isLocked(row.date_of_pay) && role !== "admin" ? (
+                                        <button
+                                          disabled
+                                          className="w-7 h-7 rounded-lg border border-slate-200 bg-slate-100 text-slate-400 flex items-center justify-center cursor-not-allowed mx-auto"
+                                          title="Locked — entries older than 45 days can only be edited by an Admin."
+                                        >
+                                          <Lock className="w-3 h-3" />
+                                        </button>
                                       ) : (
                                         <button
                                           onClick={() => startEdit(row)}
@@ -976,6 +993,14 @@ const ExpenseRecordsView = ({ onClose }) => {
                                             No
                                           </button>
                                         </div>
+                                      ) : isLocked(row.date_of_pay) && role !== "admin" ? (
+                                        <button
+                                          disabled
+                                          className="w-7 h-7 rounded-lg border border-slate-200 bg-slate-100 text-slate-400 flex items-center justify-center cursor-not-allowed mx-auto"
+                                          title="Locked — entries older than 45 days can only be deleted by an Admin."
+                                        >
+                                          <Lock className="w-3 h-3" />
+                                        </button>
                                       ) : (
                                         <button
                                           onClick={() => setConfirmDeleteRow(row.id)}
@@ -1208,6 +1233,14 @@ const ExpenseRecordsView = ({ onClose }) => {
                                 >
                                   Save
                                 </button>
+                              ) : isLocked(row.date_of_pay) && role !== "admin" ? (
+                                <button
+                                  disabled
+                                  className="w-8 h-8 rounded-lg border border-slate-200 bg-slate-100 text-slate-400 flex items-center justify-center cursor-not-allowed"
+                                  title="Locked — entries older than 45 days can only be edited by an Admin."
+                                >
+                                  <Lock className="w-3.5 h-3.5" />
+                                </button>
                               ) : (
                                 canEdit && (
                                   <button
@@ -1220,12 +1253,22 @@ const ExpenseRecordsView = ({ onClose }) => {
                               )}
 
                               {canDelete && (
-                                <button
-                                  onClick={() => handleDelete(row.id)}
-                                  className="w-8 h-8 rounded-lg border border-red-200 bg-red-50 text-red-600 flex items-center justify-center hover:bg-red-100 transition-colors"
-                                >
-                                  <Trash2 className="w-3.5 h-3.5" />
-                                </button>
+                                isLocked(row.date_of_pay) && role !== "admin" ? (
+                                  <button
+                                    disabled
+                                    className="w-8 h-8 rounded-lg border border-slate-200 bg-slate-100 text-slate-400 flex items-center justify-center cursor-not-allowed"
+                                    title="Locked — entries older than 45 days can only be deleted by an Admin."
+                                  >
+                                    <Lock className="w-3.5 h-3.5" />
+                                  </button>
+                                ) : (
+                                  <button
+                                    onClick={() => handleDelete(row.id)}
+                                    className="w-8 h-8 rounded-lg border border-red-200 bg-red-50 text-red-600 flex items-center justify-center hover:bg-red-100 transition-colors"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </button>
+                                )
                               )}
                             </div>
                           </td>

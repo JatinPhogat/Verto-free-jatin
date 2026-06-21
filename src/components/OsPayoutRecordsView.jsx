@@ -22,12 +22,13 @@ import {
   CheckCircle2,
   Eye,
   CornerDownLeft,
+  Lock,
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import { logExport, EXPORT_ACTIONS } from "../utils/Auditlog.js";
 
 const OsPayoutRecordsView = ({ onClose, onChanged }) => {
-  const { canEdit, canDelete, canExport, isIntern } = usePerms();
+  const { canEdit, canDelete, canExport, isIntern, role } = usePerms();
   const [loading, setLoading] = useState(true);
   const [bulkFolders, setBulkFolders] = useState([]);
   const [singleRecords, setSingleRecords] = useState([]);
@@ -74,6 +75,14 @@ const OsPayoutRecordsView = ({ onClose, onChanged }) => {
           minute: "2-digit",
         })
       : "—";
+
+  const isLocked = (dateStr) => {
+    if (!dateStr) return false;
+    const rowDate = new Date(dateStr);
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - 45);
+    return rowDate < cutoff;
+  };
 
   const showToast = (msg, type = "success") => {
     setToast({ msg, type });
@@ -957,6 +966,14 @@ const OsPayoutRecordsView = ({ onClose, onChanged }) => {
                                         >
                                           Save
                                         </button>
+                                      ) : isLocked(row.payment_date) && role !== "admin" ? (
+                                        <button
+                                          disabled
+                                          className="w-7 h-7 rounded-lg border border-slate-200 bg-slate-100 text-slate-400 flex items-center justify-center cursor-not-allowed mx-auto"
+                                          title="Locked — entries older than 45 days can only be edited by an Admin."
+                                        >
+                                          <Lock className="w-3 h-3" />
+                                        </button>
                                       ) : (
                                         <button
                                           onClick={() => startEdit(row)}
@@ -985,6 +1002,14 @@ const OsPayoutRecordsView = ({ onClose, onChanged }) => {
                                             No
                                           </button>
                                         </div>
+                                      ) : isLocked(row.payment_date) && role !== "admin" ? (
+                                        <button
+                                          disabled
+                                          className="w-7 h-7 rounded-lg border border-slate-200 bg-slate-100 text-slate-400 flex items-center justify-center cursor-not-allowed mx-auto"
+                                          title="Locked — entries older than 45 days can only be deleted by an Admin."
+                                        >
+                                          <Lock className="w-3 h-3" />
+                                        </button>
                                       ) : (
                                         <button
                                           onClick={() => setConfirmDeleteRow(row.id)}
@@ -1222,6 +1247,14 @@ const OsPayoutRecordsView = ({ onClose, onChanged }) => {
                                     >
                                       Save
                                     </button>
+                                  ) : isLocked(row.payment_date) && role !== "admin" ? (
+                                    <button
+                                      disabled
+                                      className="w-8 h-8 rounded-lg border border-slate-200 bg-slate-100 text-slate-400 flex items-center justify-center cursor-not-allowed"
+                                      title="Locked — entries older than 45 days can only be edited by an Admin."
+                                    >
+                                      <Lock className="w-3.5 h-3.5" />
+                                    </button>
                                   ) : (
                                     <button
                                       onClick={() => startEdit(row)}
@@ -1240,6 +1273,14 @@ const OsPayoutRecordsView = ({ onClose, onChanged }) => {
                                       title="Cancel"
                                     >
                                       <X className="w-3.5 h-3.5" />
+                                    </button>
+                                  ) : isLocked(row.payment_date) && role !== "admin" ? (
+                                    <button
+                                      disabled
+                                      className="w-8 h-8 rounded-lg border border-slate-200 bg-slate-100 text-slate-400 flex items-center justify-center cursor-not-allowed"
+                                      title="Locked — entries older than 45 days can only be deleted by an Admin."
+                                    >
+                                      <Lock className="w-3.5 h-3.5" />
                                     </button>
                                   ) : (
                                     <button
