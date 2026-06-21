@@ -1738,13 +1738,14 @@ const AddStatutoryPayoutModal = ({
                   >
                     <FileSpreadsheet className="w-3.5 h-3.5" /> Breakdown
                   </button>
-                  <button
+                  {/*  <button
                     type="button"
                     onClick={() => setTrackerOpen(true)}
                     className="flex items-center gap-1.5 px-3 py-2 bg-white/10 hover:bg-white/20 text-white rounded-xl text-xs font-bold border border-white/20 transition-all"
                   >
                     <BarChart3 className="w-3.5 h-3.5" /> Tracker
                   </button>
+                  */}
                   <button
                     type="button"
                     onClick={() => setViewOpen(true)}
