@@ -29,6 +29,7 @@ import {
   ChevronDown,
   ChevronRight,
   FolderOpen,
+  Lock,
 } from "lucide-react";
 import supabase from "../lib/supabaseClient";
 
@@ -55,6 +56,22 @@ const BoolPill = ({ value, yesLabel = "YES", noLabel = "NO" }) =>
       <XCircle size={10} /> {noLabel}
     </span>
   );
+
+/* ─── 45-day lock helper ───────────────────────────────────────────────────── */
+const LOCK_DAYS = 45;
+const LOCK_TOOLTIP = "Locked — entries older than 45 days can only be edited by an Admin.";
+
+/**
+ * Returns true if the row's payment_date is more than 45 days before today
+ * AND the current user is not an admin.
+ */
+const isRowLocked = (paymentDate, isAdmin) => {
+  if (isAdmin) return false;
+  if (!paymentDate) return false;
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - LOCK_DAYS);
+  return new Date(paymentDate) < cutoff;
+};
 
 /* ─── Excel Export ─────────────────────────────────────────────────────────── */
 const exportToExcel = (rows) => {
@@ -729,7 +746,8 @@ const BulkUploadModal = ({ open, onClose, onUploaded }) => {
 
 /* ─── Bulk Group Detail Modal ─────────────────────────────────────────────── */
 const BulkGroupDetailModal = ({ open, onClose, bulkGroup, onRefresh }) => {
-  const { canEdit, canDelete } = usePerms();
+  const { canEdit, canDelete, role } = usePerms();
+  const isAdmin = role === "admin";
   const [entries, setEntries] = useState([]);
   const [loading, setLoading] = useState(false);
   const [editRow, setEditRow] = useState(null);
@@ -912,135 +930,154 @@ const BulkGroupDetailModal = ({ open, onClose, bulkGroup, onRefresh }) => {
                   </tr>
                 </thead>
                 <tbody>
-                  {entries.map((row, index) => (
-                    <React.Fragment key={row.id || index}>
-                      <tr className={`border-b border-indigo-100 transition-colors ${
-                        deletingId === row.id ? "opacity-30 pointer-events-none" : ""
-                      } ${editRow?.id === row.id ? "bg-indigo-50/80" : index % 2 === 0 ? "bg-white hover:bg-indigo-50" : "bg-indigo-50/40 hover:bg-indigo-50"}`}>
-                        
-                        <td className="px-4 py-3 text-center text-xs text-slate-400 font-medium">{index + 1}</td>
-                        <td className="px-4 py-3 whitespace-nowrap"><span className="font-semibold text-slate-800 text-xs">{row.client_name || "—"}</span></td>
-                        <td className="px-4 py-3 whitespace-nowrap"><span className="inline-flex items-center px-2 py-0.5 rounded-lg bg-indigo-100 text-indigo-800 text-[10px] font-bold">{row.entity || "—"}</span></td>
-                        <td className="px-4 py-3 whitespace-nowrap text-xs text-slate-600">{row.department || "—"}</td>
-                        <td className="px-4 py-3 whitespace-nowrap text-xs text-slate-600">{row.pay_head || "—"}</td>
-                        <td className="px-4 py-3 whitespace-nowrap text-right"><span className="font-bold text-indigo-700 text-sm">{fmt(row.due_amount)}</span></td>
-                        <td className="px-4 py-3 whitespace-nowrap text-right"><span className="text-xs font-semibold text-red-600">{fmt(row.tds_amount)}</span></td>
-                        <td className="px-4 py-3 whitespace-nowrap text-right"><span className="text-xs font-semibold text-slate-700">{fmt(row.transfer_amount)}</span></td>
-                        <td className="px-4 py-3 whitespace-nowrap"><div className="flex items-center gap-1.5"><Calendar size={11} className="text-slate-300" /><span className="text-xs text-slate-600">{fmtDate(row.payment_date)}</span></div></td>
-                        <td className="px-4 py-3 whitespace-nowrap"><div className="flex items-center gap-1.5"><Building2 size={11} className="text-slate-300" /><span className="text-xs text-slate-600">{row.bank_name || "—"}</span></div></td>
-                        <td className="px-4 py-3 whitespace-nowrap"><BoolPill value={row.is_billable} /></td>
-                        <td className="px-4 py-3 whitespace-nowrap"><BoolPill value={row.petty_cash} yesLabel="CASH" noLabel="NO" /></td>
-                        
-                        {/* Edit */}
-                        <td className="px-4 py-3 whitespace-nowrap">
-                          {editRow?.id === row.id ? (
-                            <div className="flex items-center gap-1">
-                              <button onClick={handleSaveEdit} disabled={savingEdit}
-                                className="flex items-center gap-1 px-2.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-[11px] font-bold transition-colors disabled:opacity-60">
-                                {savingEdit ? <Loader2 size={10} className="animate-spin" /> : <Save size={10} />} Save
+                  {entries.map((row, index) => {
+                    const locked = isRowLocked(row.payment_date, isAdmin);
+                    return (
+                      <React.Fragment key={row.id || index}>
+                        <tr className={`border-b border-indigo-100 transition-colors ${
+                          deletingId === row.id ? "opacity-30 pointer-events-none" : ""
+                        } ${editRow?.id === row.id ? "bg-indigo-50/80" : index % 2 === 0 ? "bg-white hover:bg-indigo-50" : "bg-indigo-50/40 hover:bg-indigo-50"}`}>
+                          
+                          <td className="px-4 py-3 text-center text-xs text-slate-400 font-medium">{index + 1}</td>
+                          <td className="px-4 py-3 whitespace-nowrap"><span className="font-semibold text-slate-800 text-xs">{row.client_name || "—"}</span></td>
+                          <td className="px-4 py-3 whitespace-nowrap"><span className="inline-flex items-center px-2 py-0.5 rounded-lg bg-indigo-100 text-indigo-800 text-[10px] font-bold">{row.entity || "—"}</span></td>
+                          <td className="px-4 py-3 whitespace-nowrap text-xs text-slate-600">{row.department || "—"}</td>
+                          <td className="px-4 py-3 whitespace-nowrap text-xs text-slate-600">{row.pay_head || "—"}</td>
+                          <td className="px-4 py-3 whitespace-nowrap text-right"><span className="font-bold text-indigo-700 text-sm">{fmt(row.due_amount)}</span></td>
+                          <td className="px-4 py-3 whitespace-nowrap text-right"><span className="text-xs font-semibold text-red-600">{fmt(row.tds_amount)}</span></td>
+                          <td className="px-4 py-3 whitespace-nowrap text-right"><span className="text-xs font-semibold text-slate-700">{fmt(row.transfer_amount)}</span></td>
+                          <td className="px-4 py-3 whitespace-nowrap"><div className="flex items-center gap-1.5"><Calendar size={11} className="text-slate-300" /><span className="text-xs text-slate-600">{fmtDate(row.payment_date)}</span></div></td>
+                          <td className="px-4 py-3 whitespace-nowrap"><div className="flex items-center gap-1.5"><Building2 size={11} className="text-slate-300" /><span className="text-xs text-slate-600">{row.bank_name || "—"}</span></div></td>
+                          <td className="px-4 py-3 whitespace-nowrap"><BoolPill value={row.is_billable} /></td>
+                          <td className="px-4 py-3 whitespace-nowrap"><BoolPill value={row.petty_cash} yesLabel="CASH" noLabel="NO" /></td>
+                          
+                          {/* Edit */}
+                          <td className="px-4 py-3 whitespace-nowrap">
+                            {editRow?.id === row.id ? (
+                              <div className="flex items-center gap-1">
+                                <button onClick={handleSaveEdit} disabled={savingEdit}
+                                  className="flex items-center gap-1 px-2.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-[11px] font-bold transition-colors disabled:opacity-60">
+                                  {savingEdit ? <Loader2 size={10} className="animate-spin" /> : <Save size={10} />} Save
+                                </button>
+                                <button onClick={() => { setEditRow(null); setEditForm({}); }}
+                                  className="px-2 py-1.5 border border-gray-200 text-gray-500 rounded-lg text-[11px] hover:bg-gray-50 transition-colors">✕</button>
+                              </div>
+                            ) : locked ? (
+                              <span
+                                title={LOCK_TOOLTIP}
+                                className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed select-none"
+                              >
+                                <Lock size={10} /> Edit
+                              </span>
+                            ) : canEdit ? (
+                              <button onClick={() => {
+                                setEditRow(row);
+                                setEditForm({
+                                  due_amount: row.due_amount, tds_amount: row.tds_amount || 0,
+                                  payment_date: row.payment_date, bank_id: row.bank_id,
+                                  department: row.department,
+                                  payment_description: row.payment_description || "",
+                                  remarks: row.remarks || "",
+                                });
+                              }} className="flex items-center gap-1 px-2.5 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-lg text-[11px] font-semibold border border-indigo-200 transition-colors">
+                                <Pencil size={10} /> Edit
                               </button>
-                              <button onClick={() => { setEditRow(null); setEditForm({}); }}
-                                className="px-2 py-1.5 border border-gray-200 text-gray-500 rounded-lg text-[11px] hover:bg-gray-50 transition-colors">✕</button>
-                            </div>
-                          ) : canEdit ? (
-                            <button onClick={() => {
-                              setEditRow(row);
-                              setEditForm({
-                                due_amount: row.due_amount, tds_amount: row.tds_amount || 0,
-                                payment_date: row.payment_date, bank_id: row.bank_id,
-                                department: row.department,
-                                payment_description: row.payment_description || "",
-                                remarks: row.remarks || "",
-                              });
-                            }} className="flex items-center gap-1 px-2.5 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-lg text-[11px] font-semibold border border-indigo-200 transition-colors">
-                              <Pencil size={10} /> Edit
-                            </button>
-                          ) : null}
-                        </td>
-                        
-                        {/* Delete */}
-                        <td className="px-4 py-3 whitespace-nowrap">
-                          {deletingId === row.id ? <Loader2 size={14} className="animate-spin text-rose-400" /> : canDelete ? (
-                            <button onClick={() => setConfirmRow(row)}
-                              className="flex items-center gap-1 px-2.5 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-lg text-[11px] font-semibold border border-rose-200 transition-colors">
-                              <Trash2 size={10} /> Delete
-                            </button>
-                          ) : null}
-                        </td>
-                      </tr>
-
-                      {/* Inline Edit Form */}
-                      {editRow?.id === row.id && (
-                        <tr className="bg-indigo-50/90 border-b-2 border-indigo-300">
-                          <td colSpan={2} />
-                          <td className="px-3 py-3">
-                            <label className="text-[9px] text-gray-500 font-bold uppercase block mb-1">Due Amount</label>
-                            <div className="relative">
-                              <span className="absolute left-2 top-1.5 text-gray-400 text-xs">₹</span>
-                              <input type="number" value={editForm.due_amount}
-                                onChange={(e) => {
-                                  const d = parseFloat(e.target.value) || 0;
-                                  const t = parseFloat(editForm.tds_amount) || 0;
-                                  setEditForm((f) => ({ ...f, due_amount: d, transfer_amount: Math.max(d - t, 0) }));
-                                }}
-                                className="w-full border-2 border-indigo-200 bg-white rounded-lg pl-6 pr-2 py-1.5 text-xs font-bold text-indigo-800 outline-none focus:border-indigo-400" />
-                            </div>
+                            ) : null}
                           </td>
-                          <td className="px-3 py-3">
-                            <label className="text-[9px] text-gray-500 font-bold uppercase block mb-1">TDS</label>
-                            <div className="relative">
-                              <span className="absolute left-2 top-1.5 text-gray-400 text-xs">₹</span>
-                              <input type="number" value={editForm.tds_amount}
-                                onChange={(e) => {
-                                  const t = parseFloat(e.target.value) || 0;
-                                  const d = parseFloat(editForm.due_amount) || 0;
-                                  setEditForm((f) => ({ ...f, tds_amount: t, transfer_amount: Math.max(d - t, 0) }));
-                                }}
-                                className="w-full border-2 border-indigo-200 bg-white rounded-lg pl-6 pr-2 py-1.5 text-xs font-bold text-red-700 outline-none focus:border-indigo-400" />
-                            </div>
+                          
+                          {/* Delete */}
+                          <td className="px-4 py-3 whitespace-nowrap">
+                            {deletingId === row.id ? (
+                              <Loader2 size={14} className="animate-spin text-rose-400" />
+                            ) : locked ? (
+                              <span
+                                title={LOCK_TOOLTIP}
+                                className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed select-none"
+                              >
+                                <Lock size={10} /> Delete
+                              </span>
+                            ) : canDelete ? (
+                              <button onClick={() => setConfirmRow(row)}
+                                className="flex items-center gap-1 px-2.5 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-lg text-[11px] font-semibold border border-rose-200 transition-colors">
+                                <Trash2 size={10} /> Delete
+                              </button>
+                            ) : null}
                           </td>
-                          <td className="px-3 py-3">
-                            <label className="text-[9px] text-gray-500 font-bold uppercase block mb-1">Transfer (auto)</label>
-                            <div className="border-2 border-gray-100 bg-gray-50 rounded-lg px-2 py-1.5 text-xs font-bold text-slate-600">
-                              ₹ {Number(Math.max((parseFloat(editForm.due_amount) || 0) - (parseFloat(editForm.tds_amount) || 0), 0)).toLocaleString("en-IN")}
-                            </div>
-                          </td>
-                          <td className="px-3 py-3">
-                            <label className="text-[9px] text-gray-500 font-bold uppercase block mb-1">Date</label>
-                            <input type="date" value={editForm.payment_date}
-                              onChange={(e) => setEditForm((f) => ({ ...f, payment_date: e.target.value }))}
-                              className="w-full border-2 border-indigo-200 bg-white rounded-lg px-2 py-1.5 text-xs text-gray-700 outline-none focus:border-indigo-400" />
-                          </td>
-                          <td className="px-3 py-3">
-                            <label className="text-[9px] text-gray-500 font-bold uppercase block mb-1">Bank</label>
-                            <select value={editForm.bank_id || ""}
-                              onChange={(e) => setEditForm((f) => ({ ...f, bank_id: e.target.value }))}
-                              className="w-full border-2 border-indigo-200 bg-white rounded-lg px-2 py-1.5 text-xs text-gray-700 outline-none focus:border-indigo-400">
-                              <option value="">Select bank</option>
-                              {banks.map((b) => (<option key={b.id} value={b.id}>{b.bank_name}</option>))}
-                            </select>
-                          </td>
-                          <td className="px-3 py-3">
-                            <label className="text-[9px] text-gray-500 font-bold uppercase block mb-1">Department</label>
-                            <select value={editForm.department || ""}
-                              onChange={(e) => setEditForm((f) => ({ ...f, department: e.target.value }))}
-                              className="w-full border-2 border-indigo-200 bg-white rounded-lg px-2 py-1.5 text-xs text-gray-700 outline-none focus:border-indigo-400">
-                              <option value="">Select dept</option>
-                              {DEPT_OPTIONS.map((d) => (<option key={d} value={d}>{d}</option>))}
-                            </select>
-                          </td>
-                          <td colSpan={2} className="px-3 py-3">
-                            <label className="text-[9px] text-gray-500 font-bold uppercase block mb-1">Description / Remarks</label>
-                            <input type="text" value={editForm.payment_description || editForm.remarks || ""}
-                              onChange={(e) => setEditForm((f) => ({ ...f, payment_description: e.target.value, remarks: e.target.value }))}
-                              placeholder="Optional description..."
-                              className="w-full border-2 border-indigo-200 bg-white rounded-lg px-2 py-1.5 text-xs text-gray-700 outline-none focus:border-indigo-400" />
-                          </td>
-                          <td colSpan={4} />
                         </tr>
-                      )}
-                    </React.Fragment>
-                  ))}
+
+                        {/* Inline Edit Form */}
+                        {editRow?.id === row.id && (
+                          <tr className="bg-indigo-50/90 border-b-2 border-indigo-300">
+                            <td colSpan={2} />
+                            <td className="px-3 py-3">
+                              <label className="text-[9px] text-gray-500 font-bold uppercase block mb-1">Due Amount</label>
+                              <div className="relative">
+                                <span className="absolute left-2 top-1.5 text-gray-400 text-xs">₹</span>
+                                <input type="number" value={editForm.due_amount}
+                                  onChange={(e) => {
+                                    const d = parseFloat(e.target.value) || 0;
+                                    const t = parseFloat(editForm.tds_amount) || 0;
+                                    setEditForm((f) => ({ ...f, due_amount: d, transfer_amount: Math.max(d - t, 0) }));
+                                  }}
+                                  className="w-full border-2 border-indigo-200 bg-white rounded-lg pl-6 pr-2 py-1.5 text-xs font-bold text-indigo-800 outline-none focus:border-indigo-400" />
+                              </div>
+                            </td>
+                            <td className="px-3 py-3">
+                              <label className="text-[9px] text-gray-500 font-bold uppercase block mb-1">TDS</label>
+                              <div className="relative">
+                                <span className="absolute left-2 top-1.5 text-gray-400 text-xs">₹</span>
+                                <input type="number" value={editForm.tds_amount}
+                                  onChange={(e) => {
+                                    const t = parseFloat(e.target.value) || 0;
+                                    const d = parseFloat(editForm.due_amount) || 0;
+                                    setEditForm((f) => ({ ...f, tds_amount: t, transfer_amount: Math.max(d - t, 0) }));
+                                  }}
+                                  className="w-full border-2 border-indigo-200 bg-white rounded-lg pl-6 pr-2 py-1.5 text-xs font-bold text-red-700 outline-none focus:border-indigo-400" />
+                              </div>
+                            </td>
+                            <td className="px-3 py-3">
+                              <label className="text-[9px] text-gray-500 font-bold uppercase block mb-1">Transfer (auto)</label>
+                              <div className="border-2 border-gray-100 bg-gray-50 rounded-lg px-2 py-1.5 text-xs font-bold text-slate-600">
+                                ₹ {Number(Math.max((parseFloat(editForm.due_amount) || 0) - (parseFloat(editForm.tds_amount) || 0), 0)).toLocaleString("en-IN")}
+                              </div>
+                            </td>
+                            <td className="px-3 py-3">
+                              <label className="text-[9px] text-gray-500 font-bold uppercase block mb-1">Date</label>
+                              <input type="date" value={editForm.payment_date}
+                                onChange={(e) => setEditForm((f) => ({ ...f, payment_date: e.target.value }))}
+                                className="w-full border-2 border-indigo-200 bg-white rounded-lg px-2 py-1.5 text-xs text-gray-700 outline-none focus:border-indigo-400" />
+                            </td>
+                            <td className="px-3 py-3">
+                              <label className="text-[9px] text-gray-500 font-bold uppercase block mb-1">Bank</label>
+                              <select value={editForm.bank_id || ""}
+                                onChange={(e) => setEditForm((f) => ({ ...f, bank_id: e.target.value }))}
+                                className="w-full border-2 border-indigo-200 bg-white rounded-lg px-2 py-1.5 text-xs text-gray-700 outline-none focus:border-indigo-400">
+                                <option value="">Select bank</option>
+                                {banks.map((b) => (<option key={b.id} value={b.id}>{b.bank_name}</option>))}
+                              </select>
+                            </td>
+                            <td className="px-3 py-3">
+                              <label className="text-[9px] text-gray-500 font-bold uppercase block mb-1">Department</label>
+                              <select value={editForm.department || ""}
+                                onChange={(e) => setEditForm((f) => ({ ...f, department: e.target.value }))}
+                                className="w-full border-2 border-indigo-200 bg-white rounded-lg px-2 py-1.5 text-xs text-gray-700 outline-none focus:border-indigo-400">
+                                <option value="">Select dept</option>
+                                {DEPT_OPTIONS.map((d) => (<option key={d} value={d}>{d}</option>))}
+                              </select>
+                            </td>
+                            <td colSpan={2} className="px-3 py-3">
+                              <label className="text-[9px] text-gray-500 font-bold uppercase block mb-1">Description / Remarks</label>
+                              <input type="text" value={editForm.payment_description || editForm.remarks || ""}
+                                onChange={(e) => setEditForm((f) => ({ ...f, payment_description: e.target.value, remarks: e.target.value }))}
+                                placeholder="Optional description..."
+                                className="w-full border-2 border-indigo-200 bg-white rounded-lg px-2 py-1.5 text-xs text-gray-700 outline-none focus:border-indigo-400" />
+                            </td>
+                            <td colSpan={4} />
+                          </tr>
+                        )}
+                      </React.Fragment>
+                    );
+                  })}
                 </tbody>
                 <tfoot className="sticky bottom-0">
                   <tr style={{ background: "#1e3a5f" }}>
@@ -1075,7 +1112,8 @@ const BulkGroupDetailModal = ({ open, onClose, bulkGroup, onRefresh }) => {
 
 /* ─── Main Component ───────────────────────────────────────────────────────── */
 const ExpenseViewModal = ({ open, onClose, onSaved }) => {
-  const { canEdit, canDelete } = usePerms();
+  const { canEdit, canDelete, role } = usePerms();
+  const isAdmin = role === "admin";
   const [loading, setLoading] = useState(false);
   const [rows, setRows] = useState([]);
   const [search, setSearch] = useState("");
@@ -1630,312 +1668,329 @@ const ExpenseViewModal = ({ open, onClose, onSaved }) => {
                   </tr>
                 </thead>
                 <tbody>
-                  {filtered.map((row, index) => (
-                    <React.Fragment key={row.id || index}>
-                      {/* ── Data row ── */}
-                      <tr
-                        className={`border-b border-orange-100 transition-colors ${
-                          deletingId === row.id
-                            ? "opacity-30 pointer-events-none"
-                            : ""
-                        } ${
-                          editRow?.id === row.id
-                            ? "bg-orange-50/80"
-                            : index % 2 === 0
-                            ? "bg-white hover:bg-orange-50"
-                            : "bg-orange-50/40 hover:bg-orange-50"
-                        }`}
-                      >
-                        <td className="px-4 py-3 text-center text-xs text-slate-400 font-medium">
-                          {index + 1}
-                        </td>
-                        <td className="px-4 py-3 whitespace-nowrap">
-                          <span className="font-semibold text-slate-800 text-xs">
-                            {row.client_name || "—"}
-                          </span>
-                        </td>
-                        <td className="px-4 py-3 whitespace-nowrap">
-                          <span className="inline-flex items-center px-2 py-0.5 rounded-lg bg-orange-100 text-orange-800 text-[10px] font-bold">
-                            {row.entity || "—"}
-                          </span>
-                        </td>
-                        <td className="px-4 py-3 whitespace-nowrap text-xs text-slate-600">
-                          {row.department || "—"}
-                        </td>
-                        <td className="px-4 py-3 whitespace-nowrap text-xs text-slate-600">
-                          {row.pay_head || "—"}
-                        </td>
-                        <td className="px-4 py-3 whitespace-nowrap text-right">
-                          <span className="font-bold text-orange-700 text-sm">
-                            {fmt(row.due_amount)}
-                          </span>
-                        </td>
-                        <td className="px-4 py-3 whitespace-nowrap text-right">
-                          <span className="text-xs font-semibold text-red-600">
-                            {fmt(row.tds_amount)}
-                          </span>
-                        </td>
-                        <td className="px-4 py-3 whitespace-nowrap text-right">
-                          <span className="text-xs font-semibold text-slate-700">
-                            {fmt(row.transfer_amount)}
-                          </span>
-                        </td>
-                        <td className="px-4 py-3 whitespace-nowrap">
-                          <div className="flex items-center gap-1.5">
-                            <Calendar size={11} className="text-slate-300" />
-                            <span className="text-xs text-slate-600">
-                              {fmtDate(row.payment_date)}
+                  {filtered.map((row, index) => {
+                    const locked = isRowLocked(row.payment_date, isAdmin);
+                    return (
+                      <React.Fragment key={row.id || index}>
+                        {/* ── Data row ── */}
+                        <tr
+                          className={`border-b border-orange-100 transition-colors ${
+                            deletingId === row.id
+                              ? "opacity-30 pointer-events-none"
+                              : ""
+                          } ${
+                            editRow?.id === row.id
+                              ? "bg-orange-50/80"
+                              : index % 2 === 0
+                              ? "bg-white hover:bg-orange-50"
+                              : "bg-orange-50/40 hover:bg-orange-50"
+                          }`}
+                        >
+                          <td className="px-4 py-3 text-center text-xs text-slate-400 font-medium">
+                            {index + 1}
+                          </td>
+                          <td className="px-4 py-3 whitespace-nowrap">
+                            <span className="font-semibold text-slate-800 text-xs">
+                              {row.client_name || "—"}
                             </span>
-                          </div>
-                        </td>
-                        <td className="px-4 py-3 whitespace-nowrap">
-                          <div className="flex items-center gap-1.5">
-                            <Building2 size={11} className="text-slate-300" />
-                            <span className="text-xs text-slate-600">
-                              {row.bank_name || "—"}
+                          </td>
+                          <td className="px-4 py-3 whitespace-nowrap">
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-lg bg-orange-100 text-orange-800 text-[10px] font-bold">
+                              {row.entity || "—"}
                             </span>
-                          </div>
-                        </td>
-                        <td className="px-4 py-3 whitespace-nowrap">
-                          <BoolPill value={row.is_billable} />
-                        </td>
-                        <td className="px-4 py-3 whitespace-nowrap">
-                          <BoolPill
-                            value={row.petty_cash}
-                            yesLabel="CASH"
-                            noLabel="NO"
-                          />
-                        </td>
+                          </td>
+                          <td className="px-4 py-3 whitespace-nowrap text-xs text-slate-600">
+                            {row.department || "—"}
+                          </td>
+                          <td className="px-4 py-3 whitespace-nowrap text-xs text-slate-600">
+                            {row.pay_head || "—"}
+                          </td>
+                          <td className="px-4 py-3 whitespace-nowrap text-right">
+                            <span className="font-bold text-orange-700 text-sm">
+                              {fmt(row.due_amount)}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 whitespace-nowrap text-right">
+                            <span className="text-xs font-semibold text-red-600">
+                              {fmt(row.tds_amount)}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 whitespace-nowrap text-right">
+                            <span className="text-xs font-semibold text-slate-700">
+                              {fmt(row.transfer_amount)}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 whitespace-nowrap">
+                            <div className="flex items-center gap-1.5">
+                              <Calendar size={11} className="text-slate-300" />
+                              <span className="text-xs text-slate-600">
+                                {fmtDate(row.payment_date)}
+                              </span>
+                            </div>
+                          </td>
+                          <td className="px-4 py-3 whitespace-nowrap">
+                            <div className="flex items-center gap-1.5">
+                              <Building2 size={11} className="text-slate-300" />
+                              <span className="text-xs text-slate-600">
+                                {row.bank_name || "—"}
+                              </span>
+                            </div>
+                          </td>
+                          <td className="px-4 py-3 whitespace-nowrap">
+                            <BoolPill value={row.is_billable} />
+                          </td>
+                          <td className="px-4 py-3 whitespace-nowrap">
+                            <BoolPill
+                              value={row.petty_cash}
+                              yesLabel="CASH"
+                              noLabel="NO"
+                            />
+                          </td>
 
-                        {/* Edit button */}
-                        <td className="px-4 py-3 whitespace-nowrap">
-                          {editRow?.id === row.id ? (
-                            <div className="flex items-center gap-1">
-                              <button
-                                onClick={handleSaveEdit}
-                                disabled={savingEdit}
-                                className="flex items-center gap-1 px-2.5 py-1.5 bg-orange-600 hover:bg-orange-700 text-white rounded-lg text-[11px] font-bold transition-colors disabled:opacity-60"
+                          {/* Edit button */}
+                          <td className="px-4 py-3 whitespace-nowrap">
+                            {editRow?.id === row.id ? (
+                              <div className="flex items-center gap-1">
+                                <button
+                                  onClick={handleSaveEdit}
+                                  disabled={savingEdit}
+                                  className="flex items-center gap-1 px-2.5 py-1.5 bg-orange-600 hover:bg-orange-700 text-white rounded-lg text-[11px] font-bold transition-colors disabled:opacity-60"
+                                >
+                                  {savingEdit ? (
+                                    <Loader2 size={10} className="animate-spin" />
+                                  ) : (
+                                    <Save size={10} />
+                                  )}{" "}
+                                  Save
+                                </button>
+                                <button
+                                  onClick={() => {
+                                    setEditRow(null);
+                                    setEditForm({});
+                                  }}
+                                  className="px-2 py-1.5 border border-gray-200 text-gray-500 rounded-lg text-[11px] hover:bg-gray-50 transition-colors"
+                                >
+                                  ✕
+                                </button>
+                              </div>
+                            ) : locked ? (
+                              <span
+                                title={LOCK_TOOLTIP}
+                                className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed select-none"
                               >
-                                {savingEdit ? (
-                                  <Loader2 size={10} className="animate-spin" />
-                                ) : (
-                                  <Save size={10} />
-                                )}{" "}
-                                Save
-                              </button>
+                                <Lock size={10} /> Edit
+                              </span>
+                            ) : canEdit ? (
                               <button
                                 onClick={() => {
-                                  setEditRow(null);
-                                  setEditForm({});
+                                  setEditRow(row);
+                                  setEditForm({
+                                    due_amount: row.due_amount,
+                                    tds_amount: row.tds_amount || 0,
+                                    payment_date: row.payment_date,
+                                    bank_id: row.bank_id,
+                                    department: row.department,
+                                    payment_description:
+                                      row.payment_description || "",
+                                    remarks: row.remarks || "",
+                                  });
                                 }}
-                                className="px-2 py-1.5 border border-gray-200 text-gray-500 rounded-lg text-[11px] hover:bg-gray-50 transition-colors"
+                                className="flex items-center gap-1 px-2.5 py-1.5 bg-orange-50 hover:bg-orange-100 text-orange-700 rounded-lg text-[11px] font-semibold border border-orange-200 transition-colors"
                               >
-                                ✕
+                                <Pencil size={10} /> Edit
                               </button>
-                            </div>
-                          ) : canEdit ? (
-                            <button
-                              onClick={() => {
-                                setEditRow(row);
-                                setEditForm({
-                                  due_amount: row.due_amount,
-                                  tds_amount: row.tds_amount || 0,
-                                  payment_date: row.payment_date,
-                                  bank_id: row.bank_id,
-                                  department: row.department,
-                                  payment_description:
-                                    row.payment_description || "",
-                                  remarks: row.remarks || "",
-                                });
-                              }}
-                              className="flex items-center gap-1 px-2.5 py-1.5 bg-orange-50 hover:bg-orange-100 text-orange-700 rounded-lg text-[11px] font-semibold border border-orange-200 transition-colors"
-                            >
-                              <Pencil size={10} /> Edit
-                            </button>
-                          ) : null}
-                        </td>
+                            ) : null}
+                          </td>
 
-                        {/* Delete button */}
-                        <td className="px-4 py-3 whitespace-nowrap">
-                          {deletingId === row.id ? (
-                            <Loader2
-                              size={14}
-                              className="animate-spin text-rose-400"
-                            />
-                          ) : canDelete ? (
-                            <button
-                              onClick={() => setConfirmRow(row)}
-                              className="flex items-center gap-1 px-2.5 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-lg text-[11px] font-semibold border border-rose-200 transition-colors"
-                            >
-                              <Trash2 size={10} /> Delete
-                            </button>
-                          ) : null}
-                        </td>
-                      </tr>
-
-                      {/* ── Inline edit form row ── */}
-                      {editRow?.id === row.id && (
-                        <tr className="bg-orange-50/90 border-b-2 border-orange-300">
-                          <td colSpan={2} />
-                          {/* Due Amount */}
-                          <td className="px-3 py-3">
-                            <label className="text-[9px] text-gray-500 font-bold uppercase block mb-1">
-                              Due Amount
-                            </label>
-                            <div className="relative">
-                              <span className="absolute left-2 top-1.5 text-gray-400 text-xs">
-                                ₹
-                              </span>
-                              <input
-                                type="number"
-                                value={editForm.due_amount}
-                                onChange={(e) => {
-                                  const d = parseFloat(e.target.value) || 0;
-                                  const t =
-                                    parseFloat(editForm.tds_amount) || 0;
-                                  setEditForm((f) => ({
-                                    ...f,
-                                    due_amount: d,
-                                    transfer_amount: Math.max(d - t, 0),
-                                  }));
-                                }}
-                                className="w-full border-2 border-orange-200 bg-white rounded-lg pl-6 pr-2 py-1.5 text-xs font-bold text-orange-800 outline-none focus:border-orange-400"
+                          {/* Delete button */}
+                          <td className="px-4 py-3 whitespace-nowrap">
+                            {deletingId === row.id ? (
+                              <Loader2
+                                size={14}
+                                className="animate-spin text-rose-400"
                               />
-                            </div>
-                          </td>
-                          {/* TDS */}
-                          <td className="px-3 py-3">
-                            <label className="text-[9px] text-gray-500 font-bold uppercase block mb-1">
-                              TDS
-                            </label>
-                            <div className="relative">
-                              <span className="absolute left-2 top-1.5 text-gray-400 text-xs">
-                                ₹
+                            ) : locked ? (
+                              <span
+                                title={LOCK_TOOLTIP}
+                                className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed select-none"
+                              >
+                                <Lock size={10} /> Delete
                               </span>
-                              <input
-                                type="number"
-                                value={editForm.tds_amount}
-                                onChange={(e) => {
-                                  const t = parseFloat(e.target.value) || 0;
-                                  const d =
-                                    parseFloat(editForm.due_amount) || 0;
-                                  setEditForm((f) => ({
-                                    ...f,
-                                    tds_amount: t,
-                                    transfer_amount: Math.max(d - t, 0),
-                                  }));
-                                }}
-                                className="w-full border-2 border-orange-200 bg-white rounded-lg pl-6 pr-2 py-1.5 text-xs font-bold text-red-700 outline-none focus:border-orange-400"
-                              />
-                            </div>
+                            ) : canDelete ? (
+                              <button
+                                onClick={() => setConfirmRow(row)}
+                                className="flex items-center gap-1 px-2.5 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-lg text-[11px] font-semibold border border-rose-200 transition-colors"
+                              >
+                                <Trash2 size={10} /> Delete
+                              </button>
+                            ) : null}
                           </td>
-                          {/* Transfer (auto) */}
-                          <td className="px-3 py-3">
-                            <label className="text-[9px] text-gray-500 font-bold uppercase block mb-1">
-                              Transfer (auto)
-                            </label>
-                            <div className="border-2 border-gray-100 bg-gray-50 rounded-lg px-2 py-1.5 text-xs font-bold text-slate-600">
-                              ₹{" "}
-                              {Number(
-                                Math.max(
-                                  (parseFloat(editForm.due_amount) || 0) -
-                                    (parseFloat(editForm.tds_amount) || 0),
-                                  0
-                                )
-                              ).toLocaleString("en-IN")}
-                            </div>
-                          </td>
-                          {/* Date */}
-                          <td className="px-3 py-3">
-                            <label className="text-[9px] text-gray-500 font-bold uppercase block mb-1">
-                              Date
-                            </label>
-                            <input
-                              type="date"
-                              value={editForm.payment_date}
-                              onChange={(e) =>
-                                setEditForm((f) => ({
-                                  ...f,
-                                  payment_date: e.target.value,
-                                }))
-                              }
-                              className="w-full border-2 border-orange-200 bg-white rounded-lg px-2 py-1.5 text-xs text-gray-700 outline-none focus:border-orange-400"
-                            />
-                          </td>
-                          {/* Bank */}
-                          <td className="px-3 py-3">
-                            <label className="text-[9px] text-gray-500 font-bold uppercase block mb-1">
-                              Bank
-                            </label>
-                            <select
-                              value={editForm.bank_id || ""}
-                              onChange={(e) =>
-                                setEditForm((f) => ({
-                                  ...f,
-                                  bank_id: e.target.value,
-                                }))
-                              }
-                              className="w-full border-2 border-orange-200 bg-white rounded-lg px-2 py-1.5 text-xs text-gray-700 outline-none focus:border-orange-400"
-                            >
-                              <option value="">Select bank</option>
-                              {banks.map((b) => (
-                                <option key={b.id} value={b.id}>
-                                  {b.bank_name}
-                                </option>
-                              ))}
-                            </select>
-                          </td>
-                          {/* Department */}
-                          <td className="px-3 py-3">
-                            <label className="text-[9px] text-gray-500 font-bold uppercase block mb-1">
-                              Department
-                            </label>
-                            <select
-                              value={editForm.department || ""}
-                              onChange={(e) =>
-                                setEditForm((f) => ({
-                                  ...f,
-                                  department: e.target.value,
-                                }))
-                              }
-                              className="w-full border-2 border-orange-200 bg-white rounded-lg px-2 py-1.5 text-xs text-gray-700 outline-none focus:border-orange-400"
-                            >
-                              <option value="">Select dept</option>
-                              {DEPT_OPTIONS.map((d) => (
-                                <option key={d} value={d}>
-                                  {d}
-                                </option>
-                              ))}
-                            </select>
-                          </td>
-                          {/* Description */}
-                          <td colSpan={2} className="px-3 py-3">
-                            <label className="text-[9px] text-gray-500 font-bold uppercase block mb-1">
-                              Description / Remarks
-                            </label>
-                            <input
-                              type="text"
-                              value={
-                                editForm.payment_description ||
-                                editForm.remarks ||
-                                ""
-                              }
-                              onChange={(e) =>
-                                setEditForm((f) => ({
-                                  ...f,
-                                  payment_description: e.target.value,
-                                  remarks: e.target.value,
-                                }))
-                              }
-                              placeholder="Optional description..."
-                              className="w-full border-2 border-orange-200 bg-white rounded-lg px-2 py-1.5 text-xs text-gray-700 outline-none focus:border-orange-400"
-                            />
-                          </td>
-                          <td colSpan={4} />
                         </tr>
-                      )}
-                    </React.Fragment>
-                  ))}
+
+                        {/* ── Inline edit form row ── */}
+                        {editRow?.id === row.id && (
+                          <tr className="bg-orange-50/90 border-b-2 border-orange-300">
+                            <td colSpan={2} />
+                            {/* Due Amount */}
+                            <td className="px-3 py-3">
+                              <label className="text-[9px] text-gray-500 font-bold uppercase block mb-1">
+                                Due Amount
+                              </label>
+                              <div className="relative">
+                                <span className="absolute left-2 top-1.5 text-gray-400 text-xs">
+                                  ₹
+                                </span>
+                                <input
+                                  type="number"
+                                  value={editForm.due_amount}
+                                  onChange={(e) => {
+                                    const d = parseFloat(e.target.value) || 0;
+                                    const t =
+                                      parseFloat(editForm.tds_amount) || 0;
+                                    setEditForm((f) => ({
+                                      ...f,
+                                      due_amount: d,
+                                      transfer_amount: Math.max(d - t, 0),
+                                    }));
+                                  }}
+                                  className="w-full border-2 border-orange-200 bg-white rounded-lg pl-6 pr-2 py-1.5 text-xs font-bold text-orange-800 outline-none focus:border-orange-400"
+                                />
+                              </div>
+                            </td>
+                            {/* TDS */}
+                            <td className="px-3 py-3">
+                              <label className="text-[9px] text-gray-500 font-bold uppercase block mb-1">
+                                TDS
+                              </label>
+                              <div className="relative">
+                                <span className="absolute left-2 top-1.5 text-gray-400 text-xs">
+                                  ₹
+                                </span>
+                                <input
+                                  type="number"
+                                  value={editForm.tds_amount}
+                                  onChange={(e) => {
+                                    const t = parseFloat(e.target.value) || 0;
+                                    const d =
+                                      parseFloat(editForm.due_amount) || 0;
+                                    setEditForm((f) => ({
+                                      ...f,
+                                      tds_amount: t,
+                                      transfer_amount: Math.max(d - t, 0),
+                                    }));
+                                  }}
+                                  className="w-full border-2 border-orange-200 bg-white rounded-lg pl-6 pr-2 py-1.5 text-xs font-bold text-red-700 outline-none focus:border-orange-400"
+                                />
+                              </div>
+                            </td>
+                            {/* Transfer (auto) */}
+                            <td className="px-3 py-3">
+                              <label className="text-[9px] text-gray-500 font-bold uppercase block mb-1">
+                                Transfer (auto)
+                              </label>
+                              <div className="border-2 border-gray-100 bg-gray-50 rounded-lg px-2 py-1.5 text-xs font-bold text-slate-600">
+                                ₹{" "}
+                                {Number(
+                                  Math.max(
+                                    (parseFloat(editForm.due_amount) || 0) -
+                                      (parseFloat(editForm.tds_amount) || 0),
+                                    0
+                                  )
+                                ).toLocaleString("en-IN")}
+                              </div>
+                            </td>
+                            {/* Date */}
+                            <td className="px-3 py-3">
+                              <label className="text-[9px] text-gray-500 font-bold uppercase block mb-1">
+                                Date
+                              </label>
+                              <input
+                                type="date"
+                                value={editForm.payment_date}
+                                onChange={(e) =>
+                                  setEditForm((f) => ({
+                                    ...f,
+                                    payment_date: e.target.value,
+                                  }))
+                                }
+                                className="w-full border-2 border-orange-200 bg-white rounded-lg px-2 py-1.5 text-xs text-gray-700 outline-none focus:border-orange-400"
+                              />
+                            </td>
+                            {/* Bank */}
+                            <td className="px-3 py-3">
+                              <label className="text-[9px] text-gray-500 font-bold uppercase block mb-1">
+                                Bank
+                              </label>
+                              <select
+                                value={editForm.bank_id || ""}
+                                onChange={(e) =>
+                                  setEditForm((f) => ({
+                                    ...f,
+                                    bank_id: e.target.value,
+                                  }))
+                                }
+                                className="w-full border-2 border-orange-200 bg-white rounded-lg px-2 py-1.5 text-xs text-gray-700 outline-none focus:border-orange-400"
+                              >
+                                <option value="">Select bank</option>
+                                {banks.map((b) => (
+                                  <option key={b.id} value={b.id}>
+                                    {b.bank_name}
+                                  </option>
+                                ))}
+                              </select>
+                            </td>
+                            {/* Department */}
+                            <td className="px-3 py-3">
+                              <label className="text-[9px] text-gray-500 font-bold uppercase block mb-1">
+                                Department
+                              </label>
+                              <select
+                                value={editForm.department || ""}
+                                onChange={(e) =>
+                                  setEditForm((f) => ({
+                                    ...f,
+                                    department: e.target.value,
+                                  }))
+                                }
+                                className="w-full border-2 border-orange-200 bg-white rounded-lg px-2 py-1.5 text-xs text-gray-700 outline-none focus:border-orange-400"
+                              >
+                                <option value="">Select dept</option>
+                                {DEPT_OPTIONS.map((d) => (
+                                  <option key={d} value={d}>
+                                    {d}
+                                  </option>
+                                ))}
+                              </select>
+                            </td>
+                            {/* Description */}
+                            <td colSpan={2} className="px-3 py-3">
+                              <label className="text-[9px] text-gray-500 font-bold uppercase block mb-1">
+                                Description / Remarks
+                              </label>
+                              <input
+                                type="text"
+                                value={
+                                  editForm.payment_description ||
+                                  editForm.remarks ||
+                                  ""
+                                }
+                                onChange={(e) =>
+                                  setEditForm((f) => ({
+                                    ...f,
+                                    payment_description: e.target.value,
+                                    remarks: e.target.value,
+                                  }))
+                                }
+                                placeholder="Optional description..."
+                                className="w-full border-2 border-orange-200 bg-white rounded-lg px-2 py-1.5 text-xs text-gray-700 outline-none focus:border-orange-400"
+                              />
+                            </td>
+                            <td colSpan={4} />
+                          </tr>
+                        )}
+                      </React.Fragment>
+                    );
+                  })}
                 </tbody>
                 <tfoot className="sticky bottom-0">
                   <tr style={{ background: "#431407" }}>

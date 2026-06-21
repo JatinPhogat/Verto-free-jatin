@@ -2,7 +2,8 @@ import { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Plus, Search, Edit2, Trash2, X, Save, Eye,
-  CreditCard, TrendingUp, AlertCircle, DollarSign
+  CreditCard, TrendingUp, AlertCircle, DollarSign,
+  Lock
 } from "lucide-react";
 import supabase from "../../lib/supabaseClient";
 import { usePerms } from "../../context/PermissionsContext";
@@ -49,6 +50,14 @@ function fmt(n) {
   return `₹${parseFloat(n || 0).toLocaleString("en-IN", { minimumFractionDigits: 0 })}`;
 }
 
+const isLocked = (dateStr) => {
+  if (!dateStr) return false;
+  const rowDate = new Date(dateStr);
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - 45);
+  return rowDate < cutoff;
+};
+
 function GoldStatCard({ label, value, icon: Icon }) {
   return (
     <div className="rounded-2xl p-5 border border-yellow-700/30 flex items-center gap-4 shadow-sm"
@@ -66,7 +75,7 @@ function GoldStatCard({ label, value, icon: Icon }) {
 }
 
 export default function CreditCardTracker() {
-  const { isIntern } = usePerms?.() || {};
+  const { isIntern, role } = usePerms?.() || {};
   const [cards, setCards] = useState([]);
   const [bills, setBills] = useState([]);
   const [billDetails, setBillDetails] = useState([]);
@@ -361,9 +370,29 @@ export default function CreditCardTracker() {
                   <td className="px-4 py-3 text-gray-400">{c.payment_date}</td>
                   <td className="px-4 py-3">
                     <div className="flex gap-2">
-                      <button onClick={() => openEditCard(c)} className="p-1.5 rounded-lg transition-colors" style={{ background: "#2a1f00", color: "#d97706" }}><Edit2 className="w-3.5 h-3.5" /></button>
+                      {isLocked(c.billing_cycle_from) && role !== "admin" ? (
+                        <button
+                          disabled
+                          className="p-1.5 rounded-lg bg-slate-900/30 text-slate-500 cursor-not-allowed"
+                          title="Locked — entries older than 45 days can only be edited by an Admin."
+                        >
+                          <Lock className="w-3.5 h-3.5" />
+                        </button>
+                      ) : (
+                        <button onClick={() => openEditCard(c)} className="p-1.5 rounded-lg transition-colors" style={{ background: "#2a1f00", color: "#d97706" }}><Edit2 className="w-3.5 h-3.5" /></button>
+                      )}
                       {!isIntern && (
-                        <button onClick={() => setDeleteTarget({ type: "card", id: c.id })} className="p-1.5 rounded-lg bg-red-900/30 text-red-400 hover:bg-red-900/50 transition-colors"><Trash2 className="w-3.5 h-3.5" /></button>
+                        isLocked(c.billing_cycle_from) && role !== "admin" ? (
+                          <button
+                            disabled
+                            className="p-1.5 rounded-lg bg-slate-900/30 text-slate-500 cursor-not-allowed"
+                            title="Locked — entries older than 45 days can only be deleted by an Admin."
+                          >
+                            <Lock className="w-3.5 h-3.5" />
+                          </button>
+                        ) : (
+                          <button onClick={() => setDeleteTarget({ type: "card", id: c.id })} className="p-1.5 rounded-lg bg-red-900/30 text-red-400 hover:bg-red-900/50 transition-colors"><Trash2 className="w-3.5 h-3.5" /></button>
+                        )
                       )}
                     </div>
                   </td>
@@ -468,9 +497,29 @@ export default function CreditCardTracker() {
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex gap-2">
-                        <button onClick={() => openEditBill(b)} className="p-1.5 rounded-lg transition-colors" style={{ background: "#2a1f00", color: "#d97706" }}><Edit2 className="w-3.5 h-3.5" /></button>
+                        {isLocked(b.bill_date) && role !== "admin" ? (
+                          <button
+                            disabled
+                            className="p-1.5 rounded-lg bg-slate-900/30 text-slate-500 cursor-not-allowed"
+                            title="Locked — entries older than 45 days can only be edited by an Admin."
+                          >
+                            <Lock className="w-3.5 h-3.5" />
+                          </button>
+                        ) : (
+                          <button onClick={() => openEditBill(b)} className="p-1.5 rounded-lg transition-colors" style={{ background: "#2a1f00", color: "#d97706" }}><Edit2 className="w-3.5 h-3.5" /></button>
+                        )}
                         {!isIntern && (
-                          <button onClick={() => setDeleteTarget({ type: "bill", id: b.id })} className="p-1.5 rounded-lg bg-red-900/30 text-red-400 hover:bg-red-900/50 transition-colors"><Trash2 className="w-3.5 h-3.5" /></button>
+                          isLocked(b.bill_date) && role !== "admin" ? (
+                            <button
+                              disabled
+                              className="p-1.5 rounded-lg bg-slate-900/30 text-slate-500 cursor-not-allowed"
+                              title="Locked — entries older than 45 days can only be deleted by an Admin."
+                            >
+                              <Lock className="w-3.5 h-3.5" />
+                            </button>
+                          ) : (
+                            <button onClick={() => setDeleteTarget({ type: "bill", id: b.id })} className="p-1.5 rounded-lg bg-red-900/30 text-red-400 hover:bg-red-900/50 transition-colors"><Trash2 className="w-3.5 h-3.5" /></button>
+                          )
                         )}
                       </div>
                     </td>
@@ -801,9 +850,29 @@ export default function CreditCardTracker() {
                         </td>
                         <td className="px-4 py-3">
                           <div className="flex gap-2">
-                            <button onClick={() => startEditDetail(d)} className="p-1.5 rounded-lg transition-colors" style={{ background: "#2a1f00", color: "#d97706" }}><Edit2 className="w-3.5 h-3.5" /></button>
+                            {isLocked(d.date_of_expense) && role !== "admin" ? (
+                              <button
+                                disabled
+                                className="p-1.5 rounded-lg bg-slate-900/30 text-slate-500 cursor-not-allowed"
+                                title="Locked — entries older than 45 days can only be edited by an Admin."
+                              >
+                                <Lock className="w-3.5 h-3.5" />
+                              </button>
+                            ) : (
+                              <button onClick={() => startEditDetail(d)} className="p-1.5 rounded-lg transition-colors" style={{ background: "#2a1f00", color: "#d97706" }}><Edit2 className="w-3.5 h-3.5" /></button>
+                            )}
                             {!isIntern && (
-                              <button onClick={() => setDeleteTarget({ type: "detail", id: d.id })} className="p-1.5 rounded-lg bg-red-900/30 text-red-400 hover:bg-red-900/50 transition-colors"><Trash2 className="w-3.5 h-3.5" /></button>
+                              isLocked(d.date_of_expense) && role !== "admin" ? (
+                                <button
+                                  disabled
+                                  className="p-1.5 rounded-lg bg-slate-900/30 text-slate-500 cursor-not-allowed"
+                                  title="Locked — entries older than 45 days can only be deleted by an Admin."
+                                >
+                                  <Lock className="w-3.5 h-3.5" />
+                                </button>
+                              ) : (
+                                <button onClick={() => setDeleteTarget({ type: "detail", id: d.id })} className="p-1.5 rounded-lg bg-red-900/30 text-red-400 hover:bg-red-900/50 transition-colors"><Trash2 className="w-3.5 h-3.5" /></button>
+                              )
                             )}
                           </div>
                         </td>

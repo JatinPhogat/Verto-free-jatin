@@ -6,7 +6,8 @@ import {
   TrendingUp, AlertCircle, CheckCircle2, Clock,
   Upload, Download, ChevronRight, ChevronDown,
   FileSpreadsheet, AlertTriangle, XCircle, CheckCheck,
-  Loader2, Eye
+  Loader2, Eye,
+  Lock
 } from "lucide-react";
 import supabase from "../../lib/supabaseClient";
 import { logExport, EXPORT_ACTIONS } from "../../utils/Auditlog.js";
@@ -60,6 +61,14 @@ const fmt = (n) =>
 
 const fmtDate = (d) =>
   d ? new Date(d).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }) : "—";
+
+const isLocked = (dateStr) => {
+  if (!dateStr) return false;
+  const rowDate = new Date(dateStr);
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - 45);
+  return rowDate < cutoff;
+};
 
 // ─── Download template ────────────────────────────────────────────────────────
 const downloadTemplate = () => {
@@ -158,7 +167,7 @@ const BulkResultModal = ({ result, onClose }) => {
 
 // ─── Inline Edit Row Form (inside BulkDetailModal) ────────────────────────────
 const InlineEditRow = ({ row, onSave, onCancel }) => {
-  const { isIntern } = usePerms?.() || {};
+  const { isIntern, role } = usePerms?.() || {};
   const [f, setF] = useState({
     client_name: row.client_name || "",
     ledger_name: row.ledger_name || "",
@@ -296,7 +305,7 @@ const InlineEditRow = ({ row, onSave, onCancel }) => {
 
 // ─── Bulk Upload Row Modal (drill-down) ───────────────────────────────────────
 const BulkDetailModal = ({ upload, onClose, onDataChanged }) => {
-  const { isIntern } = usePerms?.() || {};
+  const { isIntern, role } = usePerms?.() || {};
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [editingRowId, setEditingRowId] = useState(null);
@@ -465,20 +474,40 @@ const BulkDetailModal = ({ upload, onClose, onDataChanged }) => {
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-1.5">
                           {!isIntern && (
-                            <button
-                              onClick={() => setEditingRowId(r.id)}
-                              className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-orange-100 hover:bg-orange-200 text-orange-700 text-xs font-semibold transition"
-                            >
-                              <Edit2 className="w-3.5 h-3.5" /> Edit
-                            </button>
+                            isLocked(r.date) && role !== "admin" ? (
+                              <button
+                                disabled
+                                className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-slate-100 text-slate-400 text-xs font-semibold cursor-not-allowed"
+                                title="Locked — entries older than 45 days can only be edited by an Admin."
+                              >
+                                <Lock className="w-3.5 h-3.5" /> Edit
+                              </button>
+                            ) : (
+                              <button
+                                onClick={() => setEditingRowId(r.id)}
+                                className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-orange-100 hover:bg-orange-200 text-orange-700 text-xs font-semibold transition"
+                              >
+                                <Edit2 className="w-3.5 h-3.5" /> Edit
+                              </button>
+                            )
                           )}
                           {!isIntern && (
-                            <button
-                              onClick={() => setConfirmDeleteId(r.id)}
-                              className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-red-100 hover:bg-red-200 text-red-600 text-xs font-semibold transition"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" /> Delete
-                            </button>
+                            isLocked(r.date) && role !== "admin" ? (
+                              <button
+                                disabled
+                                className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-slate-100 text-slate-400 text-xs font-semibold cursor-not-allowed"
+                                title="Locked — entries older than 45 days can only be deleted by an Admin."
+                              >
+                                <Lock className="w-3.5 h-3.5" /> Delete
+                              </button>
+                            ) : (
+                              <button
+                                onClick={() => setConfirmDeleteId(r.id)}
+                                className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-red-100 hover:bg-red-200 text-red-600 text-xs font-semibold transition"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" /> Delete
+                              </button>
+                            )
                           )}
                         </div>
                       </td>
@@ -530,7 +559,7 @@ const BulkDetailModal = ({ upload, onClose, onDataChanged }) => {
 
 // ─── MAIN COMPONENT ───────────────────────────────────────────────────────────
 export default function ClientAdvanceTracker() {
-  const { isIntern } = usePerms?.() || {};
+  const { isIntern, role } = usePerms?.() || {};
   const [records, setRecords]         = useState([]);
   const [bulkUploads, setBulkUploads] = useState([]);
   const [loading, setLoading]         = useState(true);
@@ -988,9 +1017,29 @@ export default function ClientAdvanceTracker() {
                       <td className="px-4 py-3.5 text-gray-500 max-w-[140px] truncate">{r.remarks || "—"}</td>
                       <td className="px-4 py-3.5">
                         <div className="flex gap-2">
-                          <button onClick={() => openEdit(r)} className="p-1.5 rounded-lg bg-orange-100 hover:bg-orange-200 text-orange-700 transition-colors"><Edit2 className="w-3.5 h-3.5" /></button>
+                          {isLocked(r.date) && role !== "admin" ? (
+                            <button
+                              disabled
+                              className="p-1.5 rounded-lg bg-slate-100 text-slate-400 cursor-not-allowed"
+                              title="Locked — entries older than 45 days can only be edited by an Admin."
+                            >
+                              <Lock className="w-3.5 h-3.5" />
+                            </button>
+                          ) : (
+                            <button onClick={() => openEdit(r)} className="p-1.5 rounded-lg bg-orange-100 hover:bg-orange-200 text-orange-700 transition-colors"><Edit2 className="w-3.5 h-3.5" /></button>
+                          )}
                           {!isIntern && (
-                            <button onClick={() => setDeleteId(r.id)} className="p-1.5 rounded-lg bg-red-100 hover:bg-red-200 text-red-600 transition-colors"><Trash2 className="w-3.5 h-3.5" /></button>
+                            isLocked(r.date) && role !== "admin" ? (
+                              <button
+                                disabled
+                                className="p-1.5 rounded-lg bg-slate-100 text-slate-400 cursor-not-allowed"
+                                title="Locked — entries older than 45 days can only be deleted by an Admin."
+                              >
+                                <Lock className="w-3.5 h-3.5" />
+                              </button>
+                            ) : (
+                              <button onClick={() => setDeleteId(r.id)} className="p-1.5 rounded-lg bg-red-100 hover:bg-red-200 text-red-600 transition-colors"><Trash2 className="w-3.5 h-3.5" /></button>
+                            )
                           )}
                         </div>
                       </td>

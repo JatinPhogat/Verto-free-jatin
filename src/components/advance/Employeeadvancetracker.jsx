@@ -2,7 +2,8 @@ import { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Plus, Search, Edit2, Trash2, X, Save,
-  TrendingUp, AlertCircle, CheckCircle2, Clock, Upload, FileSpreadsheet
+  TrendingUp, AlertCircle, CheckCircle2, Clock, Upload, FileSpreadsheet,
+  Lock
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import supabase from "../../lib/supabaseClient";
@@ -37,7 +38,7 @@ function StatCard({ label, value, icon: Icon, color, bg }) {
 }
 
 export default function EmployeeAdvanceTracker() {
-  const { isIntern } = usePerms?.() || {};
+  const { isIntern, role } = usePerms?.() || {};
   const [records, setRecords] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
@@ -106,6 +107,14 @@ export default function EmployeeAdvanceTracker() {
       (parseFloat(paidBack) || 0)
     );
   }
+
+  const isLocked = (dateStr) => {
+    if (!dateStr) return false;
+    const rowDate = new Date(dateStr);
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - 45);
+    return rowDate < cutoff;
+  };
 
   async function handleSave() {
     if (isIntern) return;
@@ -395,13 +404,33 @@ export default function EmployeeAdvanceTracker() {
                       <td className="px-4 py-3.5 text-gray-500 max-w-[140px] truncate">{r.remarks}</td>
                       <td className="px-4 py-3.5">
                         <div className="flex gap-2">
-                          <button onClick={() => openEdit(r)} className="p-1.5 rounded-lg bg-blue-100 hover:bg-blue-200 text-blue-700 transition-colors">
-                            <Edit2 className="w-3.5 h-3.5" />
-                          </button>
-                          {!isIntern && (
-                            <button onClick={() => setDeleteId(r.id)} className="p-1.5 rounded-lg bg-red-100 hover:bg-red-200 text-red-600 transition-colors">
-                              <Trash2 className="w-3.5 h-3.5" />
+                          {isLocked(r.date_of_advance) && role !== "admin" ? (
+                            <button
+                              disabled
+                              className="p-1.5 rounded-lg bg-slate-100 text-slate-400 cursor-not-allowed"
+                              title="Locked — entries older than 45 days can only be edited by an Admin."
+                            >
+                              <Lock className="w-3.5 h-3.5" />
                             </button>
+                          ) : (
+                            <button onClick={() => openEdit(r)} className="p-1.5 rounded-lg bg-blue-100 hover:bg-blue-200 text-blue-700 transition-colors">
+                              <Edit2 className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                          {!isIntern && (
+                            isLocked(r.date_of_advance) && role !== "admin" ? (
+                              <button
+                                disabled
+                                className="p-1.5 rounded-lg bg-slate-100 text-slate-400 cursor-not-allowed"
+                                title="Locked — entries older than 45 days can only be deleted by an Admin."
+                              >
+                                <Lock className="w-3.5 h-3.5" />
+                              </button>
+                            ) : (
+                              <button onClick={() => setDeleteId(r.id)} className="p-1.5 rounded-lg bg-red-100 hover:bg-red-200 text-red-600 transition-colors">
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            )
                           )}
                         </div>
                       </td>
