@@ -1106,7 +1106,7 @@ export default function AnalyticsDashboard() {
   const fI = useMemo(() => FI.filter((i) => {
     if (effFrom && i.invoice_date < effFrom) return false;
     if (effTo && i.invoice_date > effTo) return false;
-    if (filters.impactMonth && toYYYYMM(i.impact_month) !== filters.impactMonth) return false;
+    if (filters.impactMonth && toYYYYMM(i.invoice_date) !== filters.impactMonth) return false;
     if (filters.department && i.dept_name !== filters.department) return false;
     if (filters.client && i.client_name !== filters.client) return false;
     if (filters.entity && i.entity_name !== filters.entity) return false;
@@ -1196,7 +1196,7 @@ export default function AnalyticsDashboard() {
   const revenueMonthly = useMemo(() => {
     const m = {};
     fI.forEach((i) => {
-      const k = toYYYYMM(i.impact_month) || toYYYYMM(i.invoice_date);
+      const k = toYYYYMM(i.invoice_date);
       if (!k) return;
       if (!m[k]) m[k] = { x: fmtMonth(k), invoiceValue: 0, vertoFee: 0, gst: 0, tds: 0 };
       m[k].invoiceValue += Number(i.invoice_value || 0);
@@ -1400,7 +1400,7 @@ export default function AnalyticsDashboard() {
   const salaryMonthly = useMemo(() => {
     const m = {};
     fSal.forEach((s) => {
-      const k = toYYYYMM(s.month_of_pay);
+      const k = toYYYYMM(s.date_of_pay) || toYYYYMM(s.month_of_pay);
       if (!k) return;
       if (!m[k]) m[k] = { x: fmtMonth(k), salary: 0, count: 0 };
       m[k].salary += Number(s.net_payment || 0);
@@ -1648,8 +1648,7 @@ export default function AnalyticsDashboard() {
   const deptOpts = departments.map((d) => ({ value: d.dept_name, label: d.dept_name }));
   const statusOpts = [...new Set(invoices.map((i) => i.status).filter(Boolean))].map((s) => ({ value: s, label: s }));
   const payHOpts = [...new Set([...invoices.map((i) => i.pay_head), ...salaries.map((s) => s.pay_head)].filter(Boolean))].map((p) => ({ value: p, label: p }));
-  const impMonthOpts = [...new Set(invoices.map((i) => toYYYYMM(i.impact_month)).filter(Boolean))].sort().reverse().map((m) => ({ value: m, label: fmtMonth(m) }));
-
+  const impMonthOpts = [...new Set(invoices.map((i) => toYYYYMM(i.invoice_date)).filter(Boolean))].sort().reverse().map((m) => ({ value: m, label: fmtMonth(m) }));
   if (loading) return (
     <div className="flex items-center justify-center h-64">
       <div className="flex flex-col items-center gap-3">
@@ -1714,7 +1713,7 @@ export default function AnalyticsDashboard() {
               <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Date To</label>
               <input type="date" value={filters.dateTo} onChange={(e) => setF("dateTo", e.target.value)} className="w-full border border-slate-200 rounded-xl px-3 py-2 text-xs font-medium text-slate-700 focus:outline-none focus:border-slate-400" />
             </div>
-            <FS label="Impact Month" value={filters.impactMonth} onChange={(v) => setF("impactMonth", v)} options={impMonthOpts} />
+            <FS label="Invoice Month" value={filters.impactMonth} onChange={(v) => setF("impactMonth", v)} options={impMonthOpts} />
             <FS label="Department" value={filters.department} onChange={(v) => setF("department", v)} options={deptOpts} />
             <FS label="Client" value={filters.client} onChange={(v) => setF("client", v)} options={clientOpts} />
             <FS label="Entity" value={filters.entity} onChange={(v) => setF("entity", v)} options={entityOpts} />

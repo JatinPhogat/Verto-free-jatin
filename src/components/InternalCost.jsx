@@ -263,7 +263,7 @@ const CostLogicDrawer = ({ row, onClose }) => {
               ₹{inr(row.total_employee_cost)}
             </p>
             <p className="text-xs text-indigo-500 mt-1">
-            CTC + Variable + PF + ESI + Bonus + Reimb + Other
+              CTC + Variable + PF + ESI + Bonus + Reimb + Other
             </p>
           </div>
 
@@ -443,17 +443,13 @@ const InternalCost = () => {
 
       // Fetch employee_expense_payouts for the same period
       // Include dept_code via departments_master for correct matching
-      let payoutsQuery = supabase
-        .from("employee_expense_payouts")
-        .select(
-          `
-          emp_code, pay_head, net_payment, payment_amount, month_of_pay,
+      let payoutsQuery = supabase.from("employee_expense_payouts").select(
+        `emp_code, pay_head, net_payment, payment_amount, month_of_pay, date_of_pay,
           department_id,
-          departments_master ( dept_name, dept_code )
-        `
-        );
-      if (fromDate) payoutsQuery = payoutsQuery.gte("month_of_pay", fromDate);
-      if (toDate) payoutsQuery = payoutsQuery.lte("month_of_pay", toDate);
+          departments_master ( dept_name, dept_code )`
+      );
+      if (fromDate) payoutsQuery = payoutsQuery.gte("date_of_pay", fromDate);
+      if (toDate) payoutsQuery = payoutsQuery.lte("date_of_pay", toDate);
       const { data: payouts, error: payErr } = await payoutsQuery;
 
       if (payErr) throw payErr;
@@ -507,7 +503,10 @@ const InternalCost = () => {
           key,
           month: fmt(row.sel_year, row.sel_month),
           // ✅ FIX: Store as YYYY-MM string instead of Date object
-          month_date: `${row.sel_year}-${String(row.sel_month).padStart(2, "0")}`,
+          month_date: `${row.sel_year}-${String(row.sel_month).padStart(
+            2,
+            "0"
+          )}`,
           sel_year: row.sel_year,
           sel_month: row.sel_month,
           dept: row.department,
@@ -543,15 +542,16 @@ const InternalCost = () => {
       g.rec_cost += Number(row.rec_cost || 0);
       g.temp_cost += Number(row.temp_cost || 0);
       g.projects_cost += Number(row.projects_cost || 0);
-      
+
       // Use final_salary_due from employee_salary_due_view if available
       // fall back to ctc + variable (system calculated)
       const empCode = row.emp_code;
       const monthKey = `${empCode}_${normDate(row.month_date)}`;
       const finalDue = salaryDueLookup[monthKey];
-      g.salaryDue += finalDue !== undefined
-        ? finalDue
-        : Number(row.ctc || 0) + Number(row.variable || 0);
+      g.salaryDue +=
+        finalDue !== undefined
+          ? finalDue
+          : Number(row.ctc || 0) + Number(row.variable || 0);
     });
 
     // Add dept % averages
@@ -568,8 +568,9 @@ const InternalCost = () => {
 
     // Match payouts by month + dept (using normDept to convert dept_name → dept code)
     payoutData.forEach((p) => {
-      if (!p.month_of_pay) return;
-      const d = new Date(p.month_of_pay);
+      const payDate = p.date_of_pay || p.month_of_pay;
+      if (!payDate) return;
+      const d = new Date(payDate);
       const yr = d.getFullYear();
       const mo = d.getMonth() + 1;
 
@@ -719,10 +720,10 @@ const InternalCost = () => {
       `Internal_Cost_${new Date().toISOString().slice(0, 10)}.xlsx`
     );
     logExport({
-      action:      EXPORT_ACTIONS.EXCEL,
-      category:    "Internal Cost",
+      action: EXPORT_ACTIONS.EXCEL,
+      category: "Internal Cost",
       description: "Downloaded Internal Cost Excel",
-      meta:        { rows: rows.length },
+      meta: { rows: rows.length },
     });
   };
 
@@ -813,10 +814,10 @@ const InternalCost = () => {
 
     XLSX.writeFile(wb, "Part_B1_Upload_Template.xlsx");
     logExport({
-      action:      EXPORT_ACTIONS.TEMPLATE,
-      category:    "Internal Cost",
+      action: EXPORT_ACTIONS.TEMPLATE,
+      category: "Internal Cost",
       description: "Downloaded Part B1 Upload Template",
-      meta:        { file: "Part_B1_Upload_Template.xlsx" },
+      meta: { file: "Part_B1_Upload_Template.xlsx" },
     });
   };
 
@@ -1015,9 +1016,9 @@ const InternalCost = () => {
             />
             <button
               onClick={() =>
-                setMonthRange({ 
-                  from: getCurrentMonthStr(), 
-                  to: getCurrentMonthStr() 
+                setMonthRange({
+                  from: getCurrentMonthStr(),
+                  to: getCurrentMonthStr(),
                 })
               }
               className="px-2.5 py-2 rounded-lg border border-gray-200 bg-gray-50 text-gray-500 hover:bg-blue-50 hover:text-blue-600 hover:border-blue-200 text-xs font-semibold transition whitespace-nowrap"
@@ -1025,7 +1026,7 @@ const InternalCost = () => {
             >
               This Month
             </button>
-            {(monthRange.from !== getCurrentMonthStr() || 
+            {(monthRange.from !== getCurrentMonthStr() ||
               monthRange.to !== getCurrentMonthStr()) && (
               <button
                 onClick={() => setMonthRange({ from: "", to: "" })}
