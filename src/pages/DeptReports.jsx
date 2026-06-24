@@ -26,6 +26,10 @@ import {
   XCircle,
 } from "lucide-react";
 import * as XLSX from "xlsx";
+import {
+  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
+  Legend, ReferenceLine, ResponsiveContainer
+} from "recharts";
 
 // Reuse the same UI philosophy/components as AnalyticsDashboard
 const P = {
@@ -228,6 +232,8 @@ const DeptReports = () => {
   const [isAdmin, setIsAdmin] = useState(false);
   const [userDeptId, setUserDeptId] = useState(null);
   const [userDeptName, setUserDeptName] = useState(null);
+  // ── CHANGE 1: Add userRole state ──────────────────────────────────
+  const [userRole, setUserRole] = useState('employee');
 
   const [allDepts, setAllDepts] = useState([]);
   const [deptId, setDeptId] = useState(null); // null = All Departments
@@ -288,6 +294,8 @@ const DeptReports = () => {
       setIsAdmin(resolvedIsAdmin);
       setUserDeptName(resolvedDeptName || "(unknown)");
       setUserDeptId(resolvedDeptId);
+      // ── CHANGE 2: Capture role ──────────────────────────────────────
+      setUserRole(userInfo?.role ?? 'employee');
 
       if (resolvedIsAdmin) {
         const { data: depts } = await supabase
@@ -595,15 +603,29 @@ const DeptReports = () => {
     };
   }, [rpcBirthdays, rpcAnniversaries]);
 
-  // ── Working Capital Summary ────────────────────────────────────────────
+  // ── CHANGE 3: Replace wcSummary useMemo entirely ────────────────────
   const wcSummary = useMemo(() => {
-    const totalCash        = wcBalances.reduce((s, b) => s + Number(b.current_balance || 0), 0);
-    const totalOutstanding = wcCollections.reduce((s, c) => s + Number(c.outstanding || 0), 0);
-    const overdueCol       = wcCollections.filter(c => c.is_overdue).reduce((s, c) => s + Number(c.outstanding || 0), 0);
-    const totalPayables    = wcPayables.reduce((s, p) => s + Number(p.os_amt_difference || 0), 0);
-    const totalStatutory   = wcStatutory.reduce((s, s2) => s + Number(s2.pending_due || 0), 0);
-    const currentWeek      = wcForecast.find(f => f.week_offset === 0) || {};
-    return { totalCash, totalOutstanding, overdueCol, totalPayables, totalStatutory, currentWeek };
+    const totalCash         = wcBalances.reduce((s, b) => s + Number(b.current_balance || 0), 0);
+    const totalCollections  = wcCollections.reduce((s, c) => s + Number(c.outstanding || 0), 0);
+    const totalPayables     = wcPayables.reduce((s, p) => s + Number(p.os_amt_difference || 0), 0);
+    const totalStatutory    = wcStatutory.reduce((s, s2) => s + Number(s2.pending_due || 0), 0);
+    const projectedWC       = totalCash + totalCollections - totalPayables - totalStatutory;
+
+    // Overdue buckets
+    const overdueColItems   = wcCollections.filter(c => c.is_overdue);
+    const overdueOSItems    = wcPayables.filter(p => p.is_overdue);
+    const overdueStatItems  = wcStatutory.filter(s => s.is_overdue);
+    const overdueColAmt     = overdueColItems.reduce((s, c) => s + Number(c.outstanding || 0), 0);
+    const overdueOSAmt      = overdueOSItems.reduce((s, p) => s + Number(p.os_amt_difference || 0), 0);
+    const overdueStatAmt    = overdueStatItems.reduce((s, s2) => s + Number(s2.pending_due || 0), 0);
+
+    const currentWeek       = wcForecast.find(f => f.week_offset === 0) || {};
+    return {
+      totalCash, totalCollections, totalPayables, totalStatutory, projectedWC,
+      overdueColItems, overdueOSItems, overdueStatItems,
+      overdueColAmt, overdueOSAmt, overdueStatAmt,
+      currentWeek,
+    };
   }, [wcBalances, wcCollections, wcPayables, wcStatutory, wcForecast]);
 
   // ── Section 1 Table ─────────────────────────────────────────────────────
@@ -1553,193 +1575,283 @@ const DeptReports = () => {
           SECTION 8 — Working Capital (merged from WorkingCapital.jsx)
           ════════════════════════════════════════════════════════════ */}
 
-      <div className="flex items-center justify-between flex-wrap gap-3 mt-8">
-        <SH icon={Landmark} title="Working Capital" color={P.steel} />
-        <div className="flex items-center gap-2 mb-4">
-          {/* Bank selector */}
-          <div className="relative">
-            <select
-              value={wcSelectedBank || ""}
-              onChange={(e) => setWcSelectedBank(e.target.value || null)}
-              className="appearance-none bg-white border border-slate-200 rounded-xl px-3 py-2 pr-8 text-xs font-medium text-slate-700 focus:outline-none focus:ring-1 focus:ring-blue-200 min-w-[200px]"
-            >
-              <option value="">All Banks</option>
-              {wcBanks.map((b) => (
-                <option key={b.bank_id} value={b.bank_id}>{b.bank_name}</option>
-              ))}
-            </select>
-            <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-300 pointer-events-none" />
-          </div>
-          <button
-            onClick={() => fetchWorkingCapital(wcSelectedBank)}
-            className="p-2 rounded-lg border border-gray-200 bg-white text-gray-500 hover:bg-gray-50 transition"
-            disabled={wcLoading}
-          >
-            <RefreshCw className={`w-4 h-4 ${wcLoading ? "animate-spin" : ""}`} />
-          </button>
-        </div>
-      </div>
-
-      {/* Cash Position KPIs */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
-        <KpiCard label="Current Cash Balance"   value={fmt(wcSummary.totalCash)}        sub="Across all banks"                          icon={Landmark}     color={P.steel} highlight />
-        <KpiCard label="Expected Collections"   value={fmt(wcSummary.totalOutstanding)}  sub={`${wcCollections.length} outstanding invoices`} icon={TrendingUp}   color={P.teal} />
-        <KpiCard label="OS Payables"            value={fmt(wcSummary.totalPayables)}     sub={`${wcPayables.length} pending payouts`}    icon={TrendingUp} color={P.brick} />
-        <KpiCard label="Statutory Pending"      value={fmt(wcSummary.totalStatutory)}    sub="GST / PF / ESI / TDS"                     icon={FileText}     color={P.amber} />
-      </div>
-
-      {/* Bank-wise balance cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
-        {wcBalances.map((b) => (
-          <div key={b.bank_id} className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4">
-            <div className="flex items-start justify-between mb-2">
-              <p className="text-xs font-bold text-slate-700 leading-tight max-w-[70%]">{b.bank_name}</p>
-              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${Number(b.current_balance) > 0 ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-400"}`}>
-                {Number(b.current_balance) > 0 ? "Active" : "Zero"}
-              </span>
-            </div>
-            <p className="text-xl font-black text-slate-900">{fmt(b.current_balance)}</p>
-            <div className="mt-2 flex gap-3 text-[10px] text-slate-400">
-              <span>Opening: {fmt(b.opening_balance)}</span>
-              <span className="text-emerald-600">+{fmt(b.total_inflow)}</span>
-              <span className="text-rose-500">-{fmt(b.total_outflow)}</span>
-            </div>
-          </div>
-        ))}
-      </div>
-
-      {/* Weekly Forecast */}
-      <SH icon={TrendingUp} title="Weekly Cash Forecast" color={P.teal} />
-
-      {wcSummary.currentWeek?.week_label && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
-          <KpiCard label="Opening Cash (Current Week)"      value={fmt(wcSummary.currentWeek.opening_cash)}   sub={fmtDate(wcSummary.currentWeek.week_start)} icon={Landmark}      color={P.slate} />
-          <KpiCard label="Expected Inflow"                   value={fmt(wcSummary.currentWeek.expected_inflow)} sub="Collections due this week"                 icon={ArrowUpRight}  color={P.teal} />
-          <KpiCard label="Expected Outflow (OS+Statutory)"   value={fmt(Number(wcSummary.currentWeek.expected_outflow_os || 0) + Number(wcSummary.currentWeek.expected_outflow_statutory || 0))} sub="Payables + Statutory" icon={ArrowDownRight} color={P.brick} />
-          <KpiCard label="Projected Closing Cash"            value={fmt(wcSummary.currentWeek.closing_cash)}   sub="End of current week"                       icon={CheckCircle}   color={P.emerald} highlight />
-        </div>
-      )}
-
-      <ChartCard title="W-5 to W+10 Cash Forecast" subtitle="Weekly projected cash position">
-        {wcForecast.length === 0 ? <Empty msg="No forecast data" /> : (
-          <div className="overflow-auto">
-            <table className="w-full text-xs">
-              <thead className="sticky top-0 bg-white border-b border-slate-100">
-                <tr>
-                  {["Week","Period","Opening","Inflow","OS Outflow","Statutory","Net","Closing"].map((h, i) => (
-                    <th key={i} className={`py-2 pr-3 text-slate-400 font-semibold ${i > 1 ? "text-right" : "text-left"}`}>{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-50">
-                {wcForecast.map((w, i) => {
-                  const isCurrent = w.week_offset === 0;
-                  const isPast    = w.week_offset < 0;
-                  return (
-                    <tr key={i} className={`transition-colors ${isCurrent ? "bg-blue-50/60" : "hover:bg-slate-50/50"}`}>
-                      <td className="py-2 pr-3">
-                        <span className={`font-bold ${isCurrent ? "text-blue-600" : isPast ? "text-slate-400" : "text-slate-700"}`}>
-                          {w.week_label}
-                        </span>
-                        {isCurrent && <span className="ml-1 text-[9px] bg-blue-100 text-blue-600 px-1.5 py-0.5 rounded-full font-bold">NOW</span>}
-                      </td>
-                      <td className="py-2 pr-3 text-slate-400">{fmtDate(w.week_start)} – {fmtDate(w.week_end)}</td>
-                      <td className="py-2 pr-3 text-right text-slate-600 tabular-nums">{fmt(w.opening_cash)}</td>
-                      <td className="py-2 pr-3 text-right tabular-nums">
-                        <span className={Number(w.expected_inflow) > 0 ? "text-emerald-600 font-semibold" : "text-slate-300"}>
-                          {Number(w.expected_inflow) > 0 ? `+${fmt(w.expected_inflow)}` : "—"}
-                        </span>
-                      </td>
-                      <td className="py-2 pr-3 text-right tabular-nums">
-                        <span className={Number(w.expected_outflow_os) > 0 ? "text-rose-500 font-semibold" : "text-slate-300"}>
-                          {Number(w.expected_outflow_os) > 0 ? `-${fmt(w.expected_outflow_os)}` : "—"}
-                        </span>
-                      </td>
-                      <td className="py-2 pr-3 text-right tabular-nums">
-                        <span className={Number(w.expected_outflow_statutory) > 0 ? "text-amber-600 font-semibold" : "text-slate-300"}>
-                          {Number(w.expected_outflow_statutory) > 0 ? `-${fmt(w.expected_outflow_statutory)}` : "—"}
-                        </span>
-                      </td>
-                      <td className="py-2 pr-3 text-right tabular-nums">
-                        <span className={Number(w.net_movement) >= 0 ? "text-emerald-600 font-bold" : "text-rose-600 font-bold"}>
-                          {Number(w.net_movement) >= 0 ? `+${fmt(w.net_movement)}` : fmt(w.net_movement)}
-                        </span>
-                      </td>
-                      <td className="py-2 pr-3 text-right tabular-nums font-bold text-slate-800">{fmt(w.closing_cash)}</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </ChartCard>
-
-      {/* Outstanding Collections */}
-      <SH icon={TrendingUp} title="Outstanding Collections" color={P.teal} />
-      {wcCollections.filter(c => c.is_overdue).length > 0 && (
-        <div className="bg-rose-50 border border-rose-200 text-rose-700 rounded-2xl p-3 flex items-center gap-3">
-          <AlertTriangle className="w-4 h-4 flex-shrink-0" />
-          <p className="text-xs font-semibold">
-            {wcCollections.filter(c => c.is_overdue).length} overdue invoices totalling {fmt(wcSummary.overdueCol)}
-          </p>
-        </div>
-      )}
-      <ChartCard title="Outstanding Invoices" subtitle="Expected collections with overdue status">
-        {wcCollections.length === 0 ? <Empty msg="No outstanding collections" /> : (
-          <div className="overflow-auto" style={{ maxHeight: 340 }}>
-            <table className="w-full text-xs">
-              <thead className="sticky top-0 bg-white border-b border-slate-100">
-                <tr>
-                  {["Invoice","Client","Bank","Expected Date","Outstanding","Overdue Days","Status"].map((h, i) => (
-                    <th key={i} className={`py-2 pr-3 text-slate-400 font-semibold ${i >= 4 ? "text-right" : "text-left"}`}>{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-50">
-                {wcCollections.map((c, i) => (
-                  <tr key={i} className="hover:bg-slate-50/50 transition-colors">
-                    <td className="py-2 pr-3 font-mono text-slate-500">{c.invoice_number}</td>
-                    <td className="py-2 pr-3 font-medium text-slate-800 max-w-[160px] truncate">{c.client_name}</td>
-                    <td className="py-2 pr-3 text-slate-400 text-[10px]">{c.bank_name}</td>
-                    <td className="py-2 pr-3 text-slate-600">{fmtDate(c.expected_collection_date)}</td>
-                    <td className="py-2 pr-3 text-right font-bold text-slate-800">{fmt(c.outstanding)}</td>
-                    <td className="py-2 pr-3 text-right">
-                      <span className={c.days_overdue > 0 ? "text-rose-600 font-bold" : "text-slate-400"}>
-                        {c.days_overdue > 0 ? `${c.days_overdue}d` : "—"}
-                      </span>
-                    </td>
-                    <td className="py-2 pr-3 text-right"><WcBadge overdue={c.is_overdue} /></td>
-                  </tr>
+      {/* ── CHANGE 7: Wrap entire WC section with role check ────────── */}
+      {(isAdmin || userRole === 'manager') && (
+      <>
+        <div className="flex items-center justify-between flex-wrap gap-3 mt-8">
+          <SH icon={Landmark} title="Working Capital" color={P.steel} />
+          <div className="flex items-center gap-2 mb-4">
+            {/* Bank selector */}
+            <div className="relative">
+              <select
+                value={wcSelectedBank || ""}
+                onChange={(e) => setWcSelectedBank(e.target.value || null)}
+                className="appearance-none bg-white border border-slate-200 rounded-xl px-3 py-2 pr-8 text-xs font-medium text-slate-700 focus:outline-none focus:ring-1 focus:ring-blue-200 min-w-[200px]"
+              >
+                <option value="">All Banks</option>
+                {wcBanks.map((b) => (
+                  <option key={b.bank_id} value={b.bank_id}>{b.bank_name}</option>
                 ))}
-              </tbody>
-            </table>
+              </select>
+              <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-300 pointer-events-none" />
+            </div>
+            <button
+              onClick={() => fetchWorkingCapital(wcSelectedBank)}
+              className="p-2 rounded-lg border border-gray-200 bg-white text-gray-500 hover:bg-gray-50 transition"
+              disabled={wcLoading}
+            >
+              <RefreshCw className={`w-4 h-4 ${wcLoading ? "animate-spin" : ""}`} />
+            </button>
+          </div>
+        </div>
+
+        {/* ── CHANGE 4: Replace 4 KPI cards with 8 KPI cards ────────── */}
+        <div className="grid grid-cols-2 xl:grid-cols-4 gap-3">
+          <KpiCard label="Current Cash Position"   value={fmt(wcSummary.totalCash)}         sub="Across all banks"                              icon={Landmark}      color={P.steel}   highlight />
+          <KpiCard label="Expected Collections"    value={fmt(wcSummary.totalCollections)}   sub={`${wcCollections.length} outstanding invoices`} icon={ArrowUpRight}  color={P.teal} />
+          <KpiCard label="OS Payables"             value={fmt(wcSummary.totalPayables)}      sub={`${wcPayables.length} pending payouts`}         icon={ArrowDownRight} color={P.brick} />
+          <KpiCard label="Statutory Pending"       value={fmt(wcSummary.totalStatutory)}     sub="GST / PF / ESI / TDS"                          icon={FileText}      color={P.amber} />
+          <KpiCard label="Projected Working Capital" value={fmt(wcSummary.projectedWC)}      sub="Cash + Collections − Payables − Statutory"     icon={TrendingUp}    color={wcSummary.projectedWC >= 0 ? P.emerald : P.brick} highlight />
+          <KpiCard label="Overdue Collections"     value={fmt(wcSummary.overdueColAmt)}      sub={`${wcSummary.overdueColItems.length} invoices overdue`}  icon={AlertTriangle} color={P.brick} />
+          <KpiCard label="Overdue OS Payouts"      value={fmt(wcSummary.overdueOSAmt)}       sub={`${wcSummary.overdueOSItems.length} payouts overdue`}    icon={AlertTriangle} color={P.amber} />
+          <KpiCard label="Overdue Statutory"       value={fmt(wcSummary.overdueStatAmt)}     sub={`${wcSummary.overdueStatItems.length} records overdue`}  icon={AlertTriangle} color={P.plum} />
+        </div>
+
+        {/* Bank-wise balance cards */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
+          {wcBalances.map((b) => (
+            <div key={b.bank_id} className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4">
+              <div className="flex items-start justify-between mb-2">
+                <p className="text-xs font-bold text-slate-700 leading-tight max-w-[70%]">{b.bank_name}</p>
+                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${Number(b.current_balance) > 0 ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-400"}`}>
+                  {Number(b.current_balance) > 0 ? "Active" : "Zero"}
+                </span>
+              </div>
+              <p className="text-xl font-black text-slate-900">{fmt(b.current_balance)}</p>
+              <div className="mt-2 flex gap-3 text-[10px] text-slate-400">
+                <span>Opening: {fmt(b.opening_balance)}</span>
+                <span className="text-emerald-600">+{fmt(b.total_inflow)}</span>
+                <span className="text-rose-500">-{fmt(b.total_outflow)}</span>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* ── Line Chart — Working Capital Forecast ────────────────────── */}
+        <SH icon={TrendingUp} title="Weekly Cash Forecast" color={P.teal} />
+
+        <ChartCard title="Working Capital Forecast" subtitle="Blue = Cash Balance · Green = Inflow · Red = OS Outflow · Orange = Statutory">
+          {wcForecast.length === 0 ? <Empty msg="No forecast data" /> : (() => {
+            // ── CHANGE 5: Fix chart data mapping ──────────────────────
+            const chartData = wcForecast.map(w => ({
+              label:             w.week_label,
+              offset:            w.week_offset,
+              cash:              Number(w.closing_cash                  || 0),
+              // combine actual (past weeks) + forecast (current/future)
+              inflow:            Number(w.actual_inflow || 0) + Number(w.forecast_inflow || 0),
+              actual_inflow:     Number(w.actual_inflow                 || 0),
+              forecast_inflow:   Number(w.forecast_inflow               || 0),
+              outflow_os:        Number(w.expected_outflow_os           || 0),
+              outflow_statutory: Number(w.expected_outflow_statutory    || 0),
+              actual_outflow:    Number(w.actual_outflow                || 0),
+              opening:           Number(w.opening_cash                  || 0),
+              net:               Number(w.net_movement                  || 0),
+              period:            `${fmtDate(w.week_start)} – ${fmtDate(w.week_end)}`,
+              isCurrent:         w.week_offset === 0,
+              isPast:            w.week_offset < 0,
+            }));
+
+            const fmtAxis = (v) => {
+              if (Math.abs(v) >= 1e7) return `₹${(v/1e7).toFixed(1)}Cr`;
+              if (Math.abs(v) >= 1e5) return `₹${(v/1e5).toFixed(1)}L`;
+              if (Math.abs(v) >= 1e3) return `₹${(v/1e3).toFixed(0)}K`;
+              return `₹${v}`;
+            };
+
+            const CustomTooltip = ({ active, payload, label }) => {
+              if (!active || !payload?.length) return null;
+              const d = payload[0]?.payload;
+              return (
+                <div className="bg-white border border-slate-200 rounded-xl shadow-lg p-3 text-xs min-w-[220px]">
+                  <p className="font-bold text-slate-800 mb-1">{label}</p>
+                  <p className="text-[10px] text-slate-400 mb-2">{d?.period}</p>
+                  <div className="space-y-1 border-t border-slate-100 pt-2">
+                    {[
+                      { label: "Opening Cash", value: d?.opening,           color: "#94a3b8" },
+                      { label: "Inflow",       value: d?.inflow,            color: "#2F8577" },
+                      { label: "OS Outflow",   value: d?.outflow_os,        color: "#B14B3F" },
+                      { label: "Statutory",    value: d?.outflow_statutory, color: "#C08A3E" },
+                      { label: "Net Movement", value: d?.net,               color: d?.net >= 0 ? "#2F8577" : "#B14B3F" },
+                      { label: "Closing Cash", value: d?.cash,              color: "#3D6A91" },
+                    ].map((item, i) => (
+                      <div key={i} className="flex items-center justify-between gap-4">
+                        <div className="flex items-center gap-1.5">
+                          <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: item.color }} />
+                          <span className="text-slate-500">{item.label}</span>
+                        </div>
+                        <span className={`font-semibold tabular-nums ${item.value < 0 ? "text-rose-600" : "text-slate-800"}`}>
+                          {item.value !== 0 ? fmtAxis(item.value) : "—"}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              );
+            };
+
+            return (
+              <>
+                {/* ── Line Chart ── */}
+                <div style={{ height: 320 }}>
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart data={chartData} margin={{ top: 10, right: 20, left: 10, bottom: 5 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                      <XAxis dataKey="label" tick={{ fontSize: 10, fill: "#94a3b8" }} tickLine={false} axisLine={false} />
+                      <YAxis tickFormatter={fmtAxis} tick={{ fontSize: 10, fill: "#94a3b8" }} tickLine={false} axisLine={false} width={70} />
+                      <Tooltip content={<CustomTooltip />} />
+                      <Legend wrapperStyle={{ fontSize: 11, paddingTop: 12 }}
+                        formatter={(v) => <span style={{ color: "#64748b" }}>{v}</span>} />
+                      <ReferenceLine x="Current" stroke="#3b82f6" strokeDasharray="4 2" strokeWidth={1.5}
+                        label={{ value: "NOW", position: "top", fontSize: 9, fill: "#3b82f6", fontWeight: 700 }} />
+
+                      {/* Blue — Cash Balance */}
+                      <Line type="monotone" dataKey="cash" name="Cash Balance" stroke="#3D6A91" strokeWidth={2.5}
+                        dot={(props) => {
+                          const { cx, cy, payload } = props;
+                          return <circle key={`c-${payload.label}`} cx={cx} cy={cy} r={payload.isCurrent ? 5 : 3}
+                            fill={payload.isCurrent ? "#3D6A91" : "#fff"} stroke="#3D6A91" strokeWidth={2} />;
+                        }}
+                        activeDot={{ r: 6, fill: "#3D6A91" }} />
+
+                      {/* Green — Inflow */}
+                      <Line type="monotone" dataKey="inflow" name="Expected Inflow" stroke="#2F8577" strokeWidth={2}
+                        dot={(props) => {
+                          const { cx, cy, payload } = props;
+                          if (!payload.inflow) return <g key={`i-${payload.label}`} />;
+                          return <circle key={`i-${payload.label}`} cx={cx} cy={cy} r={5} fill="#2F8577" stroke="#fff" strokeWidth={2} />;
+                        }}
+                        activeDot={{ r: 6, fill: "#2F8577" }} />
+
+                      {/* Red — OS Outflow */}
+                      <Line type="monotone" dataKey="outflow_os" name="OS Outflow" stroke="#B14B3F" strokeWidth={2}
+                        dot={(props) => {
+                          const { cx, cy, payload } = props;
+                          if (!payload.outflow_os) return <g key={`o-${payload.label}`} />;
+                          return <circle key={`o-${payload.label}`} cx={cx} cy={cy} r={5} fill="#B14B3F" stroke="#fff" strokeWidth={2} />;
+                        }}
+                        activeDot={{ r: 6, fill: "#B14B3F" }} />
+
+                      {/* Orange — Statutory */}
+                      <Line type="monotone" dataKey="outflow_statutory" name="Statutory" stroke="#C08A3E" strokeWidth={2}
+                        dot={(props) => {
+                          const { cx, cy, payload } = props;
+                          if (!payload.outflow_statutory) return <g key={`s-${payload.label}`} />;
+                          return <circle key={`s-${payload.label}`} cx={cx} cy={cy} r={5} fill="#C08A3E" stroke="#fff" strokeWidth={2} />;
+                        }}
+                        activeDot={{ r: 6, fill: "#C08A3E" }} />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+
+                {/* ── Detail Table below chart ── */}
+                <div className="overflow-auto mt-4 border-t border-slate-100 pt-4">
+                  <table className="w-full text-xs">
+                    <thead className="sticky top-0 bg-white border-b border-slate-100">
+                      <tr>
+                        {["Week","Period","Opening","Inflow","OS Outflow","Statutory","Net","Closing"].map((h, i) => (
+                          <th key={i} className={`py-2 pr-3 text-slate-400 font-semibold ${i > 1 ? "text-right" : "text-left"}`}>{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-50">
+                      {wcForecast.map((w, i) => {
+                        const isCurrent = w.week_offset === 0;
+                        const isPast    = w.week_offset < 0;
+                        return (
+                          <tr key={i} className={`transition-colors ${isCurrent ? "bg-blue-50/60" : "hover:bg-slate-50/50"}`}>
+                            <td className="py-2 pr-3">
+                              <span className={`font-bold ${isCurrent ? "text-blue-600" : isPast ? "text-slate-400" : "text-slate-700"}`}>
+                                {w.week_label}
+                              </span>
+                              {isCurrent && <span className="ml-1 text-[9px] bg-blue-100 text-blue-600 px-1.5 py-0.5 rounded-full font-bold">NOW</span>}
+                            </td>
+                            <td className="py-2 pr-3 text-slate-400">{fmtDate(w.week_start)} – {fmtDate(w.week_end)}</td>
+                            <td className="py-2 pr-3 text-right tabular-nums text-slate-600">{fmt(w.opening_cash)}</td>
+                            {/* ── CHANGE 6: Fix inflow cell with actual+forecast ── */}
+                            <td className="py-2 pr-3 text-right tabular-nums">
+                              {(() => {
+                                const totalIn = Number(w.actual_inflow || 0) + Number(w.forecast_inflow || 0);
+                                const isActual = w.week_offset < 0;
+                                return totalIn > 0
+                                  ? <span className="text-emerald-600 font-semibold">
+                                      +{fmt(totalIn)}
+                                      {isActual && <span className="ml-1 text-[9px] bg-slate-100 text-slate-500 px-1 rounded">actual</span>}
+                                    </span>
+                                  : <span className="text-slate-300">—</span>;
+                              })()}
+                            </td>
+                            <td className="py-2 pr-3 text-right tabular-nums">
+                              <span className={Number(w.expected_outflow_os) > 0 ? "text-rose-500 font-semibold" : "text-slate-300"}>
+                                {Number(w.expected_outflow_os) > 0 ? `-${fmt(w.expected_outflow_os)}` : "—"}
+                              </span>
+                            </td>
+                            <td className="py-2 pr-3 text-right tabular-nums">
+                              <span className={Number(w.expected_outflow_statutory) > 0 ? "text-amber-600 font-semibold" : "text-slate-300"}>
+                                {Number(w.expected_outflow_statutory) > 0 ? `-${fmt(w.expected_outflow_statutory)}` : "—"}
+                              </span>
+                            </td>
+                            <td className="py-2 pr-3 text-right tabular-nums">
+                              <span className={Number(w.net_movement) >= 0 ? "text-emerald-600 font-bold" : "text-rose-600 font-bold"}>
+                                {Number(w.net_movement) >= 0 ? `+${fmt(w.net_movement)}` : fmt(w.net_movement)}
+                              </span>
+                            </td>
+                            <td className="py-2 pr-3 text-right tabular-nums font-bold text-slate-800">{fmt(w.closing_cash)}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </>
+            );
+          })()}
+        </ChartCard>
+
+        {/* Outstanding Collections */}
+        <SH icon={TrendingUp} title="Outstanding Collections" color={P.teal} />
+        {wcCollections.filter(c => c.is_overdue).length > 0 && (
+          <div className="bg-rose-50 border border-rose-200 text-rose-700 rounded-2xl p-3 flex items-center gap-3">
+            <AlertTriangle className="w-4 h-4 flex-shrink-0" />
+            <p className="text-xs font-semibold">
+              {wcCollections.filter(c => c.is_overdue).length} overdue invoices totalling {fmt(wcSummary.overdueColAmt)}
+            </p>
           </div>
         )}
-      </ChartCard>
-
-      {/* Payables & Statutory */}
-      <SH icon={TrendingUp} title="Payables & Statutory" color={P.brick} />
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <ChartCard title="OS Payables" subtitle="Pending payout obligations">
-          {wcPayables.length === 0 ? <Empty msg="No OS payables" /> : (
-            <div className="overflow-auto" style={{ maxHeight: 320 }}>
+        <ChartCard title="Outstanding Invoices" subtitle="Expected collections with overdue status">
+          {wcCollections.length === 0 ? <Empty msg="No outstanding collections" /> : (
+            <div className="overflow-auto" style={{ maxHeight: 340 }}>
               <table className="w-full text-xs">
                 <thead className="sticky top-0 bg-white border-b border-slate-100">
                   <tr>
-                    {["Invoice","Client","Due Date","Payable","Status"].map((h, i) => (
-                      <th key={i} className={`py-2 pr-3 text-slate-400 font-semibold ${i >= 3 ? "text-right" : "text-left"}`}>{h}</th>
+                    {["Invoice","Client","Bank","Expected Date","Outstanding","Overdue Days","Status"].map((h, i) => (
+                      <th key={i} className={`py-2 pr-3 text-slate-400 font-semibold ${i >= 4 ? "text-right" : "text-left"}`}>{h}</th>
                     ))}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-50">
-                  {wcPayables.map((p, i) => (
+                  {wcCollections.map((c, i) => (
                     <tr key={i} className="hover:bg-slate-50/50 transition-colors">
-                      <td className="py-2 pr-3 font-mono text-slate-500">{p.invoice_number}</td>
-                      <td className="py-2 pr-3 font-medium text-slate-800 max-w-[130px] truncate">{p.client_name}</td>
-                      <td className="py-2 pr-3 text-slate-500">{fmtDate(p.expected_outflow_date)}</td>
-                      <td className="py-2 pr-3 text-right font-bold text-rose-600">{fmt(p.os_amt_difference)}</td>
-                      <td className="py-2 pr-3 text-right"><WcBadge overdue={p.is_overdue} /></td>
+                      <td className="py-2 pr-3 font-mono text-slate-500">{c.invoice_number}</td>
+                      <td className="py-2 pr-3 font-medium text-slate-800 max-w-[160px] truncate">{c.client_name}</td>
+                      <td className="py-2 pr-3 text-slate-400 text-[10px]">{c.bank_name}</td>
+                      <td className="py-2 pr-3 text-slate-600">{fmtDate(c.expected_collection_date)}</td>
+                      <td className="py-2 pr-3 text-right font-bold text-slate-800">{fmt(c.outstanding)}</td>
+                      <td className="py-2 pr-3 text-right">
+                        <span className={c.days_overdue > 0 ? "text-rose-600 font-bold" : "text-slate-400"}>
+                          {c.days_overdue > 0 ? `${c.days_overdue}d` : "—"}
+                        </span>
+                      </td>
+                      <td className="py-2 pr-3 text-right"><WcBadge overdue={c.is_overdue} /></td>
                     </tr>
                   ))}
                 </tbody>
@@ -1748,36 +1860,67 @@ const DeptReports = () => {
           )}
         </ChartCard>
 
-        <ChartCard title="Statutory Liabilities" subtitle="GST / PF / ESI / TDS pending">
-          {wcStatutory.length === 0 ? <Empty msg="No statutory pending" /> : (
-            <div className="space-y-3">
-              {wcStatutory.map((s, i) => (
-                <div key={i} className={`rounded-xl border p-3 ${s.is_overdue ? "border-rose-200 bg-rose-50/40" : "border-slate-200 bg-slate-50/40"}`}>
-                  <div className="flex items-start justify-between">
-                    <div>
-                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full mr-2 ${
-                        s.type === "GST" ? "bg-amber-100 text-amber-700" :
-                        s.type === "PF"  ? "bg-blue-100 text-blue-700" :
-                        s.type === "TDS" ? "bg-purple-100 text-purple-700" :
-                        "bg-slate-100 text-slate-600"
-                      }`}>{s.type}</span>
-                      <span className="text-xs font-semibold text-slate-700">{s.entity}</span>
+        {/* Payables & Statutory */}
+        <SH icon={TrendingUp} title="Payables & Statutory" color={P.brick} />
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <ChartCard title="OS Payables" subtitle="Pending payout obligations">
+            {wcPayables.length === 0 ? <Empty msg="No OS payables" /> : (
+              <div className="overflow-auto" style={{ maxHeight: 320 }}>
+                <table className="w-full text-xs">
+                  <thead className="sticky top-0 bg-white border-b border-slate-100">
+                    <tr>
+                      {["Invoice","Client","Due Date","Payable","Status"].map((h, i) => (
+                        <th key={i} className={`py-2 pr-3 text-slate-400 font-semibold ${i >= 3 ? "text-right" : "text-left"}`}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-50">
+                    {wcPayables.map((p, i) => (
+                      <tr key={i} className="hover:bg-slate-50/50 transition-colors">
+                        <td className="py-2 pr-3 font-mono text-slate-500">{p.invoice_number}</td>
+                        <td className="py-2 pr-3 font-medium text-slate-800 max-w-[130px] truncate">{p.client_name}</td>
+                        <td className="py-2 pr-3 text-slate-500">{fmtDate(p.expected_outflow_date)}</td>
+                        <td className="py-2 pr-3 text-right font-bold text-rose-600">{fmt(p.os_amt_difference)}</td>
+                        <td className="py-2 pr-3 text-right"><WcBadge overdue={p.is_overdue} /></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </ChartCard>
+
+          <ChartCard title="Statutory Liabilities" subtitle="GST / PF / ESI / TDS pending">
+            {wcStatutory.length === 0 ? <Empty msg="No statutory pending" /> : (
+              <div className="space-y-3">
+                {wcStatutory.map((s, i) => (
+                  <div key={i} className={`rounded-xl border p-3 ${s.is_overdue ? "border-rose-200 bg-rose-50/40" : "border-slate-200 bg-slate-50/40"}`}>
+                    <div className="flex items-start justify-between">
+                      <div>
+                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full mr-2 ${
+                          s.type === "GST" ? "bg-amber-100 text-amber-700" :
+                          s.type === "PF"  ? "bg-blue-100 text-blue-700" :
+                          s.type === "TDS" ? "bg-purple-100 text-purple-700" :
+                          "bg-slate-100 text-slate-600"
+                        }`}>{s.type}</span>
+                        <span className="text-xs font-semibold text-slate-700">{s.entity}</span>
+                      </div>
+                      <WcBadge overdue={s.is_overdue} />
                     </div>
-                    <WcBadge overdue={s.is_overdue} />
+                    <div className="flex items-center justify-between mt-2">
+                      <span className="text-[10px] text-slate-400">
+                        Due: {fmtDate(s.payment_date)} · Month: {fmtDate(s.month)}
+                      </span>
+                      <span className="text-sm font-black text-rose-600">{fmt(s.pending_due)}</span>
+                    </div>
+                    <div className="text-[10px] text-slate-400 mt-1">{s.bank_name}</div>
                   </div>
-                  <div className="flex items-center justify-between mt-2">
-                    <span className="text-[10px] text-slate-400">
-                      Due: {fmtDate(s.payment_date)} · Month: {fmtDate(s.month)}
-                    </span>
-                    <span className="text-sm font-black text-rose-600">{fmt(s.pending_due)}</span>
-                  </div>
-                  <div className="text-[10px] text-slate-400 mt-1">{s.bank_name}</div>
-                </div>
-              ))}
-            </div>
-          )}
-        </ChartCard>
-      </div>
+                ))}
+              </div>
+            )}
+          </ChartCard>
+        </div>
+      </>)} {/* ── END WC conditional ── */}
 
     </div>
   );
