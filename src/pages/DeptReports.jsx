@@ -242,6 +242,10 @@ const DeptReports = () => {
   const [rpcBirthdays, setRpcBirthdays] = useState([]);
   const [rpcAnniversaries, setRpcAnniversaries] = useState([]);
   const [rpcClientAdv, setRpcClientAdv] = useState([]);
+  
+  // ── P&L states ──────────────────────────────────────────────────────────
+  const [rpcProfit, setRpcProfit] = useState([]);
+  const [rpcClientProfit, setRpcClientProfit] = useState([]);
 
   // ── Working Capital state ──────────────────────────────────────────────────
   const [wcBanks,       setWcBanks]       = useState([]);
@@ -295,10 +299,11 @@ const DeptReports = () => {
       const p_start = fy.start;
       const p_end   = fy.end;
 
-      // 4) Fetch all 9 dept RPCs in parallel
+      // 4) Fetch all 11 RPCs in parallel (added 2 P&L RPCs)
       const [
         dRevenue, dSalary, dNonSalary, dManpower,
-        dAttrition, dRatios, dBirthdays, dAnniv, dClientAdv
+        dAttrition, dRatios, dBirthdays, dAnniv, dClientAdv,
+        dProfit, dClientProfit
       ] = await Promise.all([
         supabase.rpc("get_dept_report_revenue",       { p_start, p_end, p_dept_id: effectiveDeptId }),
         supabase.rpc("get_dept_report_salary",         { p_start, p_end, p_dept_id: effectiveDeptId }),
@@ -309,6 +314,8 @@ const DeptReports = () => {
         supabase.rpc("get_dept_report_birthdays",      { p_dept_id: effectiveDeptId, p_days_ahead: 30 }),
         supabase.rpc("get_dept_report_anniversaries",  { p_dept_id: effectiveDeptId, p_days_ahead: 30 }),
         supabase.rpc("get_dept_report_client_advance", { p_start, p_end }),
+        supabase.rpc("get_dept_report_profit",         { p_start, p_end, p_dept_id: effectiveDeptId }),
+        supabase.rpc("get_dept_report_client_profit",  { p_start, p_end, p_dept_id: effectiveDeptId, p_limit: 50 }),
       ]);
 
       setRpcRevenue(extractData(dRevenue));
@@ -320,6 +327,8 @@ const DeptReports = () => {
       setRpcBirthdays(extractData(dBirthdays));
       setRpcAnniversaries(extractData(dAnniv));
       setRpcClientAdv(extractData(dClientAdv));
+      setRpcProfit(extractData(dProfit));
+      setRpcClientProfit(extractData(dClientProfit));
 
     } catch (e) {
       console.error("FETCH ERROR:", e);
@@ -757,6 +766,112 @@ const DeptReports = () => {
         </ChartCard>
       </div>
 
+      {/* SECTION 3 — Profit (Pre & Post TDS) */}
+      <SH icon={TrendingUp} title="Profit & P&L" color={P.emerald} />
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
+        {(() => {
+          const totPreTds  = rpcProfit.reduce((s, r) => s + Number(r.profit_pre_tds  || 0), 0);
+          const totPostTds = rpcProfit.reduce((s, r) => s + Number(r.profit_post_tds || 0), 0);
+          const totActual  = rpcProfit.reduce((s, r) => s + Number(r.actual_profit   || 0), 0);
+          const totFee     = rpcProfit.reduce((s, r) => s + Number(r.verto_fee_earned|| 0), 0);
+          const avgMargin  = totFee ? (totPreTds / totFee * 100) : 0;
+          return (<>
+            <KpiCard label="Profit Pre-TDS"      value={fmt(totPreTds)}  sub="Fee − Expenses"          icon={TrendingUp}  color={P.teal}    trend={totPreTds  >= 0 ? 1 : -1} />
+            <KpiCard label="Profit Post-TDS"     value={fmt(totPostTds)} sub="Pre-TDS − TDS"           icon={TrendingUp}  color={P.emerald} trend={totPostTds >= 0 ? 1 : -1} />
+            <KpiCard label="Actual Cash Profit"  value={fmt(totActual)}  sub="Based on amount received" icon={CheckCircle} color={P.sky}     trend={totActual  >= 0 ? 1 : -1} />
+            <KpiCard label="Avg Profit Margin"   value={`${avgMargin.toFixed(1)}%`} sub="Pre-TDS / Fee" icon={BarChart2} color={P.plum} />
+          </>);
+        })()}
+      </div>
+
+      {/* Dept-wise P&L Table */}
+      <ChartCard title="Department-wise P&L" subtitle="Revenue → Fee → Expense → Profit">
+        {rpcProfit.length === 0 ? <Empty /> : (
+          <div className="overflow-auto">
+            <table className="w-full text-xs">
+              <thead className="sticky top-0 bg-white border-b border-slate-100">
+                <tr>
+                  {["Month","Dept","Invoice","Fee Earned","TDS","Expense","Profit Pre-TDS","Profit Post-TDS","Actual Profit","Margin%"].map((h,i) => (
+                    <th key={i} className={`py-2 pr-3 text-slate-400 font-semibold ${i>1?"text-right":"text-left"}`}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-50">
+                {rpcProfit.map((r, i) => (
+                  <tr key={i} className="hover:bg-slate-50/50">
+                    <td className="py-2 pr-3 text-slate-500">{r.month}</td>
+                    <td className="py-2 pr-3 font-semibold text-slate-800">{r.dept_name}</td>
+                    <td className="py-2 pr-3 text-right tabular-nums text-slate-600">{fmt(r.total_invoice)}</td>
+                    <td className="py-2 pr-3 text-right tabular-nums font-semibold text-slate-700">{fmt(r.verto_fee_earned)}</td>
+                    <td className="py-2 pr-3 text-right tabular-nums text-rose-500">{fmt(r.tds)}</td>
+                    <td className="py-2 pr-3 text-right tabular-nums text-amber-600">{fmt(r.monthly_expense)}</td>
+                    <td className="py-2 pr-3 text-right tabular-nums">
+                      <span className={Number(r.profit_pre_tds)>=0?"text-emerald-600 font-bold":"text-rose-600 font-bold"}>{fmt(r.profit_pre_tds)}</span>
+                    </td>
+                    <td className="py-2 pr-3 text-right tabular-nums">
+                      <span className={Number(r.profit_post_tds)>=0?"text-emerald-600 font-semibold":"text-rose-500 font-semibold"}>{fmt(r.profit_post_tds)}</span>
+                    </td>
+                    <td className="py-2 pr-3 text-right tabular-nums">
+                      <span className={Number(r.actual_profit)>=0?"text-sky-600 font-semibold":"text-slate-400"}>{fmt(r.actual_profit)}</span>
+                    </td>
+                    <td className="py-2 pr-3 text-right tabular-nums">
+                      <span className={`font-bold ${Number(r.margin_pct)>=30?"text-emerald-600":Number(r.margin_pct)>=0?"text-amber-600":"text-rose-600"}`}>
+                        {Number(r.margin_pct||0).toFixed(1)}%
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </ChartCard>
+
+      {/* Client-wise P&L Table */}
+      <SH icon={TrendingUp} title="Client-wise P&L" color={P.sky} count={`${rpcClientProfit.length} rows`} />
+      <ChartCard title="Client P&L Breakdown" subtitle="Fee earned, expenses, profit pre & post TDS per client">
+        {rpcClientProfit.length === 0 ? <Empty /> : (
+          <div className="overflow-auto" style={{ maxHeight: 420 }}>
+            <table className="w-full text-xs">
+              <thead className="sticky top-0 bg-white border-b border-slate-100 z-10">
+                <tr>
+                  {["Client","Dept","Month","Invoice","Fee Earned","TDS","Expense","Profit Pre-TDS","Profit Post-TDS","Actual Profit","Pending"].map((h,i) => (
+                    <th key={i} className={`py-2 pr-3 text-slate-400 font-semibold ${i>2?"text-right":"text-left"}`}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-50">
+                {rpcClientProfit.map((r, i) => (
+                  <tr key={i} className="hover:bg-slate-50/50">
+                    <td className="py-2 pr-3 font-medium text-slate-800 max-w-[160px] truncate">{r.client_name}</td>
+                    <td className="py-2 pr-3 text-slate-500">{r.dept_name}</td>
+                    <td className="py-2 pr-3 text-slate-400">{r.month}</td>
+                    <td className="py-2 pr-3 text-right tabular-nums text-slate-600">{fmt(r.total_invoice)}</td>
+                    <td className="py-2 pr-3 text-right tabular-nums font-semibold text-slate-700">{fmt(r.verto_fee_earned)}</td>
+                    <td className="py-2 pr-3 text-right tabular-nums text-rose-500">{Number(r.tds)>0?fmt(r.tds):"—"}</td>
+                    <td className="py-2 pr-3 text-right tabular-nums text-amber-600">{fmt(r.total_expense)}</td>
+                    <td className="py-2 pr-3 text-right tabular-nums">
+                      <span className={Number(r.profit_pre_tds)>=0?"text-emerald-600 font-bold":"text-rose-600 font-bold"}>{fmt(r.profit_pre_tds)}</span>
+                    </td>
+                    <td className="py-2 pr-3 text-right tabular-nums">
+                      <span className={Number(r.profit_post_tds)>=0?"text-emerald-600 font-semibold":"text-rose-500 font-semibold"}>{fmt(r.profit_post_tds)}</span>
+                    </td>
+                    <td className="py-2 pr-3 text-right tabular-nums">
+                      <span className={Number(r.actual_profit)>=0?"text-sky-600 font-semibold":"text-slate-400"}>{fmt(r.actual_profit)}</span>
+                    </td>
+                    <td className="py-2 pr-3 text-right tabular-nums">
+                      <span className={Number(r.money_not_received)>0?"text-rose-500 font-semibold":"text-slate-300"}>
+                        {Number(r.money_not_received)>0?fmt(r.money_not_received):"—"}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </ChartCard>
+
       {/* SECTION 4 Manpower */}
       <SH icon={Users} title="Manpower" color={P.plum} />
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
@@ -772,9 +887,9 @@ const DeptReports = () => {
             <div className="space-y-2">
               {rpcManpower.slice(-6).map((r, i) => (
                 <div key={`${r.month}-${i}`} className="flex items-center justify-between py-1 border-b border-slate-100">
-                  <span className="text-xs font-semibold text-slate-700">{fmtMonth(r.month)}</span>
+                  <span className="text-xs font-semibold text-slate-700">{r.month}</span>
                   <span className="text-xs font-bold tabular-nums text-slate-700">
-                    Internal: {r.internal_headcount} · External: {r.external_headcount}
+                    Internal: {Number(r.internal_headcount || 0)} · External: {Number(r.external_headcount || 0)}
                   </span>
                 </div>
               ))}
