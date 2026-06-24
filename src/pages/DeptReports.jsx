@@ -251,6 +251,9 @@ const DeptReports = () => {
   const [rpcProfit, setRpcProfit] = useState([]);
   const [rpcClientProfit, setRpcClientProfit] = useState([]);
 
+  // ── Change 1: New state for client revenue ──────────────────────────
+  const [rpcClientRevenue, setRpcClientRevenue] = useState([]);
+
   // ── Working Capital state ──────────────────────────────────────────────────
   const [wcBanks,       setWcBanks]       = useState([]);
   const [wcBalances,    setWcBalances]    = useState([]);
@@ -305,11 +308,11 @@ const DeptReports = () => {
       const p_start = customStart || fy.start;
       const p_end   = customEnd   || fy.end;
 
-      // 4) Fetch all 11 RPCs in parallel (added 2 P&L RPCs)
+      // 4) Fetch all 12 RPCs in parallel (added client revenue RPC)
       const [
         dRevenue, dSalary, dNonSalary, dManpower,
         dAttrition, dRatios, dBirthdays, dAnniv, dClientAdv,
-        dProfit, dClientProfit
+        dProfit, dClientProfit, dClientRevenue
       ] = await Promise.all([
         supabase.rpc("get_dept_report_revenue",       { p_start, p_end, p_dept_id: effectiveDeptId }),
         supabase.rpc("get_dept_report_salary",         { p_start, p_end, p_dept_id: effectiveDeptId }),
@@ -322,6 +325,8 @@ const DeptReports = () => {
         supabase.rpc("get_dept_report_client_advance", { p_start, p_end }),
         supabase.rpc("get_dept_report_profit",         { p_start, p_end, p_dept_id: effectiveDeptId }),
         supabase.rpc("get_dept_report_client_profit",  { p_start, p_end, p_dept_id: effectiveDeptId, p_limit: 50 }),
+        // ── Fix 3: Changed p_limit from 20 to 50 ─────────────────────
+        supabase.rpc("get_analytics_client_revenue",   { p_start, p_end, p_dept_id: effectiveDeptId, p_limit: 50 }),
       ]);
 
       setRpcRevenue(extractData(dRevenue));
@@ -335,6 +340,7 @@ const DeptReports = () => {
       setRpcClientAdv(extractData(dClientAdv));
       setRpcProfit(extractData(dProfit));
       setRpcClientProfit(extractData(dClientProfit));
+      setRpcClientRevenue(extractData(dClientRevenue));
 
     } catch (e) {
       console.error("FETCH ERROR:", e);
@@ -381,52 +387,52 @@ const DeptReports = () => {
   }, [wcSelectedBank]);
 
   // ── KPIs ──────────────────────────────────────────────────────────────────
-// AFTER — correct, sums ALL rows for headcount/cost, rat0 only for % ratios
-const kpi = useMemo(() => {
-  const rev = rpcRevenue.reduce((s, r) => s + Number(r.total_revenue || 0), 0);
-  const fee = rpcRevenue.reduce((s, r) => s + Number(r.total_fee || 0), 0);
-  const tds = rpcRevenue.reduce((s, r) => s + Number(r.total_tds || 0), 0);
+  // AFTER — correct, sums ALL rows for headcount/cost, rat0 only for % ratios
+  const kpi = useMemo(() => {
+    const rev = rpcRevenue.reduce((s, r) => s + Number(r.total_revenue || 0), 0);
+    const fee = rpcRevenue.reduce((s, r) => s + Number(r.total_fee || 0), 0);
+    const tds = rpcRevenue.reduce((s, r) => s + Number(r.total_tds || 0), 0);
 
-  const revDepts = ['Operations', 'Recruitment', 'Temporary', 'Projects'];
-  const rat = rpcRatios.filter(r => revDepts.includes(r.dept_name));
-  const rat0 = rat[0] || rpcRatios[0] || {};
+    const revDepts = ['Operations', 'Recruitment', 'Temporary', 'Projects'];
+    const rat = rpcRatios.filter(r => revDepts.includes(r.dept_name));
+    const rat0 = rat[0] || rpcRatios[0] || {};
 
-  // ── Sum headcount across ALL dept rows returned ──────────────────
-  const internal_headcount = rpcRatios.reduce((s, r) => s + Number(r.internal_headcount || 0), 0);
-  const external_headcount = rpcRatios.reduce((s, r) => s + Number(r.external_headcount || 0), 0);
-  const total_internal_salary = rpcRatios.reduce((s, r) => s + Number(r.total_internal_salary || 0), 0);
-  const total_external_cost   = rpcRatios.reduce((s, r) => s + Number(r.total_external_cost   || 0), 0);
-  const total_non_salary      = rpcRatios.reduce((s, r) => s + Number(r.total_non_salary      || 0), 0);
+    // ── Sum headcount across ALL dept rows returned ──────────────────
+    const internal_headcount = rpcRatios.reduce((s, r) => s + Number(r.internal_headcount || 0), 0);
+    const external_headcount = rpcRatios.reduce((s, r) => s + Number(r.external_headcount || 0), 0);
+    const total_internal_salary = rpcRatios.reduce((s, r) => s + Number(r.total_internal_salary || 0), 0);
+    const total_external_cost   = rpcRatios.reduce((s, r) => s + Number(r.total_external_cost   || 0), 0);
+    const total_non_salary      = rpcRatios.reduce((s, r) => s + Number(r.total_non_salary      || 0), 0);
 
-  // revenue_per_ext_head: recalculate from summed totals
-  const revenue_per_ext_head = external_headcount > 0 ? rev / external_headcount : 0;
+    // revenue_per_ext_head: recalculate from summed totals
+    const revenue_per_ext_head = external_headcount > 0 ? rev / external_headcount : 0;
 
-  // % ratios: still use rat0 (dept-level % doesn't aggregate by summing)
-  const totalMgmtCost  = Number(rpcRatios[0]?.total_mgmt_cost || 0);
-  const totalEmpCost   = Number(rpcRatios[0]?.total_emp_cost  || 0);
-  const adminMgmtRatio = totalEmpCost ? (totalMgmtCost / totalEmpCost * 100) : 0;
+    // % ratios: still use rat0 (dept-level % doesn't aggregate by summing)
+    const totalMgmtCost  = Number(rpcRatios[0]?.total_mgmt_cost || 0);
+    const totalEmpCost   = Number(rpcRatios[0]?.total_emp_cost  || 0);
+    const adminMgmtRatio = totalEmpCost ? (totalMgmtCost / totalEmpCost * 100) : 0;
 
-  const bdRow  = rpcRatios.find(r => r.dept_name === 'Business Development' || r.dept_name === 'BD');
-  const bdCost = Number(bdRow?.total_internal_salary || 0);
+    const bdRow  = rpcRatios.find(r => r.dept_name === 'Business Development' || r.dept_name === 'BD');
+    const bdCost = Number(bdRow?.total_internal_salary || 0);
 
-  return {
-    total_revenue:        rev,
-    total_fee:            fee,
-    total_tds:            tds,
-    fee_to_revenue_pct:   Number(rat0.fee_to_revenue || 0),
-    internal_salary:      total_internal_salary,
-    external_cost:        total_external_cost,
-    non_salary_exp:       total_non_salary,
-    internal_headcount,   // ← now sum of ALL depts from internal_team
-    external_headcount,   // ← now sum of ALL depts
-    revenue_per_ext_head, // ← recalculated from sums
-    dept_salary_to_fee:   Number(rat0.dept_salary_to_dept_fee || 0),
-    totalMgmtCost,
-    totalEmpCost,
-    adminMgmtRatio,
-    bdCost,
-  };
-}, [rpcRevenue, rpcRatios]);
+    return {
+      total_revenue:        rev,
+      total_fee:            fee,
+      total_tds:            tds,
+      fee_to_revenue_pct:   Number(rat0.fee_to_revenue || 0),
+      internal_salary:      total_internal_salary,
+      external_cost:        total_external_cost,
+      non_salary_exp:       total_non_salary,
+      internal_headcount,
+      external_headcount,
+      revenue_per_ext_head,
+      dept_salary_to_fee:   Number(rat0.dept_salary_to_dept_fee || 0),
+      totalMgmtCost,
+      totalEmpCost,
+      adminMgmtRatio,
+      bdCost,
+    };
+  }, [rpcRevenue, rpcRatios]);
 
   // ── Revenue Growth ──────────────────────────────────────────────────────
   const growth = useMemo(() => {
@@ -447,6 +453,89 @@ const kpi = useMemo(() => {
     return { months, last, prev, revMoM, feeMoM };
   }, [rpcRevenue]);
 
+  // ── Client-wise MoM Growth (computed from rpcClientProfit) ──────────
+  const clientGrowth = useMemo(() => {
+    // Group by client_name → sorted months → compute MoM fee & profit growth
+    const byClient = new Map();
+    for (const r of rpcClientProfit) {
+      const key = r.client_name;
+      if (!byClient.has(key)) byClient.set(key, { name: key, dept: r.dept_name, months: [] });
+      byClient.get(key).months.push({
+        month: r.month,
+        sort: r.month_sort || r.month,
+        fee: Number(r.verto_fee_earned || 0),
+        preTds: Number(r.profit_pre_tds || 0),
+        postTds: Number(r.profit_post_tds || 0),
+      });
+    }
+
+    return Array.from(byClient.values())
+      .map(c => {
+        const sorted = c.months.sort((a, b) => String(a.sort).localeCompare(String(b.sort)));
+        const last = sorted[sorted.length - 1];
+        const prev = sorted[sorted.length - 2];
+        const feeMoM   = prev?.fee    ? safeDivPct(last.fee - prev.fee, prev.fee) : null;
+        const profMoM  = prev?.preTds ? safeDivPct(last.preTds - prev.preTds, Math.abs(prev.preTds)) : null;
+        const totalFee = sorted.reduce((s, m) => s + m.fee, 0);
+        return {
+          name: c.name,
+          dept: c.dept,
+          totalFee,
+          lastFee: last?.fee ?? 0,
+          lastProfit: last?.preTds ?? 0,
+          lastMonth: last?.month ?? "—",
+          feeMoM,
+          profMoM,
+          months: sorted,
+        };
+      })
+      .sort((a, b) => b.totalFee - a.totalFee);
+  }, [rpcClientProfit]);
+
+  // ── Fix 2: Client Revenue grouped by first word ─────────────────────
+  const clientRevenueGrouped = useMemo(() => {
+    const getGroup = (name) => {
+      // Normalize: lowercase, remove punctuation, take first word
+      const clean = String(name || "").trim().toLowerCase().replace(/[^a-z0-9\s]/g, "");
+      return clean.split(/\s+/)[0] || "other";
+    };
+
+    const groups = new Map();
+    for (const r of rpcClientRevenue) {
+      const key = getGroup(r.client_name);
+      if (!groups.has(key)) {
+        groups.set(key, {
+          groupKey:       key,
+          clients:        [],
+          invoice_value:  0,
+          verto_fee:      0,
+          tds:            0,
+          amount_received:0,
+          outstanding:    0,
+          cn_amount:      0,
+          invoice_count:  0,
+        });
+      }
+      const g = groups.get(key);
+      g.clients.push(r.client_name);
+      g.invoice_value   += Number(r.invoice_value   || 0);
+      g.verto_fee       += Number(r.verto_fee       || 0);
+      g.tds             += Number(r.tds             || 0);
+      g.amount_received += Number(r.amount_received || 0);
+      g.outstanding     += Number(r.outstanding     || 0);
+      g.cn_amount       += Number(r.cn_amount       || 0);
+      g.invoice_count   += Number(r.invoice_count   || 0);
+    }
+
+    return Array.from(groups.values())
+      .map(g => ({
+        ...g,
+        displayName:     g.clients.length === 1 ? g.clients[0] : `${g.clients[0].split(" ")[0]} (${g.clients.length} entities)`,
+        collection_pct:  g.invoice_value > 0 ? (g.amount_received / g.invoice_value * 100) : 0,
+      }))
+      .sort((a, b) => b.verto_fee - a.verto_fee);
+  }, [rpcClientRevenue]);
+
   // ── Salary by Month ─────────────────────────────────────────────────────
   const salByMonth = useMemo(() => {
     const map = new Map();
@@ -462,6 +551,20 @@ const kpi = useMemo(() => {
     }
     return Array.from(map.values()).sort((a, b) => a.month.localeCompare(b.month));
   }, [rpcSalary]);
+
+  // ── Fix 1: Manpower MoM Growth ──────────────────────────────────────
+  const manpowerGrowth = useMemo(() => {
+    const sorted = [...rpcManpower].sort((a, b) => String(a.month).localeCompare(String(b.month)));
+    const last = sorted[sorted.length - 1];
+    const prev = sorted[sorted.length - 2];
+    const intMoM = prev?.internal_headcount
+      ? safeDivPct(Number(last?.internal_headcount) - Number(prev?.internal_headcount), Number(prev?.internal_headcount))
+      : 0;
+    const extMoM = prev?.external_headcount
+      ? safeDivPct(Number(last?.external_headcount) - Number(prev?.external_headcount), Number(prev?.external_headcount))
+      : 0;
+    return { sorted, intMoM, extMoM, last, prev };
+  }, [rpcManpower]);
 
   // ── HR KPIs ─────────────────────────────────────────────────────────────
   // ── Change 1: Add avgAge ──────────────────────────────────────────────
@@ -993,7 +1096,127 @@ const kpi = useMemo(() => {
         )}
       </ChartCard>
 
-      {/* ── Change 3: Amount Not Received from Client ────────────────── */}
+      {/* ── Change 3: Client-wise MoM Growth ────────────────────────── */}
+      <SH icon={TrendingUp} title="Client-wise Revenue & Fee Growth" color={P.sky} count={`${clientGrowth.length} clients`} />
+      <ChartCard title="Top Clients — Fee & Profit Growth" subtitle="MoM growth % computed from month-wise P&L data">
+        {clientGrowth.length === 0 ? <Empty /> : (
+          <div className="overflow-auto" style={{ maxHeight: 400 }}>
+            <table className="w-full text-xs">
+              <thead className="sticky top-0 bg-white border-b border-slate-100 z-10">
+                <tr>
+                  <th className="text-left py-2 pr-3 text-slate-400 font-semibold">Client</th>
+                  <th className="text-left py-2 pr-3 text-slate-400 font-semibold">Dept</th>
+                  <th className="text-right py-2 pr-3 text-slate-400 font-semibold">Total Fee</th>
+                  <th className="text-right py-2 pr-3 text-slate-400 font-semibold">Last Month Fee</th>
+                  <th className="text-right py-2 pr-3 text-slate-400 font-semibold">Fee MoM %</th>
+                  <th className="text-right py-2 pr-3 text-slate-400 font-semibold">Last Profit (Pre-TDS)</th>
+                  <th className="text-right py-2 pr-3 text-slate-400 font-semibold">Profit MoM %</th>
+                  <th className="text-right py-2 pr-3 text-slate-400 font-semibold">Last Month</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-50">
+                {clientGrowth.map((c, i) => (
+                  <tr key={i} className="hover:bg-slate-50/50 transition-colors">
+                    <td className="py-2 pr-3 font-medium text-slate-800 max-w-[160px] truncate">{c.name}</td>
+                    <td className="py-2 pr-3 text-slate-400">{c.dept}</td>
+                    <td className="py-2 pr-3 text-right tabular-nums font-semibold text-slate-700">{fmt(c.totalFee)}</td>
+                    <td className="py-2 pr-3 text-right tabular-nums text-slate-600">{fmt(c.lastFee)}</td>
+                    <td className="py-2 pr-3 text-right tabular-nums">
+                      {c.feeMoM != null ? (
+                        <span className={`font-bold ${c.feeMoM >= 0 ? "text-emerald-600" : "text-rose-500"}`}>
+                          {c.feeMoM >= 0 ? "↑" : "↓"}{Math.abs(c.feeMoM).toFixed(1)}%
+                        </span>
+                      ) : <span className="text-slate-300">—</span>}
+                    </td>
+                    <td className="py-2 pr-3 text-right tabular-nums">
+                      <span className={Number(c.lastProfit) >= 0 ? "text-emerald-600 font-semibold" : "text-rose-500 font-semibold"}>
+                        {fmt(c.lastProfit)}
+                      </span>
+                    </td>
+                    <td className="py-2 pr-3 text-right tabular-nums">
+                      {c.profMoM != null ? (
+                        <span className={`font-bold ${c.profMoM >= 0 ? "text-emerald-600" : "text-rose-500"}`}>
+                          {c.profMoM >= 0 ? "↑" : "↓"}{Math.abs(c.profMoM).toFixed(1)}%
+                        </span>
+                      ) : <span className="text-slate-300">—</span>}
+                    </td>
+                    <td className="py-2 pr-3 text-right text-slate-400">{c.lastMonth}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </ChartCard>
+
+      {/* ── Fix 2: Client Revenue Grouped Section ────────────────────── */}
+      <SH icon={FileText} title="Client Revenue Summary (Grouped)" color={P.sky} count={`${clientRevenueGrouped.length} groups`} />
+      <ChartCard title="Client-wise Revenue — Grouped by Client" subtitle="Clients with same name prefix merged · sorted by fee">
+        {clientRevenueGrouped.length === 0 ? <Empty msg="No client revenue data" /> : (
+          <div className="overflow-auto" style={{ maxHeight: 420 }}>
+            <table className="w-full text-xs">
+              <thead className="sticky top-0 bg-white border-b border-slate-100 z-10">
+                <tr>
+                  <th className="text-left py-2 pr-3 text-slate-400 font-semibold">Client Group</th>
+                  <th className="text-right py-2 pr-3 text-slate-400 font-semibold">Invoices</th>
+                  <th className="text-right py-2 pr-3 text-slate-400 font-semibold">Invoice Value</th>
+                  <th className="text-right py-2 pr-3 text-slate-400 font-semibold">Verto Fee</th>
+                  <th className="text-right py-2 pr-3 text-slate-400 font-semibold">TDS</th>
+                  <th className="text-right py-2 pr-3 text-slate-400 font-semibold">CN Amount</th>
+                  <th className="text-right py-2 pr-3 text-slate-400 font-semibold">Received</th>
+                  <th className="text-right py-2 pr-3 text-slate-400 font-semibold">Outstanding</th>
+                  <th className="text-right py-2 pr-3 text-slate-400 font-semibold">Collection %</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-50">
+                {clientRevenueGrouped.map((g, i) => (
+                  <tr key={i} className="hover:bg-slate-50/50 transition-colors">
+                    <td className="py-2 pr-3 font-medium text-slate-800">
+                      {g.displayName}
+                      {g.clients.length > 1 && (
+                        <div className="text-[9px] text-slate-400 mt-0.5">{g.clients.join(" · ")}</div>
+                      )}
+                    </td>
+                    <td className="py-2 pr-3 text-right tabular-nums text-slate-500">{g.invoice_count}</td>
+                    <td className="py-2 pr-3 text-right tabular-nums text-slate-600">{fmt(g.invoice_value)}</td>
+                    <td className="py-2 pr-3 text-right tabular-nums font-semibold text-slate-800">{fmt(g.verto_fee)}</td>
+                    <td className="py-2 pr-3 text-right tabular-nums text-rose-500">{g.tds > 0 ? fmt(g.tds) : "—"}</td>
+                    <td className="py-2 pr-3 text-right tabular-nums text-amber-600">{g.cn_amount > 0 ? fmt(g.cn_amount) : "—"}</td>
+                    <td className="py-2 pr-3 text-right tabular-nums text-emerald-600 font-semibold">{fmt(g.amount_received)}</td>
+                    <td className="py-2 pr-3 text-right tabular-nums">
+                      <span className={g.outstanding > 0 ? "text-rose-600 font-bold" : "text-slate-300"}>
+                        {g.outstanding > 0 ? fmt(g.outstanding) : "—"}
+                      </span>
+                    </td>
+                    <td className="py-2 pr-3 text-right tabular-nums">
+                      <span className={`font-bold ${g.collection_pct >= 90 ? "text-emerald-600" : g.collection_pct >= 60 ? "text-amber-600" : "text-rose-600"}`}>
+                        {g.collection_pct.toFixed(1)}%
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot className="border-t-2 border-slate-200 bg-slate-50/60">
+                <tr>
+                  <td className="py-2 pr-3 font-bold text-slate-700 text-xs">Total</td>
+                  <td className="py-2 pr-3 text-right tabular-nums font-semibold text-slate-700">{clientRevenueGrouped.reduce((s,g)=>s+g.invoice_count,0)}</td>
+                  <td className="py-2 pr-3 text-right tabular-nums font-semibold text-slate-700">{fmt(clientRevenueGrouped.reduce((s,g)=>s+g.invoice_value,0))}</td>
+                  <td className="py-2 pr-3 text-right tabular-nums font-black text-slate-900">{fmt(clientRevenueGrouped.reduce((s,g)=>s+g.verto_fee,0))}</td>
+                  <td className="py-2 pr-3 text-right tabular-nums font-semibold text-rose-500">{fmt(clientRevenueGrouped.reduce((s,g)=>s+g.tds,0))}</td>
+                  <td className="py-2 pr-3 text-right tabular-nums font-semibold text-amber-600">{fmt(clientRevenueGrouped.reduce((s,g)=>s+g.cn_amount,0))}</td>
+                  <td className="py-2 pr-3 text-right tabular-nums font-semibold text-emerald-600">{fmt(clientRevenueGrouped.reduce((s,g)=>s+g.amount_received,0))}</td>
+                  <td className="py-2 pr-3 text-right tabular-nums font-bold text-rose-600">{fmt(clientRevenueGrouped.reduce((s,g)=>s+g.outstanding,0))}</td>
+                  <td className="py-2 pr-3 text-right tabular-nums font-bold text-slate-700">
+                    {(() => { const iv = clientRevenueGrouped.reduce((s,g)=>s+g.invoice_value,0); const ar = clientRevenueGrouped.reduce((s,g)=>s+g.amount_received,0); return iv > 0 ? `${(ar/iv*100).toFixed(1)}%` : "—"; })()}
+                  </td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        )}
+      </ChartCard>
+
+      {/* ── Change 4: Amount Not Received from Client ────────────────── */}
       {(() => {
         const unpaid = rpcClientProfit
           .filter(r => Number(r.money_not_received || 0) > 0)
@@ -1066,25 +1289,60 @@ const kpi = useMemo(() => {
 
       {/* SECTION 4 Manpower */}
       <SH icon={Users} title="Manpower" color={P.plum} />
-      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
-        <KpiCard label="Internal Headcount"  value={fmtCount(kpi.internal_headcount)}  sub="Active employees"      icon={Users}     color={P.slate} />
-        <KpiCard label="External Headcount"  value={fmtCount(kpi.external_headcount)}  sub="OS payout employees"   icon={Users}     color={P.clay} />
-        <KpiCard label="Internal / External" value={kpi.external_headcount ? (kpi.internal_headcount / kpi.external_headcount).toFixed(2) : "—"} sub="ratio" icon={TrendingUp} color={P.teal} />
-        <KpiCard label="Revenue per Ext Head" value={fmt(kpi.revenue_per_ext_head)} sub="revenue / external_headcount" icon={FileText} color={P.steel} />
+      {/* ── Fix 1: 6-card grid with MoM growth ────────────────────── */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-6 gap-3">
+        <KpiCard label="Internal Headcount"         value={fmtCount(kpi.internal_headcount)}  sub="Active employees"             icon={Users}      color={P.slate} />
+        <KpiCard label="External Headcount"         value={fmtCount(kpi.external_headcount)}  sub="OS payout employees"          icon={Users}      color={P.clay} />
+        <KpiCard label="Internal / External"        value={kpi.external_headcount ? (kpi.internal_headcount / kpi.external_headcount).toFixed(2) : "—"} sub="ratio" icon={TrendingUp} color={P.teal} />
+        <KpiCard label="Revenue per Ext Head"       value={fmt(kpi.revenue_per_ext_head)}     sub="revenue / external headcount" icon={FileText}   color={P.steel} />
+        <KpiCard label="Internal Growth (MoM)"      value={`${manpowerGrowth.intMoM.toFixed(1)}%`} sub="vs previous month"     icon={TrendingUp} color={P.teal}  trend={manpowerGrowth.intMoM} />
+        <KpiCard label="External Growth (MoM)"      value={`${manpowerGrowth.extMoM.toFixed(1)}%`} sub="vs previous month"     icon={TrendingUp} color={P.clay}  trend={manpowerGrowth.extMoM} />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <ChartCard title="Manpower Trend" subtitle="Internal vs External headcount">
+        {/* ── Fix: Manpower Trend with MoM % table ────────────────────── */}
+        <ChartCard title="Manpower Trend" subtitle="Internal vs External headcount with MoM growth">
           {rpcManpower.length === 0 ? <Empty msg="No manpower data" /> : (
-            <div className="space-y-2">
-              {rpcManpower.slice(-6).map((r, i) => (
-                <div key={`${r.month}-${i}`} className="flex items-center justify-between py-1 border-b border-slate-100">
-                  <span className="text-xs font-semibold text-slate-700">{r.month}</span>
-                  <span className="text-xs font-bold tabular-nums text-slate-700">
-                    Internal: {Number(r.internal_headcount || 0)} · External: {Number(r.external_headcount || 0)}
-                  </span>
-                </div>
-              ))}
+            <div className="overflow-auto">
+              <table className="w-full text-xs">
+                <thead className="sticky top-0 bg-white border-b border-slate-100">
+                  <tr>
+                    <th className="text-left py-2 pr-3 text-slate-400 font-semibold">Month</th>
+                    <th className="text-right py-2 pr-3 text-slate-400 font-semibold">Internal</th>
+                    <th className="text-right py-2 pr-3 text-slate-400 font-semibold">Int MoM</th>
+                    <th className="text-right py-2 pr-3 text-slate-400 font-semibold">External</th>
+                    <th className="text-right py-2 pr-3 text-slate-400 font-semibold">Ext MoM</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-50">
+                  {manpowerGrowth.sorted.map((r, i) => {
+                    const prev = manpowerGrowth.sorted[i - 1];
+                    const intMoM = prev?.internal_headcount
+                      ? safeDivPct(Number(r.internal_headcount) - Number(prev.internal_headcount), Number(prev.internal_headcount))
+                      : null;
+                    const extMoM = prev?.external_headcount
+                      ? safeDivPct(Number(r.external_headcount) - Number(prev.external_headcount), Number(prev.external_headcount))
+                      : null;
+                    return (
+                      <tr key={i} className="hover:bg-slate-50/50">
+                        <td className="py-2 pr-3 font-semibold text-slate-700">{r.month}</td>
+                        <td className="py-2 pr-3 text-right tabular-nums text-slate-700">{Number(r.internal_headcount || 0)}</td>
+                        <td className="py-2 pr-3 text-right tabular-nums">
+                          {intMoM != null
+                            ? <span className={`font-bold text-[11px] ${intMoM >= 0 ? "text-emerald-600" : "text-rose-500"}`}>{intMoM >= 0 ? "↑" : "↓"}{Math.abs(intMoM).toFixed(1)}%</span>
+                            : <span className="text-slate-300">—</span>}
+                        </td>
+                        <td className="py-2 pr-3 text-right tabular-nums text-slate-700">{Number(r.external_headcount || 0)}</td>
+                        <td className="py-2 pr-3 text-right tabular-nums">
+                          {extMoM != null
+                            ? <span className={`font-bold text-[11px] ${extMoM >= 0 ? "text-emerald-600" : "text-rose-500"}`}>{extMoM >= 0 ? "↑" : "↓"}{Math.abs(extMoM).toFixed(1)}%</span>
+                            : <span className="text-slate-300">—</span>}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
             </div>
           )}
         </ChartCard>
@@ -1114,6 +1372,8 @@ const kpi = useMemo(() => {
               <th className="text-left py-2 pr-3 text-slate-400 font-semibold">Department</th>
               <th className="text-right py-2 pr-3 text-slate-400 font-semibold">Fee / Revenue %</th>
               <th className="text-right py-2 pr-3 text-slate-400 font-semibold">Salary / Fee %</th>
+              {/* ── Change 2: Add Team / Fee % column ── */}
+              <th className="text-right py-2 pr-3 text-slate-400 font-semibold">Team / Fee %</th>
               <th className="text-right py-2 pr-3 text-slate-400 font-semibold">Variable / Fixed %</th>
               <th className="text-right py-2 pr-3 text-slate-400 font-semibold">Reimb / Fixed %</th>
               <th className="text-right py-2 pr-3 text-slate-400 font-semibold">Salary / Exp %</th>
@@ -1135,6 +1395,10 @@ const kpi = useMemo(() => {
                   <span className={`font-semibold ${Number(r.dept_salary_to_dept_fee) > 80 ? "text-rose-600" : Number(r.dept_salary_to_dept_fee) > 60 ? "text-amber-600" : "text-emerald-600"}`}>
                     {r.dept_salary_to_dept_fee != null ? `${Number(r.dept_salary_to_dept_fee).toFixed(1)}%` : "—"}
                   </span>
+                </td>
+                {/* ── Change 2: Team / Fee % cell ── */}
+                <td className="py-2.5 pr-3 text-right tabular-nums text-slate-600">
+                  {r.internal_team_to_fee != null ? `${Number(r.internal_team_to_fee).toFixed(1)}%` : "—"}
                 </td>
                 <td className="py-2.5 pr-3 text-right tabular-nums text-slate-600">
                   {r.variable_to_fixed != null ? `${Number(r.variable_to_fixed).toFixed(1)}%` : "—"}
