@@ -19,6 +19,11 @@ import {
   Calendar,
   Cake,
   Landmark,
+  ArrowUpRight,
+  ArrowDownRight,
+  CheckCircle,
+  Clock,
+  XCircle,
 } from "lucide-react";
 import * as XLSX from "xlsx";
 
@@ -33,6 +38,7 @@ const P = {
   slate: "#5B6B82",
   sky: "#4A7FA6",
   trend: "#33415C",
+  emerald: "#2F8577",
 };
 
 const fmt = (n) => {
@@ -97,8 +103,8 @@ const SH = ({ icon: Icon, title, color, count }) => (
   </div>
 );
 
-const KpiCard = ({ label, value, sub, icon: Icon, color, trend }) => (
-  <div className={`bg-white rounded-2xl border p-4 shadow-sm hover:shadow-md transition-all duration-200 ${trend != null ? (trend >= 0 ? "border-emerald-200" : "border-rose-200") : "border-slate-200"}`}>
+const KpiCard = ({ label, value, sub, icon: Icon, color, trend, highlight }) => (
+  <div className={`bg-white rounded-2xl border p-4 shadow-sm hover:shadow-md transition-all duration-200 ${trend != null ? (trend >= 0 ? "border-emerald-200" : "border-rose-200") : "border-slate-200"} ${highlight ? "ring-1 ring-blue-200/60" : ""}`}>
     <div className="flex items-start justify-between mb-3">
       <div
         className="w-10 h-10 rounded-xl flex items-center justify-center"
@@ -163,6 +169,10 @@ const Empty = ({ msg = "No data for selected filters" }) => (
   </div>
 );
 
+const WcBadge = ({ overdue }) => overdue
+  ? <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-100 text-rose-600">Overdue</span>
+  : <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-700">Upcoming</span>;
+
 const DataTable = ({ columns, data, maxHeight = 320 }) => {
   if (!data?.length) return null;
   return (
@@ -222,7 +232,7 @@ const DeptReports = () => {
   const [allDepts, setAllDepts] = useState([]);
   const [deptId, setDeptId] = useState(null); // null = All Departments
 
-  // NEW RPC STATES - replace all old table states
+  // RPC STATES
   const [rpcRevenue, setRpcRevenue] = useState([]);
   const [rpcSalary, setRpcSalary] = useState([]);
   const [rpcNonSalary, setRpcNonSalary] = useState([]);
@@ -232,6 +242,16 @@ const DeptReports = () => {
   const [rpcBirthdays, setRpcBirthdays] = useState([]);
   const [rpcAnniversaries, setRpcAnniversaries] = useState([]);
   const [rpcClientAdv, setRpcClientAdv] = useState([]);
+
+  // ── Working Capital state ──────────────────────────────────────────────────
+  const [wcBanks,       setWcBanks]       = useState([]);
+  const [wcBalances,    setWcBalances]    = useState([]);
+  const [wcCollections, setWcCollections] = useState([]);
+  const [wcPayables,    setWcPayables]    = useState([]);
+  const [wcStatutory,   setWcStatutory]   = useState([]);
+  const [wcForecast,    setWcForecast]    = useState([]);
+  const [wcSelectedBank, setWcSelectedBank] = useState(null);
+  const [wcLoading,     setWcLoading]     = useState(false);
 
   const [search, setSearch] = useState("");
 
@@ -265,8 +285,7 @@ const DeptReports = () => {
           .order("dept_name");
         const d = depts || [];
         setAllDepts(d);
-        // FIX: REMOVED auto-select — deptId stays null = All Departments
-        // if (!deptId && d.length > 0) setDeptId(d[0].id); // <-- REMOVED
+        // REMOVED auto-select — deptId stays null = All Departments
       } else {
         setDeptId(resolvedDeptId);
       }
@@ -310,23 +329,52 @@ const DeptReports = () => {
     }
   }, [fy.start, fy.end, deptId]);
 
+  // ── Working Capital fetch ──────────────────────────────────────────────────
+  const fetchWorkingCapital = useCallback(async (bankId = null) => {
+    setWcLoading(true);
+    try {
+      const p = bankId || null;
+      const [rBanks, rCol, rPay, rStat, rFore] = await Promise.all([
+        supabase.rpc("get_working_capital_bank_balances",    { p_bank_id: p }),
+        supabase.rpc("get_working_capital_collections",       { p_bank_id: p }),
+        supabase.rpc("get_working_capital_os_payables",       { p_bank_id: p }),
+        supabase.rpc("get_working_capital_statutory",         { p_bank_id: p }),
+        supabase.rpc("get_working_capital_weekly_forecast",   { p_bank_id: p }),
+      ]);
+      const ex = (r) => (Array.isArray(r?.data) ? r.data : []);
+      const bal = ex(rBanks);
+      setWcBanks(bal);
+      setWcBalances(bal);
+      setWcCollections(ex(rCol));
+      setWcPayables(ex(rPay));
+      setWcStatutory(ex(rStat));
+      setWcForecast(ex(rFore));
+    } catch (e) {
+      console.error("WC fetch error:", e);
+    } finally {
+      setWcLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     fetchAll();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fyStartYear, deptId]);
 
-  // FIX 1: Fix rpcRatios aggregation — filter by dept, extract mgmt fields
+  useEffect(() => {
+    fetchWorkingCapital(wcSelectedBank);
+  }, [wcSelectedBank]);
+
+  // ── KPIs ──────────────────────────────────────────────────────────────────
   const kpi = useMemo(() => {
     const rev = rpcRevenue.reduce((s, r) => s + Number(r.total_revenue || 0), 0);
     const fee = rpcRevenue.reduce((s, r) => s + Number(r.total_fee || 0), 0);
     const tds = rpcRevenue.reduce((s, r) => s + Number(r.total_tds || 0), 0);
 
-    // Filter ratios to only revenue-generating depts (not Management/Accts/BD)
     const revDepts = ['Operations', 'Recruitment', 'Temporary', 'Projects'];
     const rat = rpcRatios.filter(r => revDepts.includes(r.dept_name));
     const rat0 = rat[0] || rpcRatios[0] || {};
 
-    // For admin: total_mgmt_cost and total_emp_cost are same on every row
     const totalMgmtCost = Number(rpcRatios[0]?.total_mgmt_cost || 0);
     const totalEmpCost  = Number(rpcRatios[0]?.total_emp_cost  || 0);
     const adminMgmtRatio = totalEmpCost ? (totalMgmtCost / totalEmpCost * 100) : 0;
@@ -343,16 +391,14 @@ const DeptReports = () => {
       external_headcount:   Number(rat0.external_headcount || 0),
       revenue_per_ext_head: Number(rat0.revenue_per_ext_head || 0),
       dept_salary_to_fee:   Number(rat0.dept_salary_to_dept_fee || 0),
-      // NEW
       totalMgmtCost,
       totalEmpCost,
       adminMgmtRatio,
     };
   }, [rpcRevenue, rpcRatios]);
 
-  // Section 2: Monthly revenue growth - FIX: Aggregate by month to handle multiple depts
+  // ── Revenue Growth ──────────────────────────────────────────────────────
   const growth = useMemo(() => {
-    // Aggregate across depts — multiple rows per month from RPC
     const byMonth = new Map();
     for (const r of rpcRevenue) {
       const ym = r.month;
@@ -370,7 +416,7 @@ const DeptReports = () => {
     return { months, last, prev, revMoM, feeMoM };
   }, [rpcRevenue]);
 
-  // FIX 4: Salary — group by month from pay_head rows
+  // ── Salary by Month ─────────────────────────────────────────────────────
   const salByMonth = useMemo(() => {
     const map = new Map();
     for (const r of rpcSalary) {
@@ -386,7 +432,7 @@ const DeptReports = () => {
     return Array.from(map.values()).sort((a, b) => a.month.localeCompare(b.month));
   }, [rpcSalary]);
 
-  // Section 4: HR KPIs from attrition RPC
+  // ── HR KPIs ─────────────────────────────────────────────────────────────
   const hrKPIs = useMemo(() => {
     const active    = rpcAttrition.reduce((s, r) => s + Number(r.total_active    || 0), 0);
     const inactive  = rpcAttrition.reduce((s, r) => s + Number(r.total_inactive  || 0), 0);
@@ -396,7 +442,7 @@ const DeptReports = () => {
     return { active, inactive, totalEmployees: active + inactive, avgTenureMonths: avgTenure };
   }, [rpcAttrition]);
 
-  // Section 5: Birthday / anniversary alerts
+  // ── Birthday / Anniversary alerts ──────────────────────────────────────
   const upcomingDates = useMemo(() => {
     const thisWeek = 7;
     const birthdaysThisWeek    = rpcBirthdays.filter(b    => Number(b.days_until)    <= thisWeek).length;
@@ -409,6 +455,18 @@ const DeptReports = () => {
     };
   }, [rpcBirthdays, rpcAnniversaries]);
 
+  // ── Working Capital Summary ────────────────────────────────────────────
+  const wcSummary = useMemo(() => {
+    const totalCash        = wcBalances.reduce((s, b) => s + Number(b.current_balance || 0), 0);
+    const totalOutstanding = wcCollections.reduce((s, c) => s + Number(c.outstanding || 0), 0);
+    const overdueCol       = wcCollections.filter(c => c.is_overdue).reduce((s, c) => s + Number(c.outstanding || 0), 0);
+    const totalPayables    = wcPayables.reduce((s, p) => s + Number(p.os_amt_difference || 0), 0);
+    const totalStatutory   = wcStatutory.reduce((s, s2) => s + Number(s2.pending_due || 0), 0);
+    const currentWeek      = wcForecast.find(f => f.week_offset === 0) || {};
+    return { totalCash, totalOutstanding, overdueCol, totalPayables, totalStatutory, currentWeek };
+  }, [wcBalances, wcCollections, wcPayables, wcStatutory, wcForecast]);
+
+  // ── Section 1 Table ─────────────────────────────────────────────────────
   const section1Table = useMemo(() => {
     const d = rpcRevenue.filter((r) => {
       if (!search.trim()) return true;
@@ -492,9 +550,8 @@ const DeptReports = () => {
 
   const totalPages = Math.ceil(section1Table.length / ITEMS);
 
-  // FIX 2: Filter departments for mgmt cost ratio table
+  // Filter departments for cost ratio tables
   const revDepts = ['Operations', 'Recruitment', 'Temporary', 'Projects'];
-  const mgmtRatioData = rpcRatios.filter(r => revDepts.includes(r.dept_name));
 
   return (
     <div className="space-y-6 pb-10 bg-gray-50/60 min-h-screen" style={{ fontFamily: "'DM Sans', 'Geist', sans-serif" }}>
@@ -558,10 +615,10 @@ const DeptReports = () => {
               <div className="relative">
                 <select
                   value={deptId || ""}
-                  onChange={(e) => setDeptId(e.target.value || null)} // FIX: Keep as string, allow "All"
+                  onChange={(e) => setDeptId(e.target.value || null)}
                   className="w-full appearance-none bg-white border border-slate-200 rounded-xl px-3 py-2 pr-8 text-xs font-medium text-slate-700 focus:outline-none focus:ring-1 focus:ring-blue-200"
                 >
-                  <option value="">All Departments</option> {/* FIX: Add "All" option */}
+                  <option value="">All Departments</option>
                   {allDepts.map((d) => (
                     <option key={d.id} value={d.id}>
                       {d.dept_name}
@@ -687,7 +744,6 @@ const DeptReports = () => {
         <ChartCard title="Salary Breakdown" subtitle="Internal vs External salary costs">
           {salByMonth.length === 0 ? <Empty msg="No salary data" /> : (
             <div className="space-y-2">
-              {/* FIX 4: Use salByMonth with grouped data */}
               {salByMonth.slice(-6).map((r, i) => (
                 <div key={`${r.month}-${i}`} className="flex items-center justify-between py-1 border-b border-slate-100">
                   <span className="text-xs font-semibold text-slate-700">{fmtMonth(r.month)}</span>
@@ -728,7 +784,6 @@ const DeptReports = () => {
         <ChartCard title="Attrition Summary" subtitle="Active vs Inactive employees">
           {rpcAttrition.length === 0 ? <Empty msg="No attrition data" /> : (
             <div className="space-y-2">
-              {/* FIX 3: Use r.department instead of r.month */}
               {rpcAttrition.slice(-6).map((r, i) => (
                 <div key={`${r.department}-${i}`} className="flex items-center justify-between py-1 border-b border-slate-100">
                   <span className="text-xs font-semibold text-slate-700">{r.department}</span>
@@ -742,67 +797,92 @@ const DeptReports = () => {
         </ChartCard>
       </div>
 
-      {/* SECTION 5 Cost Ratios */}
-      <SH icon={Wallet} title="Cost Ratios" color={P.sky} />
-      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
-        <KpiCard label="Salary to Internal Exp"  value={`${Number(rpcRatios[0]?.salary_to_internal_exp || 0).toFixed(1)}%`}  sub="salary / all internal expense" icon={Wallet}       color={P.plum} />
-        <KpiCard label="Dept Salary to Fee"       value={`${Number(rpcRatios[0]?.dept_salary_to_dept_fee || 0).toFixed(1)}%`} sub="salary / dept verto fee"        icon={TrendingUp}  color={P.amber} />
-        <KpiCard label="Variable to Fixed"        value={`${Number(rpcRatios[0]?.variable_to_fixed || 0).toFixed(1)}%`}       sub="variable / fixed salary"       icon={CreditCard}  color={P.clay} />
-        <KpiCard label="Reimbursement to Fixed"   value={`${Number(rpcRatios[0]?.reimbursement_to_fixed || 0).toFixed(1)}%`}  sub="reimb / fixed salary"          icon={FileText}    color={P.sky} />
+      {/* SECTION 5 Cost Ratios — Department-wise table */}
+      <SH icon={Wallet} title="Cost Ratios by Department" color={P.sky} />
+      <div className="overflow-auto bg-white rounded-2xl border border-slate-200 shadow-sm p-4">
+        <table className="w-full text-xs">
+          <thead className="sticky top-0 bg-white border-b border-slate-100 z-10">
+            <tr>
+              <th className="text-left py-2 pr-3 text-slate-400 font-semibold">Department</th>
+              <th className="text-right py-2 pr-3 text-slate-400 font-semibold">Fee / Revenue %</th>
+              <th className="text-right py-2 pr-3 text-slate-400 font-semibold">Salary / Fee %</th>
+              <th className="text-right py-2 pr-3 text-slate-400 font-semibold">Variable / Fixed %</th>
+              <th className="text-right py-2 pr-3 text-slate-400 font-semibold">Reimb / Fixed %</th>
+              <th className="text-right py-2 pr-3 text-slate-400 font-semibold">Salary / Exp %</th>
+              <th className="text-right py-2 pr-3 text-slate-400 font-semibold">Cost/Head</th>
+              <th className="text-right py-2 pr-3 text-slate-400 font-semibold">Rev/Ext Head</th>
+              <th className="text-right py-2 pr-3 text-slate-400 font-semibold">Mgmt Cost %</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-50">
+            {rpcRatios
+              .filter(r => revDepts.includes(r.dept_name))
+              .map((r, i) => (
+              <tr key={i} className="hover:bg-slate-50/50 transition-colors">
+                <td className="py-2.5 pr-3 font-semibold text-slate-800">{r.dept_name}</td>
+                <td className="py-2.5 pr-3 text-right tabular-nums">
+                  <span className="font-semibold text-slate-700">{r.fee_to_revenue != null ? `${Number(r.fee_to_revenue).toFixed(1)}%` : "—"}</span>
+                </td>
+                <td className="py-2.5 pr-3 text-right tabular-nums">
+                  <span className={`font-semibold ${Number(r.dept_salary_to_dept_fee) > 80 ? "text-rose-600" : Number(r.dept_salary_to_dept_fee) > 60 ? "text-amber-600" : "text-emerald-600"}`}>
+                    {r.dept_salary_to_dept_fee != null ? `${Number(r.dept_salary_to_dept_fee).toFixed(1)}%` : "—"}
+                  </span>
+                </td>
+                <td className="py-2.5 pr-3 text-right tabular-nums text-slate-600">
+                  {r.variable_to_fixed != null ? `${Number(r.variable_to_fixed).toFixed(1)}%` : "—"}
+                </td>
+                <td className="py-2.5 pr-3 text-right tabular-nums text-slate-600">
+                  {r.reimbursement_to_fixed != null ? `${Number(r.reimbursement_to_fixed).toFixed(1)}%` : "—"}
+                </td>
+                <td className="py-2.5 pr-3 text-right tabular-nums text-slate-600">
+                  {r.salary_to_internal_exp != null ? `${Number(r.salary_to_internal_exp).toFixed(1)}%` : "—"}
+                </td>
+                <td className="py-2.5 pr-3 text-right tabular-nums text-slate-600">
+                  {r.internal_cost_per_head != null ? fmt(r.internal_cost_per_head) : "—"}
+                </td>
+                <td className="py-2.5 pr-3 text-right tabular-nums text-slate-600">
+                  {r.revenue_per_ext_head != null ? fmt(r.revenue_per_ext_head) : "—"}
+                </td>
+                <td className="py-2.5 pr-3 text-right tabular-nums">
+                  <span className={`font-bold ${Number(r.mgmt_cost_ratio) > 20 ? "text-rose-600" : Number(r.mgmt_cost_ratio) > 10 ? "text-amber-600" : "text-slate-500"}`}>
+                    {r.mgmt_cost_ratio != null ? `${Number(r.mgmt_cost_ratio).toFixed(2)}%` : "—"}
+                  </span>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </div>
 
-      {/* SECTION 5b — Management Cost Ratio (FIX 2) */}
-      <SH icon={Wallet} title="Management Cost Ratio" color={P.plum} />
-
-      {/* Admin view: overall ratio */}
+      {/* Management Cost — Admin summary only */}
       {isAdmin && (
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
-          <KpiCard
-            label="Total Mgmt Cost"
-            value={fmt(kpi.totalMgmtCost)}
-            sub="Management dept salary paid"
-            icon={Wallet}
-            color={P.plum}
-          />
-          <KpiCard
-            label="Total Employee Cost"
-            value={fmt(kpi.totalEmpCost)}
-            sub="All employee_expense_payouts"
-            icon={Users}
-            color={P.slate}
-          />
-          <KpiCard
-            label="Mgmt Cost / Total Emp Cost"
-            value={`${kpi.adminMgmtRatio.toFixed(2)}%`}
-            sub="Overall management overhead"
-            icon={TrendingUp}
-            color={P.plum}
-          />
-        </div>
+        <>
+          <SH icon={Wallet} title="Management Cost Overview" color={P.plum} />
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <KpiCard
+              label="Total Mgmt Cost"
+              value={fmt(kpi.totalMgmtCost)}
+              sub="Management dept salary paid"
+              icon={Wallet}
+              color={P.plum}
+            />
+            <KpiCard
+              label="Total Employee Cost"
+              value={fmt(kpi.totalEmpCost)}
+              sub="All employee_expense_payouts"
+              icon={Users}
+              color={P.slate}
+            />
+            <KpiCard
+              label="Mgmt / Total Emp Cost"
+              value={`${kpi.adminMgmtRatio.toFixed(2)}%`}
+              sub="Overall management overhead"
+              icon={TrendingUp}
+              color={P.plum}
+            />
+          </div>
+        </>
       )}
-
-      {/* Dept-wise mgmt cost ratio table */}
-      <ChartCard title="Mgmt Cost Ratio by Department" subtitle="Allocated management cost ÷ department employee cost">
-        {mgmtRatioData.length === 0 ? (
-          <Empty msg="No management employees paid yet" />
-        ) : (
-          <DataTable
-            columns={[
-              { header: "Department",       key: "dept_name",       className: "font-medium text-slate-800" },
-              { header: "Dept Emp Cost",    key: "total_internal_salary", align: "right",
-                formatter: (v) => <span className="text-slate-600">{fmt(v)}</span> },
-              { header: "Mgmt Cost %",      key: "mgmt_cost_ratio", align: "right",
-                formatter: (v) => (
-                  <span className={`font-bold ${Number(v) > 20 ? "text-rose-600" : Number(v) > 10 ? "text-amber-600" : "text-emerald-600"}`}>
-                    {v != null ? `${Number(v).toFixed(2)}%` : "—"}
-                  </span>
-                )
-              },
-            ]}
-            data={mgmtRatioData}
-          />
-        )}
-      </ChartCard>
 
       {/* SECTION 6 HR Intelligence */}
       <SH icon={Users} title="HR Intelligence" color={P.slate} />
@@ -887,6 +967,237 @@ const DeptReports = () => {
           />
         </>
       )}
+
+      {/* ════════════════════════════════════════════════════════════
+          SECTION 8 — Working Capital (merged from WorkingCapital.jsx)
+          ════════════════════════════════════════════════════════════ */}
+
+      <div className="flex items-center justify-between flex-wrap gap-3 mt-8">
+        <SH icon={Landmark} title="Working Capital" color={P.steel} />
+        <div className="flex items-center gap-2 mb-4">
+          {/* Bank selector */}
+          <div className="relative">
+            <select
+              value={wcSelectedBank || ""}
+              onChange={(e) => setWcSelectedBank(e.target.value || null)}
+              className="appearance-none bg-white border border-slate-200 rounded-xl px-3 py-2 pr-8 text-xs font-medium text-slate-700 focus:outline-none focus:ring-1 focus:ring-blue-200 min-w-[200px]"
+            >
+              <option value="">All Banks</option>
+              {wcBanks.map((b) => (
+                <option key={b.bank_id} value={b.bank_id}>{b.bank_name}</option>
+              ))}
+            </select>
+            <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-300 pointer-events-none" />
+          </div>
+          <button
+            onClick={() => fetchWorkingCapital(wcSelectedBank)}
+            className="p-2 rounded-lg border border-gray-200 bg-white text-gray-500 hover:bg-gray-50 transition"
+            disabled={wcLoading}
+          >
+            <RefreshCw className={`w-4 h-4 ${wcLoading ? "animate-spin" : ""}`} />
+          </button>
+        </div>
+      </div>
+
+      {/* Cash Position KPIs */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
+        <KpiCard label="Current Cash Balance"   value={fmt(wcSummary.totalCash)}        sub="Across all banks"                          icon={Landmark}     color={P.steel} highlight />
+        <KpiCard label="Expected Collections"   value={fmt(wcSummary.totalOutstanding)}  sub={`${wcCollections.length} outstanding invoices`} icon={TrendingUp}   color={P.teal} />
+        <KpiCard label="OS Payables"            value={fmt(wcSummary.totalPayables)}     sub={`${wcPayables.length} pending payouts`}    icon={TrendingUp} color={P.brick} />
+        <KpiCard label="Statutory Pending"      value={fmt(wcSummary.totalStatutory)}    sub="GST / PF / ESI / TDS"                     icon={FileText}     color={P.amber} />
+      </div>
+
+      {/* Bank-wise balance cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
+        {wcBalances.map((b) => (
+          <div key={b.bank_id} className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4">
+            <div className="flex items-start justify-between mb-2">
+              <p className="text-xs font-bold text-slate-700 leading-tight max-w-[70%]">{b.bank_name}</p>
+              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${Number(b.current_balance) > 0 ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-400"}`}>
+                {Number(b.current_balance) > 0 ? "Active" : "Zero"}
+              </span>
+            </div>
+            <p className="text-xl font-black text-slate-900">{fmt(b.current_balance)}</p>
+            <div className="mt-2 flex gap-3 text-[10px] text-slate-400">
+              <span>Opening: {fmt(b.opening_balance)}</span>
+              <span className="text-emerald-600">+{fmt(b.total_inflow)}</span>
+              <span className="text-rose-500">-{fmt(b.total_outflow)}</span>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Weekly Forecast */}
+      <SH icon={TrendingUp} title="Weekly Cash Forecast" color={P.teal} />
+
+      {wcSummary.currentWeek?.week_label && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
+          <KpiCard label="Opening Cash (Current Week)"      value={fmt(wcSummary.currentWeek.opening_cash)}   sub={fmtDate(wcSummary.currentWeek.week_start)} icon={Landmark}      color={P.slate} />
+          <KpiCard label="Expected Inflow"                   value={fmt(wcSummary.currentWeek.expected_inflow)} sub="Collections due this week"                 icon={ArrowUpRight}  color={P.teal} />
+          <KpiCard label="Expected Outflow (OS+Statutory)"   value={fmt(Number(wcSummary.currentWeek.expected_outflow_os || 0) + Number(wcSummary.currentWeek.expected_outflow_statutory || 0))} sub="Payables + Statutory" icon={ArrowDownRight} color={P.brick} />
+          <KpiCard label="Projected Closing Cash"            value={fmt(wcSummary.currentWeek.closing_cash)}   sub="End of current week"                       icon={CheckCircle}   color={P.emerald} highlight />
+        </div>
+      )}
+
+      <ChartCard title="W-5 to W+10 Cash Forecast" subtitle="Weekly projected cash position">
+        {wcForecast.length === 0 ? <Empty msg="No forecast data" /> : (
+          <div className="overflow-auto">
+            <table className="w-full text-xs">
+              <thead className="sticky top-0 bg-white border-b border-slate-100">
+                <tr>
+                  {["Week","Period","Opening","Inflow","OS Outflow","Statutory","Net","Closing"].map((h, i) => (
+                    <th key={i} className={`py-2 pr-3 text-slate-400 font-semibold ${i > 1 ? "text-right" : "text-left"}`}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-50">
+                {wcForecast.map((w, i) => {
+                  const isCurrent = w.week_offset === 0;
+                  const isPast    = w.week_offset < 0;
+                  return (
+                    <tr key={i} className={`transition-colors ${isCurrent ? "bg-blue-50/60" : "hover:bg-slate-50/50"}`}>
+                      <td className="py-2 pr-3">
+                        <span className={`font-bold ${isCurrent ? "text-blue-600" : isPast ? "text-slate-400" : "text-slate-700"}`}>
+                          {w.week_label}
+                        </span>
+                        {isCurrent && <span className="ml-1 text-[9px] bg-blue-100 text-blue-600 px-1.5 py-0.5 rounded-full font-bold">NOW</span>}
+                      </td>
+                      <td className="py-2 pr-3 text-slate-400">{fmtDate(w.week_start)} – {fmtDate(w.week_end)}</td>
+                      <td className="py-2 pr-3 text-right text-slate-600 tabular-nums">{fmt(w.opening_cash)}</td>
+                      <td className="py-2 pr-3 text-right tabular-nums">
+                        <span className={Number(w.expected_inflow) > 0 ? "text-emerald-600 font-semibold" : "text-slate-300"}>
+                          {Number(w.expected_inflow) > 0 ? `+${fmt(w.expected_inflow)}` : "—"}
+                        </span>
+                      </td>
+                      <td className="py-2 pr-3 text-right tabular-nums">
+                        <span className={Number(w.expected_outflow_os) > 0 ? "text-rose-500 font-semibold" : "text-slate-300"}>
+                          {Number(w.expected_outflow_os) > 0 ? `-${fmt(w.expected_outflow_os)}` : "—"}
+                        </span>
+                      </td>
+                      <td className="py-2 pr-3 text-right tabular-nums">
+                        <span className={Number(w.expected_outflow_statutory) > 0 ? "text-amber-600 font-semibold" : "text-slate-300"}>
+                          {Number(w.expected_outflow_statutory) > 0 ? `-${fmt(w.expected_outflow_statutory)}` : "—"}
+                        </span>
+                      </td>
+                      <td className="py-2 pr-3 text-right tabular-nums">
+                        <span className={Number(w.net_movement) >= 0 ? "text-emerald-600 font-bold" : "text-rose-600 font-bold"}>
+                          {Number(w.net_movement) >= 0 ? `+${fmt(w.net_movement)}` : fmt(w.net_movement)}
+                        </span>
+                      </td>
+                      <td className="py-2 pr-3 text-right tabular-nums font-bold text-slate-800">{fmt(w.closing_cash)}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </ChartCard>
+
+      {/* Outstanding Collections */}
+      <SH icon={TrendingUp} title="Outstanding Collections" color={P.teal} />
+      {wcCollections.filter(c => c.is_overdue).length > 0 && (
+        <div className="bg-rose-50 border border-rose-200 text-rose-700 rounded-2xl p-3 flex items-center gap-3">
+          <AlertTriangle className="w-4 h-4 flex-shrink-0" />
+          <p className="text-xs font-semibold">
+            {wcCollections.filter(c => c.is_overdue).length} overdue invoices totalling {fmt(wcSummary.overdueCol)}
+          </p>
+        </div>
+      )}
+      <ChartCard title="Outstanding Invoices" subtitle="Expected collections with overdue status">
+        {wcCollections.length === 0 ? <Empty msg="No outstanding collections" /> : (
+          <div className="overflow-auto" style={{ maxHeight: 340 }}>
+            <table className="w-full text-xs">
+              <thead className="sticky top-0 bg-white border-b border-slate-100">
+                <tr>
+                  {["Invoice","Client","Bank","Expected Date","Outstanding","Overdue Days","Status"].map((h, i) => (
+                    <th key={i} className={`py-2 pr-3 text-slate-400 font-semibold ${i >= 4 ? "text-right" : "text-left"}`}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-50">
+                {wcCollections.map((c, i) => (
+                  <tr key={i} className="hover:bg-slate-50/50 transition-colors">
+                    <td className="py-2 pr-3 font-mono text-slate-500">{c.invoice_number}</td>
+                    <td className="py-2 pr-3 font-medium text-slate-800 max-w-[160px] truncate">{c.client_name}</td>
+                    <td className="py-2 pr-3 text-slate-400 text-[10px]">{c.bank_name}</td>
+                    <td className="py-2 pr-3 text-slate-600">{fmtDate(c.expected_collection_date)}</td>
+                    <td className="py-2 pr-3 text-right font-bold text-slate-800">{fmt(c.outstanding)}</td>
+                    <td className="py-2 pr-3 text-right">
+                      <span className={c.days_overdue > 0 ? "text-rose-600 font-bold" : "text-slate-400"}>
+                        {c.days_overdue > 0 ? `${c.days_overdue}d` : "—"}
+                      </span>
+                    </td>
+                    <td className="py-2 pr-3 text-right"><WcBadge overdue={c.is_overdue} /></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </ChartCard>
+
+      {/* Payables & Statutory */}
+      <SH icon={TrendingUp} title="Payables & Statutory" color={P.brick} />
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <ChartCard title="OS Payables" subtitle="Pending payout obligations">
+          {wcPayables.length === 0 ? <Empty msg="No OS payables" /> : (
+            <div className="overflow-auto" style={{ maxHeight: 320 }}>
+              <table className="w-full text-xs">
+                <thead className="sticky top-0 bg-white border-b border-slate-100">
+                  <tr>
+                    {["Invoice","Client","Due Date","Payable","Status"].map((h, i) => (
+                      <th key={i} className={`py-2 pr-3 text-slate-400 font-semibold ${i >= 3 ? "text-right" : "text-left"}`}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-50">
+                  {wcPayables.map((p, i) => (
+                    <tr key={i} className="hover:bg-slate-50/50 transition-colors">
+                      <td className="py-2 pr-3 font-mono text-slate-500">{p.invoice_number}</td>
+                      <td className="py-2 pr-3 font-medium text-slate-800 max-w-[130px] truncate">{p.client_name}</td>
+                      <td className="py-2 pr-3 text-slate-500">{fmtDate(p.expected_outflow_date)}</td>
+                      <td className="py-2 pr-3 text-right font-bold text-rose-600">{fmt(p.os_amt_difference)}</td>
+                      <td className="py-2 pr-3 text-right"><WcBadge overdue={p.is_overdue} /></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </ChartCard>
+
+        <ChartCard title="Statutory Liabilities" subtitle="GST / PF / ESI / TDS pending">
+          {wcStatutory.length === 0 ? <Empty msg="No statutory pending" /> : (
+            <div className="space-y-3">
+              {wcStatutory.map((s, i) => (
+                <div key={i} className={`rounded-xl border p-3 ${s.is_overdue ? "border-rose-200 bg-rose-50/40" : "border-slate-200 bg-slate-50/40"}`}>
+                  <div className="flex items-start justify-between">
+                    <div>
+                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full mr-2 ${
+                        s.type === "GST" ? "bg-amber-100 text-amber-700" :
+                        s.type === "PF"  ? "bg-blue-100 text-blue-700" :
+                        s.type === "TDS" ? "bg-purple-100 text-purple-700" :
+                        "bg-slate-100 text-slate-600"
+                      }`}>{s.type}</span>
+                      <span className="text-xs font-semibold text-slate-700">{s.entity}</span>
+                    </div>
+                    <WcBadge overdue={s.is_overdue} />
+                  </div>
+                  <div className="flex items-center justify-between mt-2">
+                    <span className="text-[10px] text-slate-400">
+                      Due: {fmtDate(s.payment_date)} · Month: {fmtDate(s.month)}
+                    </span>
+                    <span className="text-sm font-black text-rose-600">{fmt(s.pending_due)}</span>
+                  </div>
+                  <div className="text-[10px] text-slate-400 mt-1">{s.bank_name}</div>
+                </div>
+              ))}
+            </div>
+          )}
+        </ChartCard>
+      </div>
+
     </div>
   );
 };
