@@ -220,7 +220,7 @@ const DeptReports = () => {
   const [userDeptName, setUserDeptName] = useState(null);
 
   const [allDepts, setAllDepts] = useState([]);
-  const [deptId, setDeptId] = useState(null);
+  const [deptId, setDeptId] = useState(null); // null = All Departments
 
   // NEW RPC STATES - replace all old table states
   const [rpcRevenue, setRpcRevenue] = useState([]);
@@ -265,14 +265,14 @@ const DeptReports = () => {
           .order("dept_name");
         const d = depts || [];
         setAllDepts(d);
-        // Only set default if not already set
-        if (!deptId && d.length > 0) setDeptId(d[0].id);
+        // FIX: REMOVED auto-select — deptId stays null = All Departments
+        // if (!deptId && d.length > 0) setDeptId(d[0].id); // <-- REMOVED
       } else {
         setDeptId(resolvedDeptId);
       }
 
-      // 3) Effective dept for all RPC calls
-      const effectiveDeptId = resolvedIsAdmin ? (deptId ?? null) : resolvedDeptId;
+      // 3) Effective dept for all RPC calls — null = All Departments
+      const effectiveDeptId = resolvedIsAdmin ? deptId : resolvedDeptId;
       const p_start = fy.start;
       const p_end   = fy.end;
 
@@ -558,10 +558,10 @@ const DeptReports = () => {
               <div className="relative">
                 <select
                   value={deptId || ""}
-                  onChange={(e) => setDeptId(e.target.value || null)} // FIX 5: Keep as string, allow "All"
+                  onChange={(e) => setDeptId(e.target.value || null)} // FIX: Keep as string, allow "All"
                   className="w-full appearance-none bg-white border border-slate-200 rounded-xl px-3 py-2 pr-8 text-xs font-medium text-slate-700 focus:outline-none focus:ring-1 focus:ring-blue-200"
                 >
-                  <option value="">All Departments</option> {/* FIX 5: Add "All" option */}
+                  <option value="">All Departments</option> {/* FIX: Add "All" option */}
                   {allDepts.map((d) => (
                     <option key={d.id} value={d.id}>
                       {d.dept_name}
