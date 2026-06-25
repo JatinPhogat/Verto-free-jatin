@@ -150,11 +150,54 @@ const ProfitCenterPL = () => {
   const [sortConfig, setSort]   = useState({ key: 'pl_month', dir: 'desc' });
   const [tooltip, setTooltip]   = useState(null); // { key, value, x, y }
   
+  // ── Auth state ──────────────────────────────────────────────────
+  const [userRole, setUserRole] = useState(null);   // 'admin' | 'manager' | 'employee' | 'intern' | 'none'
+  const [userDeptCode, setUserDeptCode] = useState(null); // e.g. 'OS', 'REC'
+  const [authLoading, setAuthLoading] = useState(true);
+
   // FY Navigation state
   const [fy, setFy] = useState('');
 
+  // ── Auth: get role + dept ──────────────────────────────────────
+  useEffect(() => {
+    const loadAuth = async () => {
+      setAuthLoading(true);
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) { 
+          setUserRole('none'); 
+          setAuthLoading(false); 
+          return;
+        }
+
+        const { data: roleData } = await supabase
+          .rpc('get_user_dept_and_role', { p_email: user.email });
+
+        const info = roleData?.[0];
+        setUserRole(info?.role ?? 'employee');
+        // department from user_roles is dept_code (e.g. 'OS', 'REC', 'TEMP')
+        setUserDeptCode(info?.department ?? null);
+      } catch (e) {
+        console.error('Auth error:', e);
+        setUserRole('employee');
+      } finally {
+        setAuthLoading(false);
+      }
+    };
+    loadAuth();
+  }, []);
+
   // ── Fetch ──────────────────────────────────────────────────────
   const fetchData = useCallback(async () => {
+    // Wait until auth is resolved
+    if (authLoading) return;
+    // Employees and interns see nothing
+    if (userRole === 'employee' || userRole === 'intern' || userRole === 'none') {
+      setRows([]);
+      setLoading(false);
+      return;
+    }
+
     setLoading(true);
     setError(null);
     try {
@@ -166,6 +209,12 @@ const ProfitCenterPL = () => {
       if (dateFrom) q = q.gte('pl_month', dateFrom);
       if (dateTo)   q = q.lte('pl_month', dateTo);
 
+      // Manager sees only their own department
+      if (userRole === 'manager' && userDeptCode) {
+        q = q.eq('dept_code', userDeptCode);
+      }
+      // Admin sees all — no extra filter
+
       const { data, error: err } = await q;
       if (err) throw err;
       setRows(data || []);
@@ -174,9 +223,12 @@ const ProfitCenterPL = () => {
     } finally {
       setLoading(false);
     }
-  }, [dateFrom, dateTo]);
+  }, [dateFrom, dateTo, userRole, userDeptCode, authLoading]);
 
-  useEffect(() => { fetchData(); }, [fetchData]);
+  // Only fetch once auth is loaded
+  useEffect(() => {
+    if (!authLoading) fetchData();
+  }, [fetchData, authLoading]);
 
   // ── Initialize to current FY ──────────────────────────────────
   useEffect(() => {
@@ -306,12 +358,18 @@ const ProfitCenterPL = () => {
             <TrendingUp className="w-5 h-5 text-blue-600" />
             Profit Center P&amp;L
           </h1>
-          <p className="text-xs text-gray-500 mt-0.5">Department-wise profitability · DB-driven · Real-time</p>
+          <p className="text-xs text-gray-500 mt-0.5">
+            {userRole === 'admin'
+              ? 'All departments · Admin view · Real-time'
+              : userRole === 'manager'
+              ? `${rows[0]?.dept_name || userDeptCode || 'Your department'} · Manager view · Real-time`
+              : 'Department-wise profitability · Real-time'}
+          </p>
         </div>
         <div className="flex items-center gap-2">
           <button
             onClick={fetchData}
-            disabled={loading}
+            disabled={loading || authLoading}
             className="p-2 rounded-lg border border-gray-200 bg-white text-gray-500 hover:bg-gray-50 transition disabled:opacity-40"
             title="Refresh"
           >
@@ -319,7 +377,7 @@ const ProfitCenterPL = () => {
           </button>
           <button
             onClick={exportExcel}
-            disabled={!filtered.length}
+            disabled={!filtered.length || userRole === 'employee' || userRole === 'intern' || userRole === 'none'}
             className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold transition disabled:opacity-40"
           >
             <Download className="w-4 h-4" />Export Excel
@@ -338,6 +396,7 @@ const ProfitCenterPL = () => {
             onChange={e => setSearch(e.target.value)}
             placeholder="Search dept or month…"
             className="pl-9 pr-3 py-2 w-56 border border-gray-200 rounded-lg text-sm bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-300 focus:border-blue-400 transition"
+            disabled={userRole === 'employee' || userRole === 'intern' || userRole === 'none'}
           />
           {search && (
             <button onClick={() => setSearch('')} className="absolute right-2 top-2.5 text-gray-400 hover:text-gray-600">
@@ -346,20 +405,30 @@ const ProfitCenterPL = () => {
           )}
         </div>
 
-        {/* Dept filter */}
-        <select
-          value={deptFilter}
-          onChange={e => setDept(e.target.value)}
-          className="border border-gray-200 bg-gray-50 rounded-lg px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-300 transition"
-        >
-          {allDepts.map(d => <option key={d} value={d}>{d === 'All' ? 'All Departments' : d}</option>)}
-        </select>
+        {/* Dept filter — admin only */}
+        {userRole === 'admin' && (
+          <select
+            value={deptFilter}
+            onChange={e => setDept(e.target.value)}
+            className="border border-gray-200 bg-gray-50 rounded-lg px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-300 transition"
+          >
+            {allDepts.map(d => <option key={d} value={d}>{d === 'All' ? 'All Departments' : d}</option>)}
+          </select>
+        )}
+        
+        {/* Manager: show locked dept badge */}
+        {userRole === 'manager' && userDeptCode && (
+          <div className="flex items-center gap-1.5 px-3 py-2 bg-blue-50 border border-blue-200 rounded-lg text-xs font-semibold text-blue-700">
+            <Building2 className="w-3.5 h-3.5" />
+            {rows[0]?.dept_name || userDeptCode}
+          </div>
+        )}
 
         {/* FY Navigation */}
         <div className="flex items-center gap-2 bg-blue-50 border border-blue-200 rounded-lg px-2 py-1.5">
           <button
             onClick={() => setFy(prevFY(fy))}
-            disabled={!fy}
+            disabled={!fy || userRole === 'employee' || userRole === 'intern' || userRole === 'none'}
             className="p-1 rounded-md hover:bg-blue-100 text-blue-600 disabled:opacity-30 transition"
             title="Previous FY"
           >
@@ -369,7 +438,8 @@ const ProfitCenterPL = () => {
           <select
             value={fy}
             onChange={e => setFy(e.target.value)}
-            className="bg-transparent text-sm font-semibold text-blue-800 focus:outline-none cursor-pointer min-w-[100px]"
+            disabled={userRole === 'employee' || userRole === 'intern' || userRole === 'none'}
+            className="bg-transparent text-sm font-semibold text-blue-800 focus:outline-none cursor-pointer min-w-[100px] disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {ALL_FY_OPTIONS.map(f => (
               <option key={f} value={f}>FY {f}</option>
@@ -378,7 +448,7 @@ const ProfitCenterPL = () => {
 
           <button
             onClick={() => setFy(nextFY(fy))}
-            disabled={!fy || fy === getCurrentFY()}
+            disabled={!fy || fy === getCurrentFY() || userRole === 'employee' || userRole === 'intern' || userRole === 'none'}
             className="p-1 rounded-md hover:bg-blue-100 text-blue-600 disabled:opacity-30 transition"
             title="Next FY"
           >
@@ -393,24 +463,43 @@ const ProfitCenterPL = () => {
             type="date"
             value={dateFrom}
             onChange={e => setDateFrom(e.target.value)}
-            className="border border-gray-200 bg-gray-50 rounded-lg px-2 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-300 transition w-36"
+            disabled={userRole === 'employee' || userRole === 'intern' || userRole === 'none'}
+            className="border border-gray-200 bg-gray-50 rounded-lg px-2 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-300 transition w-36 disabled:opacity-50 disabled:cursor-not-allowed"
           />
           <span className="text-gray-400 text-xs">to</span>
           <input
             type="date"
             value={dateTo}
             onChange={e => setDateTo(e.target.value)}
-            className="border border-gray-200 bg-gray-50 rounded-lg px-2 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-300 transition w-36"
+            disabled={userRole === 'employee' || userRole === 'intern' || userRole === 'none'}
+            className="border border-gray-200 bg-gray-50 rounded-lg px-2 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-300 transition w-36 disabled:opacity-50 disabled:cursor-not-allowed"
           />
         </div>
 
         <div className="ml-auto flex items-center gap-2 text-xs text-gray-400">
-          {loading
-            ? <span className="flex items-center gap-1"><Loader2 className="w-3.5 h-3.5 animate-spin" /> Loading…</span>
+          {(loading || authLoading)
+            ? <span className="flex items-center gap-1"><Loader2 className="w-3.5 h-3.5 animate-spin" /> {authLoading ? 'Checking access…' : 'Loading…'}</span>
+            : userRole === 'employee' || userRole === 'intern' || userRole === 'none'
+            ? <span className="font-medium text-gray-400">Access restricted</span>
             : <span className="font-medium text-gray-600">{filtered.length} rows</span>
           }
         </div>
       </div>
+
+      {/* ── ACCESS DENIED ── */}
+      {!authLoading && (userRole === 'employee' || userRole === 'intern' || userRole === 'none') && (
+        <div className="flex flex-col items-center justify-center py-24 text-center gap-4 bg-white border border-gray-200 rounded-xl">
+          <div className="w-16 h-16 rounded-2xl bg-rose-50 border border-rose-200 flex items-center justify-center">
+            <AlertTriangle className="w-8 h-8 text-rose-400" />
+          </div>
+          <div>
+            <h2 className="text-base font-bold text-gray-800">Access Restricted</h2>
+            <p className="text-sm text-gray-500 mt-1">
+              P&amp;L data is only available to <span className="font-semibold text-gray-700">Admins</span> and <span className="font-semibold text-gray-700">Managers</span>.
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* ── ERROR ── */}
       {error && (
@@ -422,7 +511,9 @@ const ProfitCenterPL = () => {
       )}
 
       {/* ── KPI CARDS ── */}
-      {!loading && !error && filtered.length > 0 && (
+      {!loading && !error && !authLoading && 
+       userRole !== 'employee' && userRole !== 'intern' && userRole !== 'none' && 
+       filtered.length > 0 && (
         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
           <KpiCard label="Total Invoice"   value={fmt(kpis.totalInvoice)}   color="blue"   icon={Building2}     delay={0.00} />
           <KpiCard label="Verto Fee Earned" value={fmt(kpis.vertoFeeEarned)} color="blue"   icon={TrendingUp}    delay={0.04} />
@@ -443,6 +534,11 @@ const ProfitCenterPL = () => {
           <h3 className="font-semibold text-gray-800 text-sm flex items-center gap-2">
             <Building2 className="w-4 h-4 text-blue-600" />
             Profit &amp; Loss — Department × Month
+            {userRole === 'manager' && userDeptCode && (
+              <span className="ml-2 text-xs font-normal text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full">
+                {rows[0]?.dept_name || userDeptCode}
+              </span>
+            )}
           </h3>
           <div className="flex items-center gap-3 text-xs text-gray-400">
             <span className="flex items-center gap-1">
@@ -460,10 +556,16 @@ const ProfitCenterPL = () => {
           </div>
         </div>
 
-        {loading ? (
+        {(loading || authLoading) ? (
           <div className="flex flex-col items-center justify-center py-20 gap-3 text-gray-400">
             <Loader2 className="w-8 h-8 animate-spin text-blue-400" />
-            <span className="text-sm">Loading P&amp;L data…</span>
+            <span className="text-sm">{authLoading ? 'Checking access…' : 'Loading P&L data…'}</span>
+          </div>
+        ) : userRole === 'employee' || userRole === 'intern' || userRole === 'none' ? (
+          <div className="flex flex-col items-center justify-center py-20 text-gray-400 gap-2">
+            <AlertTriangle className="w-12 h-12 opacity-20" />
+            <p className="text-sm font-medium">Access Restricted</p>
+            <p className="text-xs">Contact your administrator for access</p>
           </div>
         ) : filtered.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-20 text-gray-400 gap-2">
@@ -653,7 +755,9 @@ const ProfitCenterPL = () => {
         )}
 
         {/* ── PAGINATION ── */}
-        {!loading && filtered.length > 0 && (
+        {!loading && !authLoading && 
+         userRole !== 'employee' && userRole !== 'intern' && userRole !== 'none' && 
+         filtered.length > 0 && (
           <div className="px-5 py-3 border-t border-gray-100 bg-gray-50/50 flex items-center justify-between">
             <p className="text-xs text-gray-500">
               Showing <span className="font-semibold text-gray-700">{(page - 1) * ITEMS_PER_PAGE + 1}</span>
@@ -705,7 +809,9 @@ const ProfitCenterPL = () => {
       </div>
 
       {/* ── LEGEND ── */}
-      {!loading && filtered.length > 0 && (
+      {!loading && !authLoading && 
+       userRole !== 'employee' && userRole !== 'intern' && userRole !== 'none' && 
+       filtered.length > 0 && (
         <div className="bg-white border border-gray-200 rounded-xl px-5 py-3 flex flex-wrap gap-4 text-xs text-gray-500">
           <span className="font-semibold text-gray-700 mr-2">Legend:</span>
           <span><span className="font-semibold text-gray-700">Invoice Value</span> = Total billed (excl. CN)</span>
