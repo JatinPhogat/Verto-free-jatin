@@ -15,6 +15,7 @@ import supabase from "./lib/supabaseClient";
 import CommandPalette from "./components/CommandPalette";
 import ShortcutsHelp from "./components/ShortcutsHelp";
 import TodoPanel, { TodoBadgeButton } from "./components/TodoPanel";
+import EmployeeChat from "./components/Employeechat";
 import {
   LayoutDashboard,
   TrendingUp,
@@ -36,7 +37,8 @@ import {
   Wallet,
   Monitor,
   BarChart2,
-  Building2,  // ← ADD THIS LINE
+  Building2,
+  MessageSquare,
 } from "lucide-react";
 
 // Import Components
@@ -489,6 +491,8 @@ function App() {
   const [showPaymentCenter, setShowPaymentCenter] = useState(false);
   const [showTodoPanel, setShowTodoPanel] = useState(false);
   const [todoUnreadCount, setTodoUnreadCount] = useState(0);
+  const [showChatPanel, setShowChatPanel] = useState(false);
+  const [chatUnreadCount, setChatUnreadCount] = useState(0);
 
   const clients = [
     "Acme Corp",
@@ -543,6 +547,23 @@ function App() {
         event: "*", schema: "public", table: "employee_todos",
         filter: `assigned_to_email=eq.${user.email}`,
       }, loadCount)
+      .subscribe();
+    return () => supabase.removeChannel(ch);
+  }, [user?.email]);
+
+  // ── CHAT UNREAD COUNT ─────────────────────────────────────────────
+  useEffect(() => {
+    if (!user?.email) return;
+    const loadChatCount = async () => {
+      const { data } = await supabase.rpc("get_my_inbox");
+      setChatUnreadCount((data || []).length);
+    };
+    loadChatCount();
+
+    const ch = supabase.channel("chat-badge")
+      .on("postgres_changes", {
+        event: "INSERT", schema: "public", table: "employee_messages",
+      }, loadChatCount)
       .subscribe();
     return () => supabase.removeChannel(ch);
   }, [user?.email]);
@@ -1024,6 +1045,20 @@ function App() {
                 unreadCount={todoUnreadCount}
               />
 
+              {/* ── CHAT BUTTON ── */}
+              <button
+                onClick={() => setShowChatPanel(v => !v)}
+                className="relative w-9 h-9 flex items-center justify-center rounded-xl border border-gray-200 bg-white hover:bg-gray-50 transition-all"
+                title="Messages"
+              >
+                <MessageSquare className="w-4 h-4 text-gray-500" />
+                {chatUnreadCount > 0 && (
+                  <span className="absolute -top-1 -right-1 w-4 h-4 bg-rose-500 text-white text-[9px] font-bold rounded-full flex items-center justify-center">
+                    {chatUnreadCount > 9 ? "9+" : chatUnreadCount}
+                  </span>
+                )}
+              </button>
+
               <div className="relative">
                 <button
                   onClick={() => setShowProfileMenu(!showProfileMenu)}
@@ -1414,6 +1449,18 @@ function App() {
           onClose={() => setShowTodoPanel(false)}
           userEmail={user?.email}
         />
+
+        {/* ── CHAT PANEL ── */}
+        <AnimatePresence>
+          {showChatPanel && (
+            <EmployeeChat
+              onClose={() => setShowChatPanel(false)}
+              onUnreadChange={(count) => setChatUnreadCount(
+                typeof count === "function" ? count(chatUnreadCount) : count
+              )}
+            />
+          )}
+        </AnimatePresence>
 
         {/* ── MODALS ── */}
         <AddPaymentReceivedModal
