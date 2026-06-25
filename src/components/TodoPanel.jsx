@@ -275,15 +275,15 @@ const TaskCard = ({ task, onComplete, onDelete, currentUserEmail }) => {
       exit={{ opacity: 0, x: -20 }}
       className={`rounded-2xl border p-3 transition-all
         ${isCompleted
-          ? "bg-gray-50/60 border-gray-100 opacity-60"
+          ? "bg-emerald-50/70 border-emerald-200"   // ← green card, no opacity fade
           : overdue
           ? "bg-rose-50/40 border-rose-100"
           : "bg-white border-gray-100 hover:border-blue-100 hover:shadow-sm"
         }`}
     >
       <div className="flex items-start gap-2.5">
-        {/* Complete Button */}
-        {!isCompleted && isMine && (
+        {/* Complete Button — assignee OR creator can mark done */}
+        {!isCompleted && (isMine || task.assigned_by_email?.toLowerCase() === currentUserEmail?.toLowerCase()) && (
           <button
             onClick={handleComplete}
             disabled={completing}
@@ -331,12 +331,17 @@ const TaskCard = ({ task, onComplete, onDelete, currentUserEmail }) => {
               </span>
             )}
 
-            {isSelf
-              ? <span className="text-[10px] text-blue-500 font-semibold">Self</span>
-              : isMine
-              ? <span className="text-[10px] text-slate-400">by {task.assigned_by_name}</span>
-              : <span className="text-[10px] text-indigo-500 font-semibold">→ {task.assigned_to_name}</span>
-            }
+            {isCompleted ? (
+              <span className="text-[10px] text-emerald-600 font-semibold flex items-center gap-0.5">
+                ✓ Done · {isSelf ? "Self" : isMine ? `by ${task.assigned_by_name}` : `→ ${task.assigned_to_name}`}
+              </span>
+            ) : isSelf ? (
+              <span className="text-[10px] text-blue-500 font-semibold">Self</span>
+            ) : isMine ? (
+              <span className="text-[10px] text-slate-400">by {task.assigned_by_name}</span>
+            ) : (
+              <span className="text-[10px] text-indigo-500 font-semibold">→ {task.assigned_to_name}</span>
+            )}
           </div>
         </div>
 
@@ -416,15 +421,15 @@ const TodoPanel = ({ isOpen, onClose, userEmail }) => {
     const isSelf = t.is_self_task;
   
     if (filter === "pending")   return t.status === "Pending"   && (toMe || isSelf);
-    if (filter === "completed") return t.status === "Completed" && (toMe || isSelf);
-    if (filter === "by_me")     return byMe && !isSelf;
+    if (filter === "completed") return t.status === "Completed" && (toMe || byMe || isSelf); // ← creator also sees it
+    if (filter === "by_me")     return byMe && !isSelf && t.status === "Pending"; // ← only pending assigned tasks
     return true;
   });
 
   const tabs = [
     { id: "pending",   label: "Pending",   count: counters.pending_count },
     { id: "completed", label: "Done",       count: counters.completed_today },
-    { id: "by_me",     label: "Assigned",   count: counters.assigned_by_me },
+    { id: "by_me",     label: "Assigned",  count: counters.assigned_by_me },
   ];
 
   return (
