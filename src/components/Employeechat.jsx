@@ -160,8 +160,9 @@ const EmployeeChat = ({ onClose, onUnreadChange }) => {
     setOpenedMessage(msg);
     try {
       await supabase.rpc("read_and_delete_message", { p_message_id: msg.id });
-      setInbox((prev) => prev.filter((m) => m.id !== msg.id));
-      onUnreadChange?.((prev) => Math.max(0, (prev || inbox.length) - 1));
+      const newInbox = inbox.filter((m) => m.id !== msg.id);
+      setInbox(newInbox);
+      onUnreadChange?.(newInbox.length); // ← pass the count directly, not a function
     } catch (e) {
       console.error("Delete error:", e);
     }
