@@ -393,7 +393,6 @@ const TodoPanel = ({ isOpen, onClose, userEmail }) => {
         event: "*",
         schema: "public",
         table: "employee_todos",
-        filter: `assigned_to_email=eq.${userEmail}`,
       }, () => loadTasks())
       .subscribe();
     return () => supabase.removeChannel(channel);
@@ -409,10 +408,16 @@ const TodoPanel = ({ isOpen, onClose, userEmail }) => {
     return () => document.removeEventListener("mousedown", handler);
   }, [isOpen, onClose]);
 
+  const myEmail = (userEmail || "").toLowerCase().trim();
+
   const filteredTasks = tasks.filter(t => {
-    if (filter === "pending")   return t.status === "Pending" && t.assigned_to_email === userEmail;
-    if (filter === "completed") return t.status === "Completed";
-    if (filter === "by_me")     return t.assigned_by_email === userEmail && t.assigned_to_email !== userEmail;
+    const toMe   = (t.assigned_to_email   || "").toLowerCase().trim() === myEmail;
+    const byMe   = (t.assigned_by_email   || "").toLowerCase().trim() === myEmail;
+    const isSelf = t.is_self_task;
+  
+    if (filter === "pending")   return t.status === "Pending"   && (toMe || isSelf);
+    if (filter === "completed") return t.status === "Completed" && (toMe || isSelf);
+    if (filter === "by_me")     return byMe && !isSelf;
     return true;
   });
 

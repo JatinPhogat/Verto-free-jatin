@@ -533,23 +533,23 @@ function App() {
     user, role, loading, showLivePopup, setShowLivePopup, sessionKicked,
   } = useAuth();
   
-  // ── TODO BADGE COUNT ─────────────────────────────────────────────
-  useEffect(() => {
-    if (!user?.email) return;
-    const loadCount = async () => {
-      const { data } = await supabase.rpc("get_todo_counters");
-      setTodoUnreadCount(Number(data?.[0]?.unread_count || 0));
-    };
-    loadCount();
-  
-    const ch = supabase.channel("todo-badge")
-      .on("postgres_changes", {
-        event: "*", schema: "public", table: "employee_todos",
-        filter: `assigned_to_email=eq.${user.email}`,
-      }, loadCount)
-      .subscribe();
-    return () => supabase.removeChannel(ch);
-  }, [user?.email]);
+// ── TODO BADGE COUNT ─────────────────────────────────────────────
+useEffect(() => {
+  if (!user?.email) return;
+  const loadCount = async () => {
+    const { data } = await supabase.rpc("get_todo_counters");
+    setTodoUnreadCount(Number(data?.[0]?.unread_count || 0));
+  };
+  loadCount();
+
+  const ch = supabase.channel("todo-badge")
+    .on("postgres_changes", {
+      event: "*", schema: "public", table: "employee_todos",
+      // no filter — RLS on employee_todos handles row-level security
+    }, loadCount)
+    .subscribe();
+  return () => supabase.removeChannel(ch);
+}, [user?.email]);
 
   // ── CHAT UNREAD COUNT ─────────────────────────────────────────────
   useEffect(() => {
