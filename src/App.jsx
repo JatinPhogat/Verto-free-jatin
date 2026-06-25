@@ -16,6 +16,7 @@ import CommandPalette from "./components/CommandPalette";
 import ShortcutsHelp from "./components/ShortcutsHelp";
 import TodoPanel, { TodoBadgeButton } from "./components/TodoPanel";
 import EmployeeChat from "./components/Employeechat";
+import { playChatSound, playTaskSound } from "./utils/notificationSound";
 import {
   LayoutDashboard,
   TrendingUp,
@@ -532,6 +533,21 @@ function App() {
   const {
     user, role, loading, showLivePopup, setShowLivePopup, sessionKicked,
   } = useAuth();
+
+  useEffect(() => {
+  const unlock = () => {
+    const AudioContext = window.AudioContext || window.webkitAudioContext;
+    if (AudioContext) new AudioContext().resume();
+    document.removeEventListener("click", unlock);
+    document.removeEventListener("keydown", unlock);
+  };
+  document.addEventListener("click", unlock);
+  document.addEventListener("keydown", unlock);
+  return () => {
+    document.removeEventListener("click", unlock);
+    document.removeEventListener("keydown", unlock);
+  };
+}, []);
   
 // ── TODO BADGE COUNT ─────────────────────────────────────────────
 useEffect(() => {
@@ -542,12 +558,18 @@ useEffect(() => {
   };
   loadCount();
 
-  const ch = supabase.channel("todo-badge")
-    .on("postgres_changes", {
-      event: "*", schema: "public", table: "employee_todos",
-      // no filter — RLS on employee_todos handles row-level security
-    }, loadCount)
-    .subscribe();
+// AFTER — plays sound only on new task INSERT
+const ch = supabase.channel("todo-badge")
+  .on("postgres_changes", {
+    event: "INSERT", schema: "public", table: "employee_todos",
+  }, () => {
+    playTaskSound();   // ← play sound on new task
+    loadCount();
+  })
+  .on("postgres_changes", {
+    event: "UPDATE", schema: "public", table: "employee_todos",
+  }, loadCount)       // ← update count but no sound on update
+  .subscribe();
   return () => supabase.removeChannel(ch);
 }, [user?.email]);
 
@@ -555,22 +577,29 @@ useEffect(() => {
   // Counts only messages where is_read is false — NOT total inbox size.
   // Listens on "*" (not just INSERT) so that marking a message read
   // (an UPDATE) also refreshes the badge in real time.
-  useEffect(() => {
-    if (!user?.email) return;
-    const loadChatCount = async () => {
-      const { data } = await supabase.rpc("get_my_inbox");
-      const unread = (data || []).filter((m) => !m.is_read).length;
-      setChatUnreadCount(unread);
-    };
-    loadChatCount();
+// AFTER — plays sound only on new INSERT (new message received)
+useEffect(() => {
+  if (!user?.email) return;
+  const loadChatCount = async () => {
+    const { data } = await supabase.rpc("get_my_inbox");
+    const unread = (data || []).filter((m) => !m.is_read).length;
+    setChatUnreadCount(unread);
+  };
+  loadChatCount();
 
-    const ch = supabase.channel("chat-badge")
-      .on("postgres_changes", {
-        event: "*", schema: "public", table: "employee_messages",
-      }, loadChatCount)
-      .subscribe();
-    return () => supabase.removeChannel(ch);
-  }, [user?.email]);
+  const ch = supabase.channel("chat-badge")
+    .on("postgres_changes", {
+      event: "INSERT", schema: "public", table: "employee_messages",
+    }, () => {
+      playChatSound();   // ← play sound on new message
+      loadChatCount();
+    })
+    .on("postgres_changes", {
+      event: "UPDATE", schema: "public", table: "employee_messages",
+    }, loadChatCount)   // ← update count but no sound on read
+    .subscribe();
+  return () => supabase.removeChannel(ch);
+}, [user?.email]);
 
   const permissions = usePermissions();
   const { isIntern } = permissions;
