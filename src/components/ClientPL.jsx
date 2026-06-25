@@ -115,6 +115,11 @@ const ClientPL = () => {
   const [loading, setLoading]   = useState(true);
   const [error, setError]       = useState(null);
 
+  // ── Auth state ──────────────────────────────────────────────────────────────
+  const [userRole, setUserRole] = useState(null);  // 'admin' | 'manager' | 'employee'
+  const [userDeptCode, setUserDeptCode] = useState(null);  // e.g. 'OS', 'REC', 'TEMP'
+  const [authLoading, setAuthLoading] = useState(true);
+
   // Filters — PnL
   const [search, setSearch]         = useState('');
   const [deptFilter, setDeptFilter] = useState('All');
@@ -136,14 +141,68 @@ const ClientPL = () => {
   const [statPage, setStatPage] = useState(1);
   const [expandedNodes, setExpandedNodes] = useState(new Set());
 
+  // ── Auth: resolve role + dept ──────────────────────────────────────────────
+  useEffect(() => {
+    const loadAuth = async () => {
+      setAuthLoading(true);
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) { setUserRole('none'); setAuthLoading(false); return; }
+
+        const { data: roleData } = await supabase
+          .rpc('get_user_dept_and_role', { p_email: user.email });
+
+        const info = roleData?.[0];
+        setUserRole(info?.role ?? 'employee');
+        // department field = dept_code (e.g. 'OS', 'REC', 'TEMP')
+        setUserDeptCode(info?.department ?? null);
+      } catch (e) {
+        console.error('Auth error:', e);
+        setUserRole('employee');
+      } finally {
+        setAuthLoading(false);
+      }
+    };
+    loadAuth();
+  }, []);
+
   // ── Fetch ──────────────────────────────────────────────────────────────────
   const fetchAll = useCallback(async () => {
+    // Wait for auth to resolve
+    if (authLoading) return;
+
+    // Employees and interns see nothing
+    if (userRole === 'employee' || userRole === 'intern' || userRole === 'none') {
+      setPnlData([]);
+      setStatData([]);
+      setLoading(false);
+      return;
+    }
+
     setLoading(true); setError(null);
     try {
+      // Build PnL query — manager sees only own dept
+      let pnlQuery = supabase
+        .from('client_wise_pl_view')
+        .select('*')
+        .order('pl_month', { ascending: false });
+
+      if (userRole === 'manager' && userDeptCode) {
+        pnlQuery = pnlQuery.eq('dept_code', userDeptCode);
+      }
+
+      // Statutory — admin sees all, manager sees all entities
+      // (statutory is company-wide, not per-dept, so managers can see it too)
+      const statQuery = supabase
+        .from('statutory_payments')
+        .select('*')
+        .order('month', { ascending: false });
+
       const [{ data: pnl, error: e1 }, { data: stat, error: e2 }] = await Promise.all([
-        supabase.from('client_wise_pl_view').select('*').order('pl_month', { ascending: false }),
-        supabase.from('statutory_payments').select('*').order('month', { ascending: false }),
+        pnlQuery,
+        statQuery,
       ]);
+
       if (e1) throw e1;
       if (e2) throw e2;
       setPnlData(pnl || []);
@@ -153,9 +212,13 @@ const ClientPL = () => {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [authLoading, userRole, userDeptCode]);
 
-  useEffect(() => { fetchAll(); }, [fetchAll]);
+  // Only fetch once auth is resolved
+  useEffect(() => {
+    if (!authLoading) fetchAll();
+  }, [fetchAll, authLoading]);
+
   useEffect(() => { setPage(1); }, [search, deptFilter, clientFilter, selectedFY, minProfit, maxProfit]);
   useEffect(() => { setStatPage(1); }, [statSearch, statEntity, statType, statStatus]);
 
@@ -387,7 +450,11 @@ const ClientPL = () => {
             {tab === 'pnl' ? 'Client-wise P&L' : 'Statutory Payouts'}
           </h1>
           <p className="text-xs text-gray-500 mt-0.5">
-            {tab === 'pnl' ? 'Per client · per department · per month' : 'GST · TDS · EPF · ESI · LWF'}
+            {tab === 'pnl'
+              ? userRole === 'manager'
+                ? `${pnlData[0]?.dept_name || userDeptCode || 'Your dept'} · Manager view · per client`
+                : 'Per client · per department · per month'
+              : 'GST · TDS · EPF · ESI · LWF'}
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -426,10 +493,27 @@ const ClientPL = () => {
         </div>
       )}
 
+      {/* ── ACCESS DENIED ── */}
+      {!authLoading && (userRole === 'employee' || userRole === 'intern' || userRole === 'none') && (
+        <div className="flex flex-col items-center justify-center py-24 text-center gap-4">
+          <div className="w-16 h-16 rounded-2xl bg-rose-50 border border-rose-200 flex items-center justify-center">
+            <AlertTriangle className="w-8 h-8 text-rose-400" />
+          </div>
+          <div>
+            <h2 className="text-base font-bold text-gray-800">Access Restricted</h2>
+            <p className="text-sm text-gray-500 mt-1">
+              Client P&amp;L data is only available to{' '}
+              <span className="font-semibold text-gray-700">Admins</span> and{' '}
+              <span className="font-semibold text-gray-700">Managers</span>.
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* ══════════════════════════════════════════════════════════════════
           P&L TAB
       ══════════════════════════════════════════════════════════════════ */}
-      {tab === 'pnl' && (
+      {tab === 'pnl' && userRole !== 'employee' && userRole !== 'intern' && userRole !== 'none' && (
         <>
           {/* Filter bar */}
           <div className="bg-white border border-gray-200 rounded-xl px-4 py-3 space-y-3">
@@ -449,11 +533,19 @@ const ClientPL = () => {
                 {allClients.map(c => <option key={c} value={c}>{c === 'All' ? 'All Clients' : c}</option>)}
               </select>
 
-              {/* Dept */}
-              <select value={deptFilter} onChange={e => setDeptFilter(e.target.value)}
-                className="border border-gray-200 bg-gray-50 rounded-lg px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-300">
-                {allDepts.map(d => <option key={d} value={d}>{d === 'All' ? 'All Departments' : d}</option>)}
-              </select>
+              {/* Dept — admin only dropdown, manager sees locked badge */}
+              {userRole === 'admin' && (
+                <select value={deptFilter} onChange={e => setDeptFilter(e.target.value)}
+                  className="border border-gray-200 bg-gray-50 rounded-lg px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-300">
+                  {allDepts.map(d => <option key={d} value={d}>{d === 'All' ? 'All Departments' : d}</option>)}
+                </select>
+              )}
+              {userRole === 'manager' && userDeptCode && (
+                <div className="flex items-center gap-1.5 px-3 py-2 bg-blue-50 border border-blue-200 rounded-lg text-xs font-semibold text-blue-700">
+                  <Building2 className="w-3.5 h-3.5" />
+                  {pnlData[0]?.dept_name || userDeptCode}
+                </div>
+              )}
 
               {/* FY Navigator */}
               <div className="flex items-center gap-1 bg-gray-100 rounded-full px-1 py-1">
@@ -527,10 +619,10 @@ const ClientPL = () => {
               <span className="text-xs text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">{filteredPnl.length} rows · {groupedPnl.length} groups</span>
             </div>
 
-            {loading ? (
+            {(loading || authLoading) ? (
               <div className="flex flex-col items-center justify-center py-20 gap-3 text-gray-400">
                 <Loader2 className="w-8 h-8 animate-spin text-blue-400" />
-                <span className="text-sm">Loading P&L data…</span>
+                <span className="text-sm">{authLoading ? 'Checking access…' : 'Loading P&L data…'}</span>
               </div>
             ) : filteredPnl.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-20 text-gray-400 gap-2">
@@ -693,7 +785,7 @@ const ClientPL = () => {
       {/* ══════════════════════════════════════════════════════════════════
           STATUTORY TAB
       ══════════════════════════════════════════════════════════════════ */}
-      {tab === 'statutory' && (
+      {tab === 'statutory' && userRole !== 'employee' && userRole !== 'intern' && userRole !== 'none' && (
         <>
           {/* Filter bar */}
           <div className="bg-white border border-gray-200 rounded-xl px-4 py-3 flex flex-wrap items-center gap-3">
@@ -745,10 +837,10 @@ const ClientPL = () => {
               <span className="text-xs text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">{filteredStat.length} rows</span>
             </div>
 
-            {loading ? (
+            {(loading || authLoading) ? (
               <div className="flex flex-col items-center justify-center py-20 gap-3 text-gray-400">
                 <Loader2 className="w-8 h-8 animate-spin text-blue-400" />
-                <span className="text-sm">Loading statutory data…</span>
+                <span className="text-sm">{authLoading ? 'Checking access…' : 'Loading statutory data…'}</span>
               </div>
             ) : filteredStat.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-20 text-gray-400 gap-2">
@@ -838,7 +930,7 @@ const ClientPL = () => {
       )}
 
       {/* Legend */}
-      {tab === 'pnl' && !loading && filteredPnl.length > 0 && (
+      {tab === 'pnl' && !loading && filteredPnl.length > 0 && userRole !== 'employee' && userRole !== 'intern' && userRole !== 'none' && (
         <div className="bg-white border border-gray-200 rounded-xl px-5 py-3 flex flex-wrap gap-4 text-xs text-gray-500">
           <span className="font-semibold text-gray-700 mr-1">Formulas:</span>
           <span><b className="text-gray-700">Verto Fee Post TDS</b> = Verto Fee − TDS</span>
